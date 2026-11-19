@@ -5,9 +5,10 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 const { withoutMarkers, UNREADABLE } = require('../journal-ask');
+const journalRecorders = require('../journal-recorders');
 
 function createVoice(ctx) {
-  const { APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized, hubAuthorized, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, startPastWork, storage, storageError, text, voice, voiceFacts, watchdog, weather } = ctx;
+  const { APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized, hubAuthorized, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, journalWriter, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, startPastWork, storage, storageError, text, voice, voiceFacts, watchdog, weather } = ctx;
 
   // What Home lists under Needs you (app/public/home.js, loadNeeds and paintNeeds), for Siri and the Watch to say the
   // same: the runs app/public/needs-you.js picks (a waiting approval; a failure that is unseen, under a day old, not
@@ -123,6 +124,7 @@ function createVoice(ctx) {
       items[i].meta = { ...items[i].meta, decidedBy: 'Workshop display' };
       saveStore(APPROVALS_STORE, items, 500);
       recordActivity('approval', `Approval ${b.decision} on the Workshop display`, items[i].title, { approvalId: items[i].id, by: 'Workshop display' });
+      journalRecorders.record(journalWriter, () => journalRecorders.approvalEntry(items[i], { where: 'display' }));
       json(res, 200, { ok: true, status: items[i].status });
     } catch (e) { json(res, 400, { error: String(e.message || e) }); }
   }
@@ -360,15 +362,17 @@ function createVoice(ctx) {
       if (route.intent === 'action' && req.method !== 'POST') return say(200, VOICE_POST_ONLY);
       const question = reset.text;
       const { threadId } = voiceThreads.take(textIn);
-      // Every answer is a turn in the thread; only chat asks hand the earlier turns to the model.
-      const turn = async build => {
+      // Every answer is a turn in the thread; only chat asks hand the earlier turns to the model. An answer with no run of
+      // its own goes into the journal here, on time or late; one a run gave is journaled as that run (voiceEntry).
+      let runId = null;
+      const turn = async (build, intent = route.intent) => {
         const answer = await build();
         voiceThreads.record(threadId, question, answer);
+        journalRecorders.record(journalWriter, () => journalRecorders.voiceEntry({ intent, question, answer, runId, at: clockNow() }));
         return answer;
       };
       // "and tomorrow?" right after a weather answer on this thread is weather for the same place.
       const followUpWeather = lastWeather?.threadId === threadId && ['chat', 'current'].includes(route.intent) && voice.timeOnly(question);
-      let runId = null;
       const asked = voiceThreads.run(threadId, () => {
         if (route.intent === 'time') return turn(async () => voice.speakable(voiceFacts({ now: new Date(), timeZone: voiceTimeZone() })));
         if (route.intent === 'needs') return turn(async () => voice.speakable(await voiceNeedsSentence()));
@@ -378,7 +382,7 @@ function createVoice(ctx) {
             return voice.speakable(glance.healthSummary({ services: snapshot.services || [], version: APP_VERSION }).speech);
           });
         }
-        if (route.intent === 'weather' || followUpWeather) return turn(() => voiceWeather(question, here, threadId));
+        if (route.intent === 'weather' || followUpWeather) return turn(() => voiceWeather(question, here, threadId), 'weather');
         if (route.intent === 'current') {
           return turn(async () => {
             let sources;
