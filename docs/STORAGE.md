@@ -35,7 +35,7 @@ exposes `close()`.
 |---|---|---|
 | `status` | Last health state and pending transitions | `app/server.js` |
 | `unified-run/` | The run ledger behind **System › Runs** | `app/run-ledger.js` |
-| `claude-session/`, `claude-event/`, `claude-finding/` | Claude board sessions, progress events (newest 3,000), findings (1,000) | `app/server.js` |
+| `claude-session/`, `claude-event/`, `claude-finding/` | Claude board sessions (newest 200, plus any an open finding names), progress events (newest 3,000), findings (1,000) | `app/server.js` |
 | `claudeChat:` | Chat relay sessions, messages, paired devices, pairing requests | `app/claude-chat.js` |
 | `repair:garbled-text-v1`, `legacy-json-import-v1` | One-time migration markers | `app/server.js`, `app/storage.js` |
 
