@@ -11,15 +11,15 @@ const pub = path.join(__dirname, '..', 'app', 'public');
 const NOT_PAGE_SCRIPTS = new Set(['sw.js']);
 const modules = fs.readdirSync(pub).filter(f => f.endsWith('.js') && !NOT_PAGE_SCRIPTS.has(f));
 
-// Loaded on first use by ui.js, not on every page load (still precached by the service worker).
-const ON_DEMAND = new Set(['agent-world-watch.js', 'model-routing.js']);
+// Loaded on first use, not on every page load (still precached by the service worker): each by the shell file named.
+const ON_DEMAND = new Map([['agent-world-watch.js', 'ui.js'], ['model-routing.js', 'ui.js'], ['answer-feedback.js', 'components.js']]);
 
 test('index.html loads every front-end module', () => {
   const html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
   const loaded = new Set([...html.matchAll(/<script[^>]*\ssrc="\/([^"]+\.js)"/g)].map(m => m[1]));
   assert.deepEqual(modules.filter(f => !loaded.has(f) && !ON_DEMAND.has(f)), []);
-  const ui = fs.readFileSync(path.join(pub, 'ui.js'), 'utf8');
-  for (const f of ON_DEMAND) assert.ok(ui.includes(`'/${f}'`), `ui.js loads ${f} on demand`);
+  for (const [f, by] of ON_DEMAND) assert.ok(fs.readFileSync(path.join(pub, by), 'utf8').includes(`'/${f}'`), `${by} loads ${f} on demand`);
+  assert.deepEqual([...ON_DEMAND.keys()].filter(f => loaded.has(f)), [], 'an on-demand module is not in index.html');
 });
 
 test('the service worker precaches every front-end module', () => {

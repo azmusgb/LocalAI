@@ -77,6 +77,13 @@ Every answer says where it came from: **Answered by GPT-OSS 120B · Groq** or **
 reason, under the answer and on its card in Work. Each cloud call is listed in the Audit log (which service, which
 model, how much text; never the text itself).
 
+Beside that line, **Good answer** and **Not right** say how the answer landed (on chats, research and Past work
+answers that finished). Press the same one again to take it back. After **Not right** you can add a line about what
+was wrong (up to 300 characters), or skip it. **System › Models**, after the Cloud models card, shows **How answers have
+landed**: good and not right by model for the last 30 and 90 days, and the latest answers marked not right with a link
+to each (or "this run is no longer kept" once Work has let it go). Ratings stay in Local AI's database and are never
+sent to a model. Rating needs a signed-in device.
+
 Ask the chat about Local AI itself (where image models go, how to reach it away from home, how updates work, where a
 page is) and it answers from this appliance's own setup: its addresses, its folders and its page names.
 
