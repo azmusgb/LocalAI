@@ -880,7 +880,8 @@ async function cancelPowerShellJob(id){try{await powerShellPost('/api/powershell
 // in a native modal <dialog> so focus stays inside, the page behind is inert and focus returns to the opener.
 function commandPalette(){
   const el=$('cmdk');if(!el)return;
-  const input=$('cmdkInput'),list=$('cmdkList'),R=window.LocalAIViews;
+  const input=$('cmdkInput'),list=$('cmdkList'),empty=$('cmdkEmpty'),past=$('cmdkPast'),R=window.LocalAIViews;
+  // The listbox holds only options and groups: "No pages match" sits above it (#cmdkEmpty), Past work's states below (#cmdkPast).
   // Labels and old names (aka) come from view-registry.js so renamed pages stay findable. Pages with a menu entry are
   // offered, and unlisted ones with an `owner` (Spreadsheets); Chat, Images, Missions and Runs are not.
   const actions=window.LocalAIViews.VIEWS.filter(v=>v.domain!=='hidden'||v.owner)
@@ -893,34 +894,37 @@ function commandPalette(){
   let shown=[],active=0,opener=null;
   input.setAttribute('role','combobox');input.setAttribute('aria-controls','cmdkList');input.setAttribute('aria-expanded','false');
   list.setAttribute('role','listbox');
-  function select(i){active=Math.max(0,Math.min(shown.length-1,i));list.querySelectorAll('[role=option]').forEach((b,n)=>{b.setAttribute('aria-selected',String(n===active));b.classList.toggle('active',n===active)});const b=list.querySelectorAll('[role=option]')[active];if(b){input.setAttribute('aria-activedescendant',b.id);b.scrollIntoView({block:'nearest'})}}
-  // Past work (Pi Hub amendment A28, item 3): from two typed characters, up to 5 journal entries below the page matches,
-  // asked 150 ms after the typing stops. Only an entry with an in-app link (#run/<id>, #<page>) is listed; one without
-  // is left out. Each answer is painted only if no newer query was asked since and the palette is still open.
+  function select(i){active=Math.max(0,Math.min(shown.length-1,i));list.querySelectorAll('[role=option]').forEach((b,n)=>{b.setAttribute('aria-selected',String(n===active));b.classList.toggle('active',n===active)});const b=list.querySelectorAll('[role=option]')[active];if(b){input.setAttribute('aria-activedescendant',b.id);b.scrollIntoView({block:'nearest'})}else input.removeAttribute('aria-activedescendant')}
+  // Past work (Pi Hub A28, item 3): from 2 characters, 150 ms after typing stops, up to 5 journal entries with an in-app link.
+  // An answer paints only if no newer query was asked and the palette is still open.
   const journal={seq:0,timer:0,ctrl:null,q:'',state:'idle',items:[]};
   const inApp=l=>typeof l==='string'&&/^#[A-Za-z0-9][\w\-./%?=&]*$/.test(l);
   const sourceOf=e=>e.source==='run'?(window.LocalAIRuns?.kindLabel?.(e.kind)||'Run'):String(e.source||'').replace(/^./,c=>c.toUpperCase());
   const dateOf=at=>{const d=new Date(at);if(!Number.isFinite(d.getTime()))return '';return d.toLocaleDateString(undefined,{day:'numeric',month:'short',...(d.getFullYear()!==new Date().getFullYear()?{year:'numeric'}:{})})};
   function dropJournal(){journal.seq++;clearTimeout(journal.timer);journal.ctrl?.abort();journal.ctrl=null}
   function askJournal(){
-    const q=input.value.trim();if(q===journal.q&&journal.state!=='idle'&&journal.state!=='error')return; // a failed search is asked again
+    const q=input.value.trim();if(q===journal.q&&journal.state!=='idle'&&journal.state!=='error')return;
     dropJournal();journal.q=q;journal.items=[];journal.state=q.length>=2?'loading':'idle';if(journal.state==='idle')return;
     const seq=journal.seq;
     journal.timer=setTimeout(async()=>{
       const ctrl=new AbortController();journal.ctrl=ctrl;let next;
       try{const j=await LocalAIUI.fetchJson(`/api/journal?q=${encodeURIComponent(q)}&limit=5`,{signal:ctrl.signal});if(!Array.isArray(j.items))throw new Error('unreadable reply');next={state:'ok',items:j.items.filter(e=>e&&inApp(e.link)).slice(0,5)}}
-      catch{next={state:'error',items:[]}} // a failed search is its own state, never "no results"
+      catch{next={state:'error',items:[]}} // its own state, never "no results"
       if(seq!==journal.seq)return;
       journal.ctrl=null;Object.assign(journal,next);render(true);
     },150);
   }
+  // Hits are options. Searching (a skeleton hit) and a failed search (a warning with Try again: Tab reaches it, the arrows
+  // skip it) go in #cmdkPast.
   function journalHtml(from){
-    // Loading keeps the group's place with one skeleton row; a failure is a warning with Try again (Tab reaches it; the
-    // arrows stay on the options).
+    if(journal.state!=='ok'||!journal.items.length)return '';
+    return `<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-journal" data-cmd-group="journal"><div class="cmdk-group__label" id="cmdk-group-journal">Past work</div>${journal.items.map((e,i)=>{const d=dateOf(e.at),src=sourceOf(e);
+      return `<button type="button" id="cmdk-opt-${from+i}" role="option" class="cmdk-item" data-cmd-journal="${esc(e.link)}"><span class="cmdk-item__title">${esc(String(e.title||'').trim()||'Untitled')}</span><span class="meta">${esc(src)}${src&&d?' · ':''}${d?`<time datetime="${esc(e.at)}">${esc(d)}</time>`:''}</span></button>`}).join('')}</div>`;
+  }
+  function pastHtml(){
     const body=journal.state==='loading'?`<div class="cmdk-item cmdk-item--wait" aria-hidden="true" data-cmd-journal-loading><span class="ui-skeleton"></span><span class="ui-skeleton"></span></div>`
-      :journal.state==='error'?`<div class="ui-notice ui-notice--warn cmdk-notice" data-cmd-journal-error><span>Couldn't search past work.</span><button type="button" class="btn-outline" data-cmd-journal-retry>Try again</button></div>`:journal.state==='ok'?journal.items.map((e,i)=>{const d=dateOf(e.at),src=sourceOf(e);
-      return `<button type="button" id="cmdk-opt-${from+i}" role="option" class="cmdk-item" data-cmd-journal="${esc(e.link)}"><span class="cmdk-item__title">${esc(String(e.title||'').trim()||'Untitled')}</span><span class="meta">${esc(src)}${src&&d?' · ':''}${d?`<time datetime="${esc(e.at)}">${esc(d)}</time>`:''}</span></button>`}).join(''):'';
-    return body&&`<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-journal" data-cmd-group="journal"><div class="cmdk-group__label" id="cmdk-group-journal">Past work</div>${body}</div>`;
+      :journal.state==='error'?`<div class="ui-notice ui-notice--warn cmdk-notice" data-cmd-journal-error><span>Couldn't search past work.</span><button type="button" class="btn-outline" data-cmd-journal-retry>Try again</button></div>`:'';
+    return body&&`<div class="cmdk-group__label">Past work</div>${body}`;
   }
   function render(keep=false){
     if(!keep)askJournal();
@@ -935,16 +939,18 @@ function commandPalette(){
     if(!groups)shown=shown.concat(tools.filter(a=>a.terms.includes(q)));
     const pages=shown.filter(a=>!a.href).length,found=shown.length,hits=journal.state==='ok'?journal.items:[];
     let n=0;
+    const typed=input.value.trim(),none=!groups&&!found;
     list.innerHTML=(groups?groups.map((g,i)=>`<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-${i}"><div class="cmdk-group__label" id="cmdk-group-${i}">${esc(g.label)}</div>${g.items.map(a=>a.href?toolOpt(a,n++):opt(a,n++)).join('')}</div>`).join('')
-      :shown.length?shown.map((a,i)=>a.href?toolOpt(a,i):opt(a,i)).join('')
-      :`<div class="cmdk-empty"><p>No pages match “${esc(input.value.trim())}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(input.value.trim())}”</button></div>`)+journalHtml(found);
+      :shown.map((a,i)=>a.href?toolOpt(a,i):opt(a,i)).join(''))+journalHtml(found);
+    if(empty){empty.innerHTML=none?`<p>No pages match “${esc(typed)}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(typed)}”</button>`:'';empty.hidden=!none}
+    if(past){past.innerHTML=pastHtml();past.hidden=!past.innerHTML}
     shown=shown.concat(hits.map(e=>({id:'journal:'+e.id,link:e.link})));
     {const c=$('cmdkCount'),t=found-pages;if(c)c.textContent=(found?(pages?`${pages} page${pages===1?'':'s'}`:'')+(pages&&t?', ':'')+(t?`${t} tool${t===1?'':'s'}`:''):'No pages match')+(hits.length?`, ${hits.length} from past work`:'')+(journal.state==='error'?"; couldn't search past work":'')} // a screen reader hears the count
     list.querySelectorAll('[data-cmd-view]').forEach(b=>b.onclick=()=>go(b.dataset.cmdView));
     list.querySelectorAll('[data-cmd-journal]').forEach(b=>b.onclick=()=>follow(b.dataset.cmdJournal));
-    list.querySelector('[data-cmd-journal-retry]')?.addEventListener('click',()=>{journal.q='';askJournal();render(true);input.focus()});
+    past?.querySelector('[data-cmd-journal-retry]')?.addEventListener('click',()=>{journal.q='';askJournal();render(true);input.focus()});
     list.querySelectorAll('[data-cmd-tool]').forEach(b=>b.onclick=()=>go(b.dataset.cmdTool));
-    list.querySelector('[data-cmd-work]')?.addEventListener('click',searchWork);
+    empty?.querySelector('[data-cmd-work]')?.addEventListener('click',searchWork);
     select(keep?active:0); // hits arriving later keep the highlight where the arrows left it
   }
   // On a phone, an empty search offers the 8 likeliest pages instead of all of them: the ones opened lately, then the

@@ -1,5 +1,8 @@
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { addAxe } from './axe-helper.mjs';
 
 // ⌘K's Past work group (amendment A28, item 3): after two typed characters the palette asks GET /api/journal for up to 5
 // hits and lists them below the page matches. /api/journal is mocked with Playwright routes, so each state (hits, none,
@@ -8,6 +11,8 @@ const base = process.env.LOCALAI_URL || 'http://127.0.0.1:3080';
 const browser = await chromium.launch({ headless: true });
 const failures = [];
 async function check(name, fn) { try { await fn(); console.log('PASS', name); } catch (e) { failures.push(`${name}: ${e.message}`); console.error('FAIL', name, e.message); } }
+const axePath = join(dirname(fileURLToPath(import.meta.url)), 'vendor', 'axe.min.js');
+const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']; // as axe-ui.mjs
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const entry = (id, title, extra = {}) => ({ id, at: '2026-11-12T10:30:00.000Z', day: '2026-11-12', source: 'run', kind: 'chat', title, body: '', link: `#run/${id}`, meta: {}, ...extra });
 
@@ -76,7 +81,7 @@ await check('hits show below the page matches as Past work, with title, date and
   assert.match(await journalRows().nth(1).innerText(), /Image/);
   assert.equal(await journalRows().first().locator('time').getAttribute('datetime'), '2026-11-12T10:30:00.000Z');
   assert.equal(await page.evaluate(() => window.__xss), undefined, 'no markup ran');
-  assert.doesNotMatch(await page.locator('#cmdkList').innerText(), /history/i, 'the group is never called History');
+  assert.doesNotMatch(await page.locator('#cmdk').innerText(), /history/i, 'the group is never called History');
   assert.match(await page.locator('#cmdkCount').textContent(), /2 from past work/);
 });
 
@@ -164,13 +169,13 @@ for (const [name, handler] of [['a non-200 reply', () => ({ status: 500, body: {
     await mock(page, handler);
     await open();
     await page.locator('#cmdkInput').fill('health');
-    const err = page.locator('#cmdkList [data-cmd-journal-error]');
+    const err = page.locator('#cmdkPast [data-cmd-journal-error]');
     await err.waitFor();
     assert.match(await err.innerText(), /^Couldn't search past work\.\s*Try again$/);
     assert.ok(await err.evaluate(n => n.classList.contains('ui-notice--warn')), 'drawn as a warning, not grey text');
     assert.equal(await journalRows().count(), 0);
     assert.ok(await pageRows().count() > 0, 'page matches still listed');
-    assert.doesNotMatch(await page.locator('#cmdkList').innerText(), /no results|nothing found/i);
+    assert.doesNotMatch(await page.locator('#cmdk').innerText(), /no results|nothing found/i);
     assert.match(await page.locator('#cmdkCount').textContent(), /couldn't search past work/i);
     await page.keyboard.press('Enter'); // Enter still opens the first page match
     await page.waitForFunction(() => !document.querySelector('#cmdk.show'));
@@ -182,7 +187,7 @@ await check('Try again after a failed search asks again and shows the hits; Tab 
   const seen = await mock(page, () => (fail ? { status: 503, body: { error: 'busy' } } : { body: { items: [entry('rt1', 'Health retried')] } }));
   await open();
   await page.locator('#cmdkInput').fill('health');
-  const retry = page.locator('#cmdkList [data-cmd-journal-retry]');
+  const retry = page.locator('#cmdkPast [data-cmd-journal-retry]');
   await retry.waitFor();
   // The arrows never land on the button: the last option stays selected.
   const options = await page.locator('#cmdkList [role="option"]').count();
@@ -205,7 +210,7 @@ await check('retyping the same text after a failure asks again', async () => {
   const seen = await mock(page, () => (fail ? 'abort' : { body: { items: [entry('rr1', 'Health again')] } }));
   await open();
   await page.locator('#cmdkInput').fill('health');
-  await page.locator('#cmdkList [data-cmd-journal-error]').waitFor();
+  await page.locator('#cmdkPast [data-cmd-journal-error]').waitFor();
   fail = false;
   await page.locator('#cmdkInput').fill('health ');
   await journalRows().first().waitFor();
@@ -217,11 +222,11 @@ await check('while searching, Past work holds its place with one skeleton row an
   await mock(page, async () => { await gate; return { body: { items: [entry('rl1', 'Loaded')] } }; });
   await open();
   await page.locator('#cmdkInput').fill('health');
-  const loading = page.locator('#cmdkList [data-cmd-group="journal"] [data-cmd-journal-loading]');
+  const loading = page.locator('#cmdkPast [data-cmd-journal-loading]');
   await loading.waitFor();
   assert.equal(await loading.count(), 1);
   assert.equal(await loading.getAttribute('aria-hidden'), 'true');
-  assert.equal(await page.locator('#cmdkList [data-cmd-group="journal"] .cmdk-group__label').innerText(), 'Past work');
+  assert.equal(await page.locator('#cmdkPast .cmdk-group__label').innerText(), 'Past work');
   const before = await pageRows().evaluateAll(b => b.map(x => x.getBoundingClientRect().top));
   release();
   await journalRows().first().waitFor();
@@ -249,11 +254,46 @@ await check('no page match, but hits: the hits are listed and Enter opens the fi
   await open();
   await page.locator('#cmdkInput').fill('zzqx');
   await journalRows().first().waitFor();
-  assert.match(await page.locator('#cmdkList').innerText(), /No pages match/);
+  assert.match(await page.locator('#cmdkEmpty').innerText(), /No pages match/);
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => location.hash === '#run/rz1');
   await page.evaluate(() => window.LocalAIRouter?.go('#home'));
 });
+
+// axe on the open palette (the same rules as axe-ui.mjs), and two checks axe can't make: the listbox holds only options
+// and groups of options, and aria-activedescendant names an option that exists or is absent.
+async function paletteAxe(label) {
+  await addAxe(page, axePath);
+  const bad = await page.evaluate(tags => window.axe.run('#cmdk', { runOnly: { type: 'tag', values: tags }, resultTypes: ['violations'] })
+    .then(r => r.violations.filter(v => v.impact === 'serious' || v.impact === 'critical').map(v => `${v.id} (${v.impact}): ${v.nodes.map(n => n.target.join(' ')).join(', ')}`)), TAGS);
+  assert.deepEqual(bad, [], `${label}: axe`);
+  const stray = await page.evaluate(() => [...document.querySelectorAll('#cmdkList > *, #cmdkList [role="group"] > *')]
+    .filter(n => !['option', 'group'].includes(n.getAttribute('role')) && !n.classList.contains('cmdk-group__label')).map(n => n.outerHTML.slice(0, 80)));
+  assert.deepEqual(stray, [], `${label}: only options and groups in the listbox`);
+  const ad = await page.locator('#cmdkInput').getAttribute('aria-activedescendant');
+  if (ad !== null) assert.equal(await page.locator(`#cmdkList [role="option"]#${ad}`).count(), 1, `${label}: aria-activedescendant ${ad} names an option`);
+}
+for (const [label, query, handler, ready] of [
+  ['hits', 'health', () => ({ body: { items: [entry('ax1', 'Health notes')] } }), '#cmdkList [data-cmd-journal]'],
+  ['a failed search', 'health', () => ({ status: 500, body: {} }), '#cmdkPast [data-cmd-journal-retry]'],
+  ['searching', 'health', () => ({ delay: 3000, body: { items: [] } }), '#cmdkPast [data-cmd-journal-loading]'],
+  ['no page match, no hits', 'zzqx', () => ({ body: { items: [] } }), null],
+  ['no page match, a failed search', 'zzqx', () => 'abort', '#cmdkPast [data-cmd-journal-retry]'],
+  ['no page match, hits', 'zzqx', () => ({ body: { items: [entry('ax2', 'zzqx chat')] } }), '#cmdkList [data-cmd-journal]'],
+]) {
+  await check(`axe finds nothing serious in the open palette: ${label}`, async () => {
+    await mock(page, handler);
+    await open();
+    await page.locator('#cmdkInput').fill(query);
+    if (ready) await page.locator(ready).first().waitFor(); else await sleep(500);
+    if (query === 'zzqx') {
+      assert.equal(await page.locator('#cmdkEmpty [data-cmd-work]').isVisible(), true, 'Search your work is offered');
+      if (!ready) assert.equal(await page.locator('#cmdkInput').getAttribute('aria-activedescendant'), null, 'no option, no active descendant');
+    }
+    await paletteAxe(label);
+    await page.keyboard.press('Escape');
+  });
+}
 
 await check('no script errors', async () => assert.deepEqual(errors, []));
 await page.close();
