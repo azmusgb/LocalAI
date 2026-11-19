@@ -156,6 +156,24 @@ test('a store that cannot be read refuses the change and says so; it never count
   await assert.rejects(call('apiMemory', undefined), /database is locked/, 'GET /api/memory fails loudly (the server answers 500), never with items: []');
 });
 
+test('an update or delete that names no category answers 503 when the store cannot be read, not 400', async () => {
+  const { state, call } = routes([fact('a', 'Answers in metric.'), { id: 'mem-s', projectId: '', category: 'note', text: 'Short note.' }]);
+  state.failRead = true;
+  let r = await call('apiMemoryUpdate', { id: 'a', text: 'Edited.' });
+  assert.equal(r.status, 503);
+  assert.match(r.body.error, /^Couldn't read your saved memory, so nothing was changed\. database is locked/);
+  r = await call('apiMemoryUpdate', { id: 'mem-s', pinned: true });
+  assert.equal(r.status, 503);
+  r = await call('apiMemoryDelete', { id: 'a' });
+  assert.equal(r.status, 503);
+  r = await call('apiMemoryAdd', { category: 'note', text: 'A note.' });
+  assert.equal(r.status, 503);
+  assert.equal(state.saves, 0);
+  state.failRead = false;
+  r = await call('apiMemoryUpdate', { id: 'mem-x', text: 'Edited.' });
+  assert.equal(r.status, 404, 'a readable store still answers 404 for an unknown id');
+});
+
 test('the page uses the same limits as the server', () => {
   const page = fs.readFileSync(path.join(__dirname, '..', 'app', 'public', 'owner-facts.js'), 'utf8');
   assert.match(page, new RegExp(`MAX_FACTS\\s*=\\s*${rules.MAX_FACTS}\\b`));
