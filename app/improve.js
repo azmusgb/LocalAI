@@ -5,6 +5,7 @@
 // passed in as `at`. Spec: docs/superpowers/specs/2026-10-15-improve-design.md.
 
 const crypto = require('node:crypto');
+const { defuse } = require('./untrusted');
 
 // A change in one of these states is still being worked on, so its item is In progress.
 const LIVE_CHANGE = ['planned', 'patch_failed', 'validation_failed', 'staged', 'awaiting_approval', 'approved', 'apply_requested'];
@@ -109,7 +110,7 @@ function handToClaude(item, at) {
 // any marker inside it defused, so a session reads it as the request to judge, not as orders.
 const HANDOFF_FROM = { home: 'Home', agentWorld: 'Agent World', improve: 'Improve' };
 const REQUEST_OPEN = '<<<UNTRUSTED_REQUEST', REQUEST_CLOSE = 'UNTRUSTED_REQUEST>>>';
-const quotedRequest = body => clip(body, 1500).replace(/<<<|>>>/g, m => (m === '<<<' ? '‹‹‹' : '›››'));
+const quotedRequest = body => defuse(clip(body, 1500));
 function handoffItem(text, from, at, existing = null) {
   const base = existing || ideaItem(text, at);
   if (!base) return null;

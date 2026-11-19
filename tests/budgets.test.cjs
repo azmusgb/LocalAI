@@ -153,7 +153,14 @@ const KB = 1024;
 // styles (app.css +0.2 KB) and its hook in the chat and Past work bodies (run-bodies.js +0.03 KB). The control itself
 // (answer-feedback.js, 3.1 KB) and the Models section (model-routing.js) load on demand. Main had 215 bytes left;
 // 372,949 bytes (364.2 KB) measured.
-const TOTAL = 365 * KB;
+// 2026-11-19: 364 → 366 KB, app.js 39 → 40 KB and run-bodies.js 11 → 11.2 KB for project Memory in chat (owner approved
+// raises up to about 367 KB for the batch): the line under a chat answer ("Used 3 notes from …" / couldn't read them, a
+// 44 px link), the Memory tab's "Use these notes in chat" switch with its saving and failed states, Shared staying chosen,
+// and the notice for a link to a deleted project with Save memory disabled and its reason (run-bodies.js +297 bytes, app.js +924, index.html and app.css about
+// +0.2 KB). main had 372,521 bytes with app.js 39,836 (100 bytes under its limit); 374,037 bytes measured, app.js 40,760,
+// run-bodies.js 11,409.
+// Together with answer feedback (merged first): 374,476 bytes (365.7 KB) measured.
+const TOTAL = 366 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -190,7 +197,7 @@ const TOTAL = 365 * KB;
 // app.css +0.1 KB, its Atlas section rewritten in one pass without the layered overrides; 321.8 KB measured).
 // 2026-11-02: index.html 16 → 17 KB for the navigation update: the Settings and Tools pages, the Spreadsheets chip and
 // mode, and Home's On Pi Hub line (16.1 KB measured).
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 39 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11 * KB };
+const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 40 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.2 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

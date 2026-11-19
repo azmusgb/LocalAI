@@ -32,15 +32,19 @@ function personal(text) { return PERSONAL.test(String(text || '')); }
 // → {class: 'private'|'shareable', why, order: [{provider, model}]}
 function route(req = {}) {
   const local = { provider: 'ollama', model: req.model || req.localModel };
-  if (req.model) return { class: 'private', why: 'You picked this model', order: [local] };
-  const kind = Object.prototype.hasOwnProperty.call(KINDS, req.kind) ? req.kind : 'quick';
-  const why = req.keepLocal ? 'You asked to keep it on this PC'
+  // Reasons from the request itself. They win over "You picked this model" so they stay sticky for the conversation
+  // (stickyPrivate below) even when a model was picked by hand.
+  const asked = req.keepLocal ? 'You asked to keep it on this PC'
     : req.voice ? 'Voice and Siri stay on this PC'
     : req.house ? 'House questions stay on this PC'
     : req.journal ? 'Your past work stays on this PC'
     : req.attachments ? 'Files and photos stay on this PC'
     : typeof req.stay === 'string' && req.stay ? req.stay
     : personal(req.text) ? 'It looks personal (health, money or identity)'
+    : null;
+  if (req.model) return { class: 'private', why: asked || 'You picked this model', order: [local] };
+  const kind = Object.prototype.hasOwnProperty.call(KINDS, req.kind) ? req.kind : 'quick';
+  const why = asked ? asked
     : KINDS[kind].cloud === false ? 'This kind of work stays on this PC'
     : KINDS[kind].cloud === 'bigger' && !req.bigger ? 'Ask stays on this PC unless you choose a bigger model'
     : null;

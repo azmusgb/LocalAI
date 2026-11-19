@@ -14,6 +14,7 @@
 // "Nothing found" and "could not be read" are different answers; only the first is NOTHING.
 
 const { ftsQuery } = require('./journal');
+const { defuse } = require('./untrusted');
 const { TEXT_NUM_CTX, ANSWER_RESERVE, CHARS_PER_TOKEN } = require('./text-context');
 // The platform's phrase table (the kit, synced from appliance-ui): "{name} isn't answering".
 const { PHRASES } = require('./public/ui/needs.js');
@@ -100,7 +101,7 @@ function zoneWords(ms, timeZone, long) {
 const defaultZone = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 // Stored text may hold anything (a web page a chat quoted, a board item, a file name): it must not be able to close
 // the block or pass for an entry number, which is what a citation points at.
-const asData = text => String(text ?? '').replace(/<<<|>>>/g, m => (m === '<<<' ? '‹‹‹' : '›››')).replace(/\[(\d+)\]/g, '($1)').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim();
+const asData = text => defuse(text).replace(/\[(\d+)\]/g, '($1)').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim();
 const cut = (text, max) => (text.length > max ? text.slice(0, Math.max(0, max - 1)) + '…' : text);
 // Only a route inside Local AI, or a page on Pi Hub, is ever a link; anything else is shown without one.
 const safeLink = link => (typeof link === 'string' && link.length <= LINK_MAX && (/^#[A-Za-z][^\s"'<>\\]*$/.test(link) || /^hub:[A-Za-z0-9/_-]{1,63}$/.test(link)) ? link : null);

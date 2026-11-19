@@ -6,12 +6,14 @@
 const { secretish } = require('../model-coordinator');
 const { stickyPrivate } = require('../model-router');
 const { cleanId } = require('../run-ledger');
+// Project Memory notes for a chat filed under a project (A28 D5: data in a marked block, no tools, this PC only).
+const projectMemory = require('../project-memory');
 // Pi Hub's page facts, as ask-context.js appends them: they describe the household's pages, so the chat stays here.
 const HUB_CONTEXT = /\n---\nContext \(page facts from a link/;
 // The home hub's prompt (Pi Hub's House questions), as app/run-cards.js readableTitle knows it.
 const HUB_PROMPT = /^you are the voice of a family's home hub\b/i;
 function createChat(ctx) {
-  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone } = ctx;
+  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, projectNotes, projectStore, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone } = ctx;
 
   function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '', sourceHost = '') {
     return {
@@ -31,16 +33,21 @@ function createChat(ctx) {
     };
   }
 
-  // The messages for the text model: system prompt, research sources (trimmed first), then the conversation, fitted to the shared context.
+  // The messages for this PC's model: system prompt, the project's notes, research sources, then the conversation, fitted
+  // to the shared context (sources are trimmed first, then the oldest turns, then the notes).
+  // → {messages, notesSent}: notesSent is false when there were none, or fitting had to leave them out.
   function chatMessages(prep) {
     const system = systemPrompt('', prep.capabilityContext, prep.brief, prep.voice ? voiceFacts({ now: new Date(), timeZone: voiceTimeZone(), includeZone: true }) : '', prep.sourceHost);
+    const memory = prep.memory?.state === 'used' ? projectMemory.memoryMessage(prep.memory) : null;
     const sources = prep.researchContext
       ? [{ role: 'system', kind: 'sources', content: `Current metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${prep.researchContext}` }]
       : [];
-    return fitMessages([system, ...sources, ...prep.messages], { numCtx: TEXT_NUM_CTX, reserve: ANSWER_RESERVE });
+    const messages = fitMessages([system, ...(memory ? [memory] : []), ...sources, ...prep.messages], { numCtx: TEXT_NUM_CTX, reserve: ANSWER_RESERVE });
+    return { messages, notesSent: !!memory && messages.some(m => m.role === 'system' && m.content === memory.content) };
   }
 
-  // What a cloud model is sent: the conversation and its public sources, never the appliance's own snapshot or facts.
+  // What a cloud model is sent: the conversation and its public sources, never the appliance's own snapshot or facts,
+  // and never project notes (a turn with notes is private, so it doesn't get here; this keeps them out regardless).
   function cloudMessages(prep) {
     const system = systemPrompt('', '', prep.brief, '', prep.sourceHost);
     const sources = prep.researchContext
@@ -103,7 +110,11 @@ function createChat(ctx) {
     // runs, so it keeps the request here rather than failing open.
     const askedThread = body.threadId === undefined || body.threadId === null || body.threadId === '' ? '' : body.threadId;
     const threadId = askedThread ? cleanId(askedThread) : '';
-    const keptBefore = (askedThread && threadId !== askedThread) || (threadId && runLedger.list({ threadId, all: true }).some(r => stickyPrivate(r.meta?.privacy) || stickyPrivate(r.meta?.route) || r.meta?.voice === true));
+    const threadRuns = threadId ? runLedger.list({ threadId, all: true }) : [];
+    const keptBefore = (askedThread && threadId !== askedThread) || threadRuns.some(r => stickyPrivate(r.meta?.privacy) || stickyPrivate(r.meta?.route) || r.meta?.voice === true);
+    // Project notes: the request's own projectId (D1: a first turn gets notes only so), else the project of the newest
+    // run in this thread that is filed under one. A turn that carries them stays on this PC (A28 D5.3).
+    const memory = projectMemory.notesForTurn({ projectId: projectFor(body, threadRuns), readProjects: projectStore, readNotes: projectNotes });
     const sent = [...messages.map(m => m.content), researchContext].join('\n');
     const route = coordinator.route({
       kind: body.webSearch === true ? 'research' : 'chat', text: sent, model: picked,
@@ -111,10 +122,19 @@ function createChat(ctx) {
       house: body.title === 'House question' || raw.some(m => HUB_PROMPT.test(String(m.content || '').trim()) || HUB_CONTEXT.test(String(m.content || ''))),
       attachments: (Array.isArray(body.images) && body.images.length) || raw.some(m => Array.isArray(m.images) && m.images.length),
       keepLocal: body.keepLocal === true || messages.some(m => isAboutLocalAi(m.content)),
-      stay: keptBefore ? 'This conversation was kept on this PC' : raw.some(m => m.role === 'system') ? 'Requests with their own instructions stay on this PC' : secretish(sent) ? 'Keys, passwords and setup stay on this PC' : '',
+      stay: memory.state === 'used' ? projectMemory.STAY : keptBefore ? 'This conversation was kept on this PC' : raw.some(m => m.role === 'system') ? 'Requests with their own instructions stay on this PC' : secretish(sent) ? 'Keys, passwords and setup stay on this PC' : '',
       bigger: body.bigger === true, localModel: model
     });
-    return { model, route, messages, sources, researchContext, capabilityContext, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
+    return { model, route, messages, sources, researchContext, capabilityContext, memory, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
+  }
+
+  // Which project a turn's notes come from: a valid projectId on the request, else the newest filed run of the thread.
+  function projectFor(body, threadRuns) {
+    const asked = typeof body.projectId === 'string' ? cleanId(body.projectId) : null;
+    if (asked) return asked;
+    const filed = threadRuns.filter(r => r && typeof r.projectId === 'string' && r.projectId)
+      .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    return filed[0]?.projectId || '';
   }
 
   // The cloud candidates in the route, in order; the first answer wins. null = none answered (or none allowed): the
@@ -136,7 +156,8 @@ function createChat(ctx) {
       execution = createChatExecution(body, false);
       runLedger.start(execution.id, body.webSearch === true ? 'Research run started' : 'Chat run started');
       const prep = await prepareChat(body);
-      runLedger.update(execution.id, { meta: { privacy: { class: prep.route.class, why: prep.route.why } } });
+      const local = chatMessages(prep);
+      runLedger.update(execution.id, { meta: { privacy: { class: prep.route.class, why: prep.route.why }, ...projectMemory.runMeta(prep.memory, local.notesSent) } });
       const started = Date.now();
       const cloud = await cloudAnswer(prep);
       let content, used;
@@ -147,7 +168,7 @@ function createChat(ctx) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: prep.model,
-            messages: chatMessages(prep),
+            messages: local.messages,
             stream: false,
             keep_alive: TEXT_KEEP_ALIVE,
             options: { num_ctx: TEXT_NUM_CTX }
@@ -224,7 +245,8 @@ function createChat(ctx) {
       });
 
       const prep = await prepareChat(body, controller.signal);
-      runLedger.update(execution.id, { meta: { privacy: { class: prep.route.class, why: prep.route.why } } });
+      const local = chatMessages(prep);
+      runLedger.update(execution.id, { meta: { privacy: { class: prep.route.class, why: prep.route.why }, ...projectMemory.runMeta(prep.memory, local.notesSent) } });
       if (controller.signal.aborted || runLedger.get(execution.id)?.status === 'cancelled') {
         throw new Error('Run cancelled');
       }
@@ -259,7 +281,7 @@ function createChat(ctx) {
           signal: controller.signal,
           body: JSON.stringify({
             model: prep.model,
-            messages: chatMessages(prep),
+            messages: local.messages,
             stream: true,
             keep_alive: TEXT_KEEP_ALIVE,
             options: { num_ctx: TEXT_NUM_CTX }
