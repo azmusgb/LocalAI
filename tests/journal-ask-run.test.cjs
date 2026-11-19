@@ -196,3 +196,23 @@ test('?ids=: present ids come back; a disabled journal is 503 and a database err
   const broken = call({ ...journal, get: () => { throw new Error('SQLITE_CORRUPT: database disk image is malformed'); } });
   assert.ok(broken.status >= 400, `status ${broken.status}`); assert.equal(broken.body.items, undefined, 'no list at all');
 });
+
+// A disabled journal (app/journal.js's stub when its tables can't be made) can't be searched or deleted from: search is
+// 503, never 200 with no items (an empty Past work), and delete is 503, never 404 (the run view's "Already deleted").
+test('a disabled journal: search and delete are 503 unavailable, never empty or "no such entry"', async t => {
+  const { journal } = setup(t);
+  const stub = { ...journal, disabled: true, search: () => ({ items: [], next: null }), get: () => null, remove: () => false };
+  const out = {};
+  const routes = createJournalRoutes({
+    journal: stub, json: (res, status, body) => Object.assign(out, { status, body }),
+    readBody: async () => ({ id: 'j-1' }), storageError: (res, e, status) => Object.assign(out, { status, body: { error: e.message } })
+  });
+  for (const q of ['?q=petg', '?q=petg&limit=5&linked=1', '']) {
+    for (const k of Object.keys(out)) delete out[k];
+    await routes.apiJournal({}, {}, new URL(`http://x/api/journal${q}`));
+    assert.equal(out.status, 503, `search ${q || '(no query)'}`); assert.equal(out.body.error, "Couldn't read your past work."); assert.equal(out.body.items, undefined, 'no list at all');
+  }
+  for (const k of Object.keys(out)) delete out[k];
+  await routes.apiJournalDelete({}, {});
+  assert.equal(out.status, 503, 'delete'); assert.equal(out.body.error, "Couldn't reach your past work, so nothing was deleted.");
+});

@@ -26,7 +26,9 @@ function createJournalRoutes(ctx) {
       const q = urlObj.searchParams;
       // ?ids=a,b (at most 50): which of these entries still exist, so a list drawn from a stored answer (Past work) shows
       // what was deleted since as deleted.
-      if (q.has('ids') && journal.disabled) return json(res, 503, { error: "Couldn't read your past work." }); // unreadable is not deleted
+      // A journal that is switched off (app/journal.js's stub) can't be read: 503, never an empty list (unreadable is
+      // not "nothing found", and for ?ids= not "deleted").
+      if (journal.disabled) return json(res, 503, { error: "Couldn't read your past work." });
       if (q.has('ids')) return json(res, 200, { items: [...new Set(String(q.get('ids')).split(',').map(s => s.trim()).filter(Boolean))].slice(0, 50).map(id => journal.get(id)).filter(Boolean) });
       const sources = String(q.get('source') || '').split(',').map(s => s.trim()).filter(Boolean);
       return json(res, 200, journal.search({ q: q.get('q') || '', from: q.get('from'), to: q.get('to'), sources, limit: q.get('limit') || 50, before: q.get('before'), linked: q.get('linked') === '1' }));
@@ -35,6 +37,8 @@ function createJournalRoutes(ctx) {
   async function apiJournalDelete(req, res) {
     try {
       const b = await readBody(req, 4 * 1024);
+      // Switched off, the stub's remove() answers false for every id: that is "couldn't reach it", not "already deleted".
+      if (journal.disabled) return json(res, 503, { error: "Couldn't reach your past work, so nothing was deleted." });
       return journal.remove(String(b.id || '')) ? json(res, 200, { ok: true }) : json(res, 404, { error: 'No such entry' });
     } catch (e) { storageError(res, e, 400); }
   }

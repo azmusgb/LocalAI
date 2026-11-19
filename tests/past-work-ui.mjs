@@ -56,7 +56,7 @@ async function open(viewport, hash, { runs = [], askStatus = 202, deleteStatus =
     const run = pastRun('run-past-new', { status: 'running', title: b.question, output: null }); db.runs.push(run);
     json(r, { runId: run.id, run }, 202);
   });
-  await page.route(u => u.pathname === '/api/journal/delete', r => { const b = JSON.parse(r.request().postData()); db.deletes.push(b); if (deleteStatus === 200) db.gone.add(b.id); json(r, deleteStatus === 200 ? { ok: true } : { error: 'The journal is switched off' }, deleteStatus); });
+  await page.route(u => u.pathname === '/api/journal/delete', r => { const b = JSON.parse(r.request().postData()); db.deletes.push(b); if (deleteStatus === 200) db.gone.add(b.id); json(r, deleteStatus === 200 ? { ok: true } : { error: "Couldn't reach your past work, so nothing was deleted." }, deleteStatus); });
   await page.route(u => u.pathname === '/api/runs', r => {
     const q = new URL(r.request().url()).searchParams;
     if (q.get('id')) { const it = db.runs.find(x => x.id === q.get('id')); return it ? json(r, { item: it }) : json(r, { error: 'Run not found' }, 404); }
@@ -142,13 +142,16 @@ await check('Delete asks first, posts the entry id to /api/journal/delete, and s
   await page.context().close();
 });
 
-await check('a delete the server refuses says why beside the entry and keeps Delete', async () => {
+await check('a delete the server refuses (journal switched off: 503) says why beside the entry, not "Already deleted", and keeps Delete', async () => {
   const page = await open(desk, '#run/run-past-1', { runs: [pastRun('run-past-1')], deleteStatus: 503 });
   const row = body(page).locator('.past-work__entry').first();
   await row.waitFor(T);
   await row.locator('.past-work__delete').click();
   await page.locator('dialog.ask-sheet[open] .ask-sheet__ok').click();
-  await row.locator('p.ui-notice.ui-notice--bad[role="alert"]', { hasText: "Couldn't delete it: The journal is switched off" }).waitFor(T);
+  const note = row.locator('p.ui-notice.ui-notice--bad[role="alert"]', { hasText: "Couldn't delete it" });
+  await note.waitFor(T);
+  assert.equal((await note.innerText()).trim(), "Couldn't delete it: Couldn't reach your past work, so nothing was deleted. Try again.");
+  assert.doesNotMatch(await row.innerText(), /Already deleted/);
   assert.equal(await row.locator('.past-work__delete').isEnabled(), true);
   await page.context().close();
 });
