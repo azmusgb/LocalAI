@@ -1,0 +1,121 @@
+'use strict';
+
+// Owner-fact suggestions end to end, on a real server with a fake Ollama: a chat answered on this PC leads to one
+// pending suggestion (without delaying the answer), Save writes the fact, "No" is remembered, a cloud-answered turn
+// gives none, and the routes are refused to a caller without a device.
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const http = require('node:http');
+const { once } = require('node:events');
+const { spawnAppServer } = require('./spawn-server.cjs');
+const { OPEN } = require('../app/fact-suggestions');
+
+const FACT = 'You print mostly PLA on a Bambu X2D.';
+const QUESTION = 'I print mostly PLA on my Bambu X2D. What nozzle temperature should I use?';
+
+async function fake(t, handler) {
+  const calls = [];
+  const s = http.createServer((req, res) => { let raw = ''; req.on('data', c => raw += c); req.on('end', () => { const body = raw ? JSON.parse(raw) : null; calls.push({ url: req.url, body }); handler(req, res, body); }); });
+  s.listen(0, '127.0.0.1'); await once(s, 'listening');
+  t.after(() => new Promise(r => { s.closeAllConnections(); s.close(r); }));
+  return { url: `http://127.0.0.1:${s.address().port}`, calls };
+}
+const reply = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
+const isSuggestion = body => Array.isArray(body?.messages) && body.messages.some(m => String(m.content || '').startsWith(OPEN));
+
+async function start(t, { suggestion = FACT } = {}) {
+  const ollama = await fake(t, (req, res, body) => {
+    if (req.url === '/api/tags') return reply(res, 200, { models: [{ name: 'test-model' }] });
+    if (req.url === '/api/ps') return reply(res, 200, { models: [] });
+    if (isSuggestion(body)) return reply(res, 200, { message: { content: suggestion }, done: true });
+    if (body?.stream) { res.writeHead(200, { 'Content-Type': 'application/x-ndjson' }); res.end(JSON.stringify({ message: { content: 'Try 215 °C.' } }) + '\n' + JSON.stringify({ done: true }) + '\n'); return; }
+    reply(res, 200, { message: { content: 'Try 215 °C.' }, done: true });
+  });
+  const groq = await fake(t, (req, res) => reply(res, 200, { choices: [{ message: { content: 'Answered by Groq' } }] }));
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-facts-'));
+  const { child, ready } = spawnAppServer({ env: {
+    DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: ollama.url, MODEL: 'test-model', SEARXNG_URL: 'http://127.0.0.1:9',
+    COMFY_URL: 'http://127.0.0.1:9', N8N_URL: 'http://127.0.0.1:9', PROXY_URL: 'http://127.0.0.1:9',
+    LOCALAI_GROQ_API_KEY: 'gsk_test_secret', LOCALAI_GROQ_URL: groq.url, LOCALAI_CEREBRAS_API_KEY: '',
+    LOCALAI_FACT_SUGGESTIONS: 'on',
+  } });
+  t.after(async () => { if (child.exitCode === null) { const d = once(child, 'exit'); child.kill('SIGTERM'); await d; } fs.rmSync(dataDir, { recursive: true, force: true }); });
+  const base = await ready;
+  const call = async (p, body, headers = {}) => {
+    const r = await fetch(base + p, { method: body ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', ...headers }, body: body ? JSON.stringify(body) : undefined });
+    return { status: r.status, value: await r.json() };
+  };
+  const pendingSoon = async (want = 1) => {
+    for (let i = 0; i < 60; i++) { const r = await call('/api/facts/suggestions'); if (r.status !== 200 || r.value.items.length >= want) return r; await new Promise(res => setTimeout(res, 100)); }
+    return call('/api/facts/suggestions');
+  };
+  return { call, pendingSoon, ollama, groq, base };
+}
+
+test('a local chat answer leads to one pending suggestion; Save writes the fact; nothing is saved before', async t => {
+  const { call, pendingSoon, ollama } = await start(t);
+  const r = await call('/api/chat', { messages: [{ role: 'user', content: QUESTION }] });
+  assert.equal(r.status, 200);
+  assert.equal(r.value.message.content, 'Try 215 °C.');
+  assert.equal(ollama.calls.filter(c => isSuggestion(c.body)).length, 0, 'the answer came back before the job asked anything');
+  const p = await pendingSoon();
+  assert.equal(p.status, 200);
+  assert.deepEqual(p.value.items.map(i => i.text), [FACT]);
+  assert.equal(p.value.items[0].runId, r.value.runId);
+  const ask = ollama.calls.find(c => isSuggestion(c.body));
+  assert.equal(ask.body.model, 'test-model');
+  assert.equal(ask.body.tools, undefined, 'no tools');
+  let mem = await call('/api/memory');
+  assert.equal(mem.value.items.length, 0, 'nothing saved before the owner says so');
+  const d = await call('/api/facts/suggestions/decide', { id: p.value.items[0].id, action: 'save' });
+  assert.equal(d.status, 200, JSON.stringify(d.value));
+  mem = await call('/api/memory');
+  assert.deepEqual(mem.value.items.map(m => [m.text, m.category, m.projectId]), [[FACT, 'owner', '']]);
+  assert.deepEqual((await call('/api/facts/suggestions')).value.items, []);
+  // The same fact again is a duplicate: no new suggestion.
+  await call('/api/chat', { messages: [{ role: 'user', content: QUESTION }] });
+  await new Promise(res => setTimeout(res, 2500));
+  assert.deepEqual((await call('/api/facts/suggestions')).value.items, []);
+});
+
+test('the streamed chat schedules it too, and "No" is remembered', async t => {
+  const { call, pendingSoon, base } = await start(t);
+  const text = await (await fetch(`${base}/api/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: QUESTION }] }) })).text();
+  assert.match(text, /event: done/);
+  const p = await pendingSoon();
+  assert.deepEqual(p.value.items.map(i => i.text), [FACT]);
+  const d = await call('/api/facts/suggestions/decide', { id: p.value.items[0].id, action: 'no' });
+  assert.equal(d.status, 200);
+  assert.equal(d.value.state, 'declined');
+  await call('/api/chat', { messages: [{ role: 'user', content: QUESTION }] });
+  await new Promise(res => setTimeout(res, 2500));
+  assert.deepEqual((await call('/api/facts/suggestions')).value.items, [], 'the same fact is not proposed again');
+  assert.equal((await call('/api/memory')).value.items.length, 0);
+});
+
+test('a cloud-answered turn and a "Keep on this PC" turn give no suggestion and ask no model', async t => {
+  const { call, ollama, groq, base } = await start(t);
+  const on = await fetch(`${base}/api/models/routing`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cloud: true }) });
+  assert.equal(on.status, 200);
+  const r = await call('/api/chat', { messages: [{ role: 'user', content: QUESTION }], bigger: true });
+  assert.equal(r.value.route.provider, 'groq');
+  assert.equal(groq.calls.length, 1);
+  await call('/api/chat', { messages: [{ role: 'user', content: QUESTION }], keepLocal: true });
+  await new Promise(res => setTimeout(res, 2500));
+  assert.equal(ollama.calls.filter(c => isSuggestion(c.body)).length, 0);
+  assert.deepEqual((await call('/api/facts/suggestions')).value.items, []);
+});
+
+test('a caller without a device is refused both routes (owner-only)', async t => {
+  const { call } = await start(t);
+  // Through Caddy (X-Forwarded-For): not the host itself, and not paired.
+  const away = { 'X-Forwarded-For': '10.0.0.50' };
+  const g = await call('/api/facts/suggestions', null, away);
+  assert.equal(g.status, 401);
+  assert.equal(g.value.items, undefined);
+  const d = await call('/api/facts/suggestions/decide', { id: 'fs-1', action: 'save' }, away);
+  assert.equal(d.status, 401);
+});

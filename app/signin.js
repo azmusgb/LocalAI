@@ -19,6 +19,8 @@ const GUARDED = [
   /^\/api\/notifications\/(system|seed|update)$/, /^\/api\/signin\/report\/clear$/, /^\/api\/display\/notify$/,
   // It hands out the Workshop display's sign-in code.
   /^\/api\/workshop\/portal-code$/,
+  // The owner's suggested facts: reading them shows what was said in chats; deciding writes a fact into memory.
+  /^\/api\/facts\/suggestions(\/decide)?$/,
 ];
 // Refused without a device when they change something (any method but GET/HEAD): starting agent runs, writing
 // workbooks through the GridCraft bridge, importing or deleting library data, and the display's alert settings.
