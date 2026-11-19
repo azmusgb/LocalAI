@@ -299,11 +299,10 @@
       const have = new Set(((await RB.json('/api/journal?ids=' + ids.map(encodeURIComponent).join(','))).items || []).map(x => x.id));
       if (!ctx.alive()) return;
       for (const id of ids) if (!have.has(id)) { deletedEntries.add(id); const li = [...ul.children].find(n => n.dataset.entryId === id); if (li?.querySelector('.past-work__delete')) goneText(li, 'Deleted from your past work'); }
-    } catch { if (ctx.alive()) ul.after(h('p', 'muted past-work__source', "Couldn't check which entries were deleted since. Delete still says if one is already gone.")); }
+    } catch { if (ctx.alive()) { const n = h('p', 'ui-notice ui-notice--warn', "Couldn't check which entries were deleted since. Delete still says if one is already gone."); n.setAttribute('role', 'status'); ul.before(n); } }
   }
   // No entries and the journal wasn't the source: never "nothing matched" (Honest states).
   function sourceLine(o) {
-    if (o.from === 'none') return 'The Assistant keeps no record of what was watched, so there was nothing to read.';
     if (o.from === 'prints') return "Bambuddy's print list had no print for this question.";
     return '';
   }
@@ -320,7 +319,7 @@
     });
     row.append(b, err);
     // Prints unread: Workshop has them (A28 D3).
-    if (run.output?.unread && run.output?.from === 'prints') { const a = titled({ title: 'Open Workshop on Pi Hub', link: 'hub:workshop' }, 'past-work__hub'); row.append(a); }
+    if (run.output?.unread && run.output?.from === 'prints') row.append(titled({ title: 'Open Workshop on Pi Hub', link: 'hub:workshop' }, 'ui-btn ui-btn--ghost'));
     slot.appendChild(row);
   }
   function mountPastWork(run, slot) {
@@ -341,12 +340,12 @@
       if ((run.status === 'failed' || (run.status === 'completed' && o.unread)) && run.input?.prompt) tryAgain(run, slot);
       if (cites.length) {
         slot.appendChild(h('h3', '', 'Cited'));
-        const ol = h('ol', 'past-work__cites');
-        for (const c of cites) { const li = h('li'); li.append(h('span', 'past-work__n', `[${c.n}] `), titled(c, ''), h('span', 'muted', ` · ${whenText(c.at)}`)); ol.appendChild(li); }
+        const ol = h('ol', 'ui-rows past-work__cites');
+        for (const c of cites) { const li = h('li', 'ui-row'), d = h('div'); d.append(h('span', 'past-work__n', `[${c.n}] `), titled(c, ''), h('span', 'muted', ` · ${whenText(c.at)}`)); li.appendChild(d); ol.appendChild(li); }
         slot.appendChild(ol);
       }
       if (live) return;
-      if (!entries.length && o.unread) return; // the answer already names the source it couldn't read
+      if (!entries.length && (o.unread || o.from === 'none')) return; // the answer already says it: a source it couldn't read, or no record kept (films)
       const line = entries.length ? '' : sourceLine(o);
       if (line) { slot.appendChild(h('p', 'muted past-work__source', line)); return; }
       slot.appendChild(h('h3', '', entries.length === 1 ? 'The entry it read' : 'What it read'));

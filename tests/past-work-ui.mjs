@@ -200,7 +200,7 @@ await check('a source that could not be read: the answer names it once, with Try
     await page.evaluate(h => window.LocalAIRouter.go(h), '#run/' + id);
     const again = body(page).locator('.past-work__again');
     await again.locator('button', { hasText: 'Try again' }).waitFor(T);
-    assert.match(await again.locator('a.past-work__hub').getAttribute('href'), /^https:\/\/[^/]+\/workshop$/, `${id}: Workshop on Pi Hub`);
+    assert.match(await again.locator('a.ui-btn').getAttribute('href'), /^https:\/\/[^/]+\/workshop$/, `${id}: Workshop on Pi Hub`);
     assert.equal(await body(page).locator('.past-work__source').count(), 0, `${id}: the answer is not repeated`);
     assert.equal(await body(page).locator('.ui-empty').count(), 0, `${id}: no "nothing matched"`);
     assert.doesNotMatch(await body(page).innerText(), /Nothing in your past work matched/);
@@ -209,9 +209,11 @@ await check('a source that could not be read: the answer names it once, with Try
   await page.waitForFunction(() => location.hash === '#run/run-past-retry', null, T);
   assert.deepEqual(page.db.retries, ['run-p2'], 'Try again asks the same question again');
   await page.evaluate(h => window.LocalAIRouter.go(h), '#run/run-f1');
-  await body(page).locator('.past-work__source', { hasText: 'The Assistant keeps no record of what was watched, so there was nothing to read.' }).waitFor(T);
+  await body(page).locator('.past-work__answer', { hasText: 'I keep no record of what was watched' }).waitFor(T);
+  assert.equal(await body(page).locator('.past-work__source').count(), 0, 'films: said once, by the answer');
   assert.equal(await body(page).locator('.past-work__again').count(), 0, 'films: nothing to ask again');
   assert.equal(await body(page).locator('.ui-empty').count(), 0);
+  assert.equal((await body(page).locator('h3').allTextContents()).includes('What it read'), false);
   await page.context().close();
 });
 
@@ -253,7 +255,9 @@ await check('with Intelligence down, Past work stays on and says what it needs',
 
 await check('a failed check for deleted entries says so in one line, and keeps Delete', async () => {
   const page = await open(desk, '#run/run-past-1', { runs: [pastRun('run-past-1')], idsFail: true });
-  await body(page).locator('.past-work__source', { hasText: "Couldn't check which entries were deleted since" }).waitFor(T);
+  const notice = body(page).locator('.ui-notice.ui-notice--warn', { hasText: "Couldn't check which entries were deleted since" });
+  await notice.waitFor(T);
+  assert.equal(await notice.evaluate(n => n.nextElementSibling?.classList.contains('ui-rows') && n.previousElementSibling?.textContent), 'What it read', 'under "What it read", above the entries');
   assert.equal(await body(page).locator('.past-work__delete').count(), 2, 'entries are not drawn as deleted');
   await page.context().close();
 });
@@ -266,6 +270,27 @@ await check('the whole entry row is the link target, and Delete stays clickable 
   assert.equal(link, 'absolute'); assert.ok(box.height >= 44, `row is ${box.height}px tall`);
   await row.locator('.past-work__delete').click();
   await page.locator('dialog.ask-sheet[open]').waitFor(T);
+  await page.context().close();
+});
+
+await check('touch targets at 390: a one-line citation and the Workshop link are at least 44px tall', async () => {
+  const short = { n: 1, id: 'j-9-s', at: iso(2), source: 'run', kind: 'chat', title: 'Hinges', link: '#run/run-h' };
+  const page = await open(phone, '#run/run-t1', { runs: [
+    pastRun('run-t1', { output: { text: 'Brass [1].', citations: [short], entries: [short], from: 'journal', unread: null } }),
+    pastRun('run-t2', { title: 'did my last print finish', output: { text: "Bambuddy isn't answering, so I can't say what was printed.", citations: [], entries: [], from: 'prints', unread: "Bambuddy isn't answering" } })
+  ] });
+  assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), true, 'a touch context');
+  const cite = body(page).locator('.past-work__cites li').first();
+  await cite.waitFor(T);
+  const one = await cite.evaluate(li => { const a = li.querySelector('a'); return a.getClientRects().length === 1; });
+  assert.ok(one, 'the citation link is one line');
+  assert.ok((await cite.boundingBox()).height >= 44, `citation row ${(await cite.boundingBox()).height}px`);
+  assert.equal(await cite.locator('a').evaluate(a => { const r = a.closest('li').getBoundingClientRect(), x = r.left + 4, y = r.top + r.height / 2; return document.elementFromPoint(x, y)?.closest('a') === a; }), true, 'the whole row opens the link');
+  assert.equal(await body(page).locator('.past-work__entry .past-work__delete').first().evaluate(b => { const r = b.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('button') === b; }), true, 'Delete is above the cover');
+  await page.evaluate(() => window.LocalAIRouter.go('#run/run-t2'));
+  const hub = body(page).locator('.past-work__again a.ui-btn');
+  await hub.waitFor(T);
+  assert.ok((await hub.boundingBox()).height >= 44, `Workshop link ${(await hub.boundingBox()).height}px`);
   await page.context().close();
 });
 
