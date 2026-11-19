@@ -56,7 +56,9 @@ async function open(viewport, hash, { runs = [], update = 'ok', scheme = 'dark' 
   await page.route(u => u.pathname === '/api/capabilities', r => json(r, { services: ['ollama', 'search'].map(name => ({ name, label: name, state: 'HEALTHY', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
   await page.route(u => u.pathname === '/api/projects', r => json(r, { items: db.projects, total: db.projects.length }));
   await page.route(u => u.pathname === '/api/projects/intelligence', r => json(r, { project: db.projects[0], memory: NOTES, summary: { knowledge: 0, conversations: 1, pinnedMemory: 1 } }));
-  await page.route(u => u.pathname === '/api/memory', r => { const p = new URL(r.request().url()).searchParams.get('projectId') || ''; db.memoryQueries.push(p); json(r, { items: NOTES.filter(n => n.projectId === p) }); });
+  // memoryQueries: the notes list's reads (app.js always names a projectId). Memory's facts group (owner-facts.js) reads
+  // /api/memory without one, for the facts and the shared notes it may offer as facts; that read is not the list's.
+  await page.route(u => u.pathname === '/api/memory', r => { const q = new URL(r.request().url()).searchParams, p = q.get('projectId') || ''; if (q.has('projectId')) db.memoryQueries.push(p); json(r, { items: NOTES.filter(n => n.projectId === p) }); });
   await page.route(u => u.pathname === '/api/memory/add', r => { const b = JSON.parse(r.request().postData()); db.adds = [...(db.adds || []), b]; json(r, { item: { id: 'mem_new', ...b, pinned: false, createdAt: new Date().toISOString() } }, 201); });
   await page.route(u => u.pathname === '/api/projects/update', async r => {
     const b = JSON.parse(r.request().postData()); db.posts.push(b);

@@ -2160,8 +2160,8 @@ document.addEventListener('localai:engineering-run',e=>applyEngineering(e.detail
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{mount();drawMinimap()},{once:true});else{mount();drawMinimap()}
 })();
 
-// Loads /model-routing.js (Models › Cloud models) the first time Models opens; the section itself is made by ui.js.
-(function(){let p=0;const L=()=>{const s=document.getElementById('models');if(p||!s||!s.classList.contains('active'))return;p=1;const e=document.createElement('script');e.src='/model-routing.js';e.onerror=()=>{p=0};document.head.append(e)};new MutationObserver(L).observe(document.querySelector('main')||document.body,{attributes:true,subtree:true,attributeFilter:['class']});L()})();
+// Loads a page's script when it first opens (Models › Cloud models, Memory's facts); a failed one retries next time.
+(function(){const p={},M={models:'/model-routing.js',memory:'/owner-facts.js'};const L=()=>{for(const id in M){const s=document.getElementById(id);if(p[id]||!s||!s.classList.contains('active'))continue;p[id]=1;const e=document.createElement('script');e.src=M[id];e.onerror=()=>{p[id]=0;const b=s.querySelector('[data-load-failed]');if(b)b.innerHTML='<p class="ui-notice ui-notice--bad" role="alert">Couldn\'t load this. Open the page again to retry.</p>'};document.head.append(e)}};new MutationObserver(L).observe(document.querySelector('main')||document.body,{attributes:true,subtree:true,attributeFilter:['class']});L()})();
 // ==== agent-world-watch loader ====
 // Loads /agent-world-watch.js on first use (⋯ › Watch mode or ?watch=1); a tap in Agent World preloads it.
 (function(){let p;const L=()=>p||(p=new Promise((y,n)=>{const s=document.createElement('script');s.src='/agent-world-watch.js';s.onload=y;s.onerror=()=>{p=null;n()};document.head.append(s)})),W=o=>L().then(()=>window.LocalAIAgentWorldWatch.start(o)).catch(()=>{});

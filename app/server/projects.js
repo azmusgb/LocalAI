@@ -1,5 +1,7 @@
 'use strict';
 
+const ownerFacts = require('../owner-facts');
+
 // Projects and what is filed under them: conversations, knowledge sources (with search) and memory.
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
@@ -98,6 +100,14 @@ function createProjects(ctx) {
     if(!requireFeature(res,3)) return; try{const b=await readBody(req);const query=String(b.query||'').trim();if(!query)return json(res,400,{error:'query is required'});let docs=knowledgeStore();if(b.projectId)docs=docs.filter(x=>x.projectId===b.projectId);const hits=[];for(const d of docs){(d.chunks||[]).forEach((c,i)=>{const score=knowledgeScore(query,c);if(score>0)hits.push({documentId:d.id,name:d.name,projectId:d.projectId,chunk:i,score:Number(score.toFixed(3)),text:c})})}hits.sort((a,b)=>b.score-a.score);json(res,200,{query,hits:hits.slice(0,10)})}catch(e){storageError(res,e,400)}
   }
   function memoryStore(){ return objectStore(MEMORY_STORE); }
+  // Facts about the owner (category 'owner', projectId ''): one line of up to 200 characters, at most 30, refused
+  // when full and never dropped for the owner (app/owner-facts.js). A store that can't be read refuses the change
+  // instead of guessing the count.
+  // Any change that can't read the store first is a 503 (the server can't, not the request is wrong): an update that
+  // names no category may be editing a fact.
+  const unreadable=(e,what)=>Object.assign(new Error(`Couldn't read your saved ${what}, so nothing was changed. ${String(e&&e.message||e)}`),{statusCode:503});
+  function readForChange(fact){try{return memoryStore()}catch(e){throw unreadable(e,fact?'facts':'memory')}}
+  function factRefusal(res,v){return json(res,v.full||v.duplicate?409:400,{error:v.error,...(v.full?{full:true,max:ownerFacts.MAX_FACTS}:{})})}
   async function apiMemory(req,res,urlObj){
     if(!requireFeature(res,8))return;
     const projectId=urlObj.searchParams.get('projectId')||'';
@@ -107,20 +117,34 @@ function createProjects(ctx) {
   async function apiMemoryAdd(req,res){
     if(!requireFeature(res,8))return;
     try{const b=await readBody(req);const textValue=String(b.text||'').trim();if(!textValue)return json(res,400,{error:'text is required'});
-      const items=memoryStore();const item={id:makeId('mem'),projectId:String(b.projectId||''),category:String(b.category||'note'),text:textValue.slice(0,4000),pinned:!!b.pinned,createdAt:nowIso(),updatedAt:nowIso()};
-      items.unshift(item);saveStore(MEMORY_STORE,items,1000);recordActivity('memory','Saved project memory',item.text.slice(0,160),{projectId:item.projectId});json(res,201,{item});
+      const category=String(b.category||'note'),projectId=String(b.projectId||''),fact=category===ownerFacts.CATEGORY;
+      if(fact&&projectId)return json(res,400,{error:'Facts about you and the house belong to no project.'});
+      const items=readForChange(fact);
+      let stored=textValue.slice(0,4000);
+      if(fact){const v=ownerFacts.canSave(items,b.text);if(!v.ok)return factRefusal(res,v);stored=v.text}
+      const item={id:makeId('mem'),projectId,category,text:stored,pinned:!!b.pinned,createdAt:nowIso(),updatedAt:nowIso()};
+      items.unshift(item);saveStore(MEMORY_STORE,items,1000);recordActivity('memory',fact?'Saved a fact about you':'Saved project memory',item.text.slice(0,160),{projectId:item.projectId});json(res,201,{item});
     }catch(e){storageError(res,e,400)}
   }
   async function apiMemoryUpdate(req,res){
     if(!requireFeature(res,8))return;
-    try{const b=await readBody(req);const items=memoryStore();const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Memory not found'});
-      if(typeof b.text==='string'&&b.text.trim())items[i].text=b.text.slice(0,4000);if(typeof b.pinned==='boolean')items[i].pinned=b.pinned;if(typeof b.category==='string')items[i].category=b.category;
+    try{const b=await readBody(req);const items=readForChange(b.category===ownerFacts.CATEGORY);const i=items.findIndex(x=>x.id===b.id);if(i<0)return json(res,404,{error:'Memory not found'});
+      const category=typeof b.category==='string'?b.category:items[i].category;
+      if(category===ownerFacts.CATEGORY){
+        if(items[i].projectId)return json(res,400,{error:'Only a shared note (no project) can become a fact.'});
+        if(typeof b.text==='string'&&!b.text.trim())return json(res,400,{error:'Write the fact first.'});
+        const v=ownerFacts.canSave(items,typeof b.text==='string'?b.text:items[i].text,items[i].id);if(!v.ok)return factRefusal(res,v);
+        items[i].text=v.text;items[i].category=category;
+      }else{
+        if(typeof b.text==='string'&&b.text.trim())items[i].text=b.text.slice(0,4000);if(typeof b.category==='string')items[i].category=b.category;
+      }
+      if(typeof b.pinned==='boolean')items[i].pinned=b.pinned;
       items[i].updatedAt=nowIso();saveStore(MEMORY_STORE,items,1000);json(res,200,{item:items[i]});
     }catch(e){storageError(res,e,400)}
   }
   async function apiMemoryDelete(req,res){
     if(!requireFeature(res,8))return;
-    try{const b=await readBody(req);const items=memoryStore();const next=items.filter(x=>x.id!==b.id);if(next.length===items.length)return json(res,404,{error:'Memory not found'});saveStore(MEMORY_STORE,next,1000,items);json(res,200,{ok:true})}catch(e){storageError(res,e,400)}
+    try{const b=await readBody(req);const items=readForChange(false);const next=items.filter(x=>x.id!==b.id);if(next.length===items.length)return json(res,404,{error:'Memory not found'});saveStore(MEMORY_STORE,next,1000,items);json(res,200,{ok:true})}catch(e){storageError(res,e,400)}
   }
   async function apiProjectIntelligence(req,res,urlObj){
     if(!requireFeature(res,8))return;

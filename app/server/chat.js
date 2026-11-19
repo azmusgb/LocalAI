@@ -8,6 +8,8 @@ const { stickyPrivate } = require('../model-router');
 const { cleanId } = require('../run-ledger');
 // Project Memory notes for a chat filed under a project (A28 D5: data in a marked block, no tools, this PC only).
 const projectMemory = require('../project-memory');
+// The owner's saved facts (owner facts §3): in the same block, only in what this PC's model is sent; they never route.
+const ownerFacts = require('../owner-facts');
 // Pi Hub's page facts, as ask-context.js appends them: they describe the household's pages, so the chat stays here.
 const HUB_CONTEXT = /\n---\nContext \(page facts from a link/;
 // The home hub's prompt (Pi Hub's House questions), as app/run-cards.js readableTitle knows it.
@@ -33,21 +35,24 @@ function createChat(ctx) {
     };
   }
 
-  // The messages for this PC's model: system prompt, the project's notes, research sources, then the conversation, fitted
-  // to the shared context (sources are trimmed first, then the oldest turns, then the notes).
-  // → {messages, notesSent}: notesSent is false when there were none, or fitting had to leave them out.
+  // The messages for this PC's model: system prompt, the owner's facts and the project's notes (one block), research
+  // sources, then the conversation, fitted to the shared context (sources are trimmed first, then the oldest turns, then
+  // the block). → {messages, notesSent, factsSent}: false when there were none, or fitting had to leave the block out.
   function chatMessages(prep) {
     const system = systemPrompt('', prep.capabilityContext, prep.brief, prep.voice ? voiceFacts({ now: new Date(), timeZone: voiceTimeZone(), includeZone: true }) : '', prep.sourceHost);
-    const memory = prep.memory?.state === 'used' ? projectMemory.memoryMessage(prep.memory) : null;
+    const notes = prep.memory?.state === 'used' ? prep.memory.notes : [], facts = prep.facts?.state === 'used' ? prep.facts.facts : [];
+    const memory = notes.length || facts.length ? projectMemory.memoryMessage({ project: prep.memory?.project, notes, facts }) : null;
     const sources = prep.researchContext
       ? [{ role: 'system', kind: 'sources', content: `Current metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${prep.researchContext}` }]
       : [];
     const messages = fitMessages([system, ...(memory ? [memory] : []), ...sources, ...prep.messages], { numCtx: TEXT_NUM_CTX, reserve: ANSWER_RESERVE });
-    return { messages, notesSent: !!memory && messages.some(m => m.role === 'system' && m.content === memory.content) };
+    const sent = !!memory && messages.some(m => m.role === 'system' && m.content === memory.content);
+    return { messages, notesSent: sent && notes.length > 0, factsSent: sent && facts.length > 0 };
   }
 
   // What a cloud model is sent: the conversation and its public sources, never the appliance's own snapshot or facts,
-  // and never project notes (a turn with notes is private, so it doesn't get here; this keeps them out regardless).
+  // and never project notes (a turn with notes is private, so it doesn't get here; this keeps them out regardless) or the
+  // owner's facts (D1: a turn going to a cloud model is answered without them, and its line says so).
   function cloudMessages(prep) {
     const system = systemPrompt('', '', prep.brief, '', prep.sourceHost);
     const sources = prep.researchContext
@@ -125,7 +130,9 @@ function createChat(ctx) {
       stay: memory.state === 'used' ? projectMemory.STAY : keptBefore ? 'This conversation was kept on this PC' : raw.some(m => m.role === 'system') ? 'Requests with their own instructions stay on this PC' : secretish(sent) ? 'Keys, passwords and setup stay on this PC' : '',
       bigger: body.bigger === true, localModel: model
     });
-    return { model, route, messages, sources, researchContext, capabilityContext, memory, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
+    // Read after routing, so the facts never decide where the turn goes; read each turn, never cached.
+    const facts = ownerFacts.forTurn(() => projectNotes(''));
+    return { model, route, messages, sources, researchContext, capabilityContext, memory, facts, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
   }
 
   // Which project a turn's notes come from: a valid projectId on the request, else the newest filed run of the thread.
@@ -200,7 +207,7 @@ function createChat(ctx) {
         summary: content.slice(0, 420),
         output: { text: content.slice(0, 40000), model: used.model, elapsedMs, sources: prep.sources },
         artifactIds: artifact?.id ? [artifact.id] : [],
-        meta: { model: used.model, route: used, elapsedMs, sources: prep.sources.length, ...(body.voice === true || body.voiceRun === true ? { voice: true } : {}) }
+        meta: { model: used.model, route: used, elapsedMs, sources: prep.sources.length, ...ownerFacts.runMeta(prep.facts, { sent: local.factsSent, cloud: !!cloud }), ...(body.voice === true || body.voiceRun === true ? { voice: true } : {}) }
       });
       keepLongAnswer(execution.id, content.slice(0, 40000));
 
@@ -340,7 +347,7 @@ function createChat(ctx) {
         summary: full.slice(0, 420),
         output: { text: full.slice(0, 40000), model: used.model, elapsedMs, sources: prep.sources },
         artifactIds: artifact?.id ? [artifact.id] : [],
-        meta: { model: used.model, route: used, elapsedMs, sources: prep.sources.length }
+        meta: { model: used.model, route: used, elapsedMs, sources: prep.sources.length, ...ownerFacts.runMeta(prep.facts, { sent: local.factsSent, cloud: !!cloud }) }
       });
       keepLongAnswer(execution.id, full.slice(0, 40000));
 
