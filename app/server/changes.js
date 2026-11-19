@@ -754,6 +754,7 @@ function createChanges(ctx) {
   async function apiClaudeBoard(req,res,urlObj){
     const sessionId=urlObj.searchParams.get('session')||'';const limit=Math.max(1,Math.min(500,Number(urlObj.searchParams.get('events'))||150));
     const sessions=storage.listSettings(CLAUDE_SESSION_PREFIX).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    if(urlObj.searchParams.get('only')==='sessions')return json(res,200,{sessions}); // Improve's In progress: no events or findings
     const events=storage.listSettings(CLAUDE_EVENT_PREFIX,{limit:sessionId?2000:limit,...(sessionId?{where:{sessionId}}:{})}).slice(0,limit);
     const findings=claudeRanked(claudeFindings().filter(f=>!sessionId||f.sessionId===sessionId));
     const byStatus={},byCategory={};
