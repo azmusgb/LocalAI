@@ -302,7 +302,7 @@ function createFactSuggestions({ storage, coordinator, runLocalModel, busyNow, m
     let b;
     try { b = await readBody(req, DECIDE_BODY_MAX); } catch (e) { return json(res, e.statusCode || 400, { error: e.statusCode === 413 ? 'Request body too large' : 'Send JSON.' }); }
     try { return json(res, 200, { ok: true, ...decide(b || {}) }); }
-    catch (e) { return json(res, e.statusCode || 500, { error: e.statusCode ? e.message : "Couldn't save that. Try again.", ...(e.full ? { full: true, max: ownerFacts.MAX_FACTS } : {}) }); }
+    catch (e) { return json(res, e.statusCode || 500, { error: e.statusCode ? e.message : "Couldn't save that.", ...(e.full ? { full: true, max: ownerFacts.MAX_FACTS } : {}) }); }
   }
 
   return { consider, afterChat, pending, decide, apiPending, apiDecide };

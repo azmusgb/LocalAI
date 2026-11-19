@@ -3,6 +3,8 @@
 // LocalAIFactLine.mark(host, run) on every repaint. The line shows only while a suggestion made from that answer is
 // waiting, at most one per answer, and links to Memory, where Save, Edit and No live with the list and its cap: one
 // quiet link under an answer instead of a second row of buttons beside Good answer / Not right. Nothing is decided here.
+// It is the answer's last line (after "Used 2 of your saved facts" and the notes line), and it is only added while that
+// answer is the newest in the thread, so a suggestion that arrives late never pushes a later turn down.
 // The suggestion job runs after the answer is sent (app/fact-suggestions.js), so a fresh answer checks again a few times
 // for about a minute; an older one is read once with the rest (GET /api/facts/suggestions, kept 30 s).
 (function () {
@@ -33,13 +35,18 @@
   // The line for one answer. failedSays: a failed read is said (only under a fresh answer, where a suggestion may be
   // coming); elsewhere it shows nothing, and Memory says the read failed. A 401 means this device isn't paired: its own
   // chats make no suggestions, so there is nothing to say under them.
+  // The newest answer in its thread: nothing (not even a reply being written) comes after it.
+  const newest = host => { const all = host.parentElement ? host.parentElement.querySelectorAll(':scope > .chat-turn--assistant') : []; return all.length > 0 && all[all.length - 1] === host; };
+  // Keep the line last: the chat body may append its own lines after it on a repaint. Moving it keeps its focus.
+  const last = (host, line) => { if (host.lastElementChild === line) return; const f = line.contains(document.activeElement) && document.activeElement; host.append(line); if (f) f.focus({ preventScroll: true }); };
   function draw(host, runId, c, failedSays) {
     let line = host.querySelector(':scope > .fact-line');
     const it = c.items ? c.items.find(i => i.runId === runId) : null;
     const want = it ? 'item' : (!c.items && !c.signIn && failedSays ? 'fail' : '');
     if (!want) { line?.remove(); return; }
+    if (!line && !newest(host)) return;
     const sig = it ? `item:${it.id}:${it.text}` : 'fail';
-    if (line && line.dataset.sig === sig) return;
+    if (line && line.dataset.sig === sig) { last(host, line); return; }
     const had = !!line && line.contains(document.activeElement);
     const p = document.createElement('p'), a = document.createElement('a');
     p.className = want === 'fail' ? 'fact-line ui-notice ui-notice--warn' : 'fact-line'; p.dataset.sig = sig;
@@ -47,8 +54,8 @@
     words.textContent = it ? `Local AI suggests remembering: “${it.text}”` : "Couldn't check whether this answer suggested a fact to remember.";
     p.append(words, ' ');
     a.href = '#memory'; a.textContent = it ? 'Review on Memory' : 'Open Memory'; p.append(a);
-    if (line) line.replaceWith(p);
-    else { const fb = host.querySelector(':scope > .answer-feedback'); if (fb) fb.after(p); else host.append(p); }
+    if (line) line.remove();
+    host.append(p);
     if (had) a.focus({ preventScroll: true });
   }
 
@@ -60,7 +67,7 @@
       const c = await read(true);
       if (host.isConnected) draw(host, runId, c, true);
       const found = c.items && c.items.some(x => x.runId === runId);
-      if (!found && c.items && i + 1 < POLL.length) poll(runId, i + 1);   // stops when found, after a failed read, or after the last
+      if (!found && i + 1 < POLL.length) poll(runId, i + 1);   // stops when found or after the last; a failed read tries again
     }, POLL[i] - (i ? POLL[i - 1] : 0));
   }
 

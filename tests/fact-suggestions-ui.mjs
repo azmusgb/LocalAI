@@ -30,20 +30,23 @@ const PLA = 'You print mostly PLA on a Bambu X2D.', METRIC = 'You prefer answers
 const LONG = ('You keep every spool of filament in a sealed dry box with fresh desiccant beside the printer in the garage, ' +
   'labelled by brand, colour and the date it was opened, and you dry nylon before each print').slice(0, 199) + '.';
 const THREAD = 't-' + 'f5'.repeat(16);
-const chatRun = (n, prompt, text, { fresh = true } = {}) => {
+const USED = { text: 'Used 2 of your saved facts', count: 2, unread: false, cloud: false };
+const chatRun = (n, prompt, text, { fresh = true, facts = null } = {}) => {
   const at = new Date(fresh ? NOW + n * 1000 : NOW - 3600e3 + n * 1000).toISOString();
   return {
     id: `run-${n}-${fresh ? 'new' : 'old'}`, type: 'chat', status: 'completed', progress: 100, threadId: THREAD, title: prompt.slice(0, 40),
     createdAt: at, updatedAt: at, finishedAt: at, input: { prompt, model: 'm' }, output: { text }, artifactIds: [], kept: true,
-    card: { kind: 'chat', icon: 'compose', title: prompt, summary: text, badge: { label: 'Done', tone: 'good' }, preview: null, action: { label: 'Open' }, approval: null, route: { text: 'Answered on this PC', why: '' }, memory: null, facts: null }
+    card: { kind: 'chat', icon: 'compose', title: prompt, summary: text, badge: { label: 'Done', tone: 'good' }, preview: null, action: { label: 'Open' }, approval: null, route: { text: 'Answered on this PC', why: '' }, memory: null, facts }
   };
 };
 
 // fail: { read: status, decide: status } answers with that status instead. suggestions: the pending list.
-async function open(viewport, { items = [], suggestions = [], fail = {}, scheme = 'dark', hash = '#memory', runs = [] } = {}) {
+// expanded: the facts group starts unfolded (its sessionStorage key). holdRead: the suggestions read waits for page.db.letRead().
+async function open(viewport, { items = [], suggestions = [], fail = {}, scheme = 'dark', hash = '#memory', runs = [], expanded = true, holdRead = false } = {}) {
   const db = { items: items.map(x => ({ ...x })), sugs: suggestions.map(x => ({ ...x })), posts: [], reads: 0, fail: { ...fail } };
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760, colorScheme: scheme, reducedMotion: 'reduce' });
-  await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  await ctx.addInitScript(on => { try { localStorage.setItem('localai.firstRun.done', '1'); if (on) sessionStorage.setItem('localai.ownerFacts.expanded', '1'); } catch {} }, expanded);
+  if (holdRead) db.readHeld = new Promise(r => { db.letRead = r; });
   const page = await ctx.newPage();
   page.db = db; page.errors = [];
   page.on('pageerror', e => page.errors.push(e.message));
@@ -53,8 +56,9 @@ async function open(viewport, { items = [], suggestions = [], fail = {}, scheme 
   await ctx.route(u => u.pathname === '/api/approvals', r => json(r, { items: [] }));
   await page.route(u => u.pathname === '/api/projects', r => json(r, { items: [], total: 0 }));
   await page.route(u => u.pathname === '/api/memory', r => json(r, { items: db.items }));
-  await page.route(u => u.pathname === '/api/facts/suggestions', r => {
+  await page.route(u => u.pathname === '/api/facts/suggestions', async r => {
     db.reads++;
+    if (db.readHeld) await db.readHeld;
     if (db.fail.read === 401) return json(r, { error: 'Sign in on this device first: pair it under Build › Claude Code.', signIn: true }, 401);
     if (db.fail.read) return json(r, { error: "Couldn't read your suggested facts." }, db.fail.read);
     json(r, { items: db.sugs });
@@ -208,7 +212,7 @@ await check('full list: Save and Edit are disabled with the reason beside them; 
   await page.context().close();
 });
 
-await check('saving shows Saving… with the row disabled; a failed save keeps the edited text and says why', async () => {
+await check('saving shows Saving… with focus kept and announced; a failed save keeps the edited text and says why once', async () => {
   const page = await open(desk, { suggestions: [sug('fs-1', PLA)], fail: { decide: 500 } });
   let release; page.db.held = new Promise(r => { release = r; });
   await rows(page).first().locator('[data-suggest-edit]').click();
@@ -217,13 +221,18 @@ await check('saving shows Saving… with the row disabled; a failed save keeps t
   await page.locator('#ownerSuggestList button[type="submit"]', { hasText: 'Saving…' }).waitFor(T);
   assert.equal(await page.locator('#ownerSuggestList [data-suggest-cancel]').isDisabled(), true);
   assert.equal(await page.locator('#ownerSuggestEdit').evaluate(i => i.readOnly), true);
+  // Focus stays on the pressed button (busy, not disabled), and the live line says what is happening.
+  assert.deepEqual(await page.evaluate(() => { const a = document.activeElement; return [a?.type, a?.getAttribute('aria-busy'), a?.getAttribute('aria-disabled')]; }), ['submit', 'true', 'true']);
+  assert.equal((await page.locator('#ownerSuggestLive').textContent()).trim(), 'Saving…');
   release();
   const err = page.locator('#ownerSuggestList .owner-facts__error');
   await err.waitFor(T);
-  assert.equal((await err.textContent()).trim(), "Couldn't save this fact: database is locked.");
+  assert.equal((await err.textContent()).trim(), 'Database is locked. Choose Save fact to try again.', "the server's reason once, and the way out");
   assert.equal(await page.locator('#ownerSuggestEdit').inputValue(), 'You print mostly PLA and PETG', 'what was typed stays');
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'ownerSuggestEdit');
   assert.equal((await page.locator('#ownerSuggestList button[type="submit"]').textContent()).trim(), 'Save fact');
+  assert.equal(await page.locator('#ownerSuggestList button[type="submit"]').getAttribute('aria-busy'), null);
+  assert.equal((await page.locator('#ownerSuggestLive').textContent()).trim(), '');
   assert.equal(await page.locator('#ownerFactsEmpty').count(), 1, 'nothing shown as saved');
   await shot(page, 'memory-suggestions-failed-save-1280-dark', '#ownerFacts');
   await page.context().close();
@@ -233,8 +242,10 @@ await check('failed read: says it couldn\'t read the suggestions (never "none"),
   const page = await open(desk, { items: [fact('f1', 'You live in a two-storey house.')], suggestions: [sug('fs-1', PLA)], fail: { read: 503 } });
   const n = page.locator('#ownerSuggestState');
   await n.waitFor(T);
-  assert.match(await n.getAttribute('class'), /ui-notice--bad/);
-  assert.equal((await n.textContent()).trim(), "Couldn't read suggested facts: Couldn't read your suggested facts.");
+  assert.match(await n.getAttribute('class'), /ui-notice--warn/, 'the same warning as under an answer');
+  assert.equal(await n.getAttribute('role'), null, 'drawn with the page: no alert');
+  assert.equal((await n.textContent()).trim(), "Couldn't read your suggested facts.", "the server's reason, once");
+  assert.equal((await page.locator('#ownerSuggestCount').textContent()).trim(), "· suggestions couldn't be read", 'the count line says so too');
   assert.deepEqual(await factTexts(page), ['You live in a two-storey house.'], 'the saved facts still show');
   assert.doesNotMatch(await page.locator('#ownerFacts').innerText(), /no suggest/i);
   assert.deepEqual(await axe(page, '#ownerFacts'), []);
@@ -243,6 +254,7 @@ await check('failed read: says it couldn\'t read the suggestions (never "none"),
   await page.locator('#ownerSuggestRetry').click();
   await rows(page).first().waitFor(T);
   assert.equal(await page.locator('#ownerSuggestState').count(), 0);
+  assert.equal(await page.evaluate(() => document.activeElement?.hasAttribute('data-suggest-save')), true, 'focus moves to the first suggestion');
   await page.context().close();
 });
 
@@ -254,7 +266,60 @@ await check('a device that isn\'t paired is told where suggestions show, as plai
   assert.doesNotMatch(await n.getAttribute('class'), /ui-notice/);
   await page.context().close();
   page = await open(desk, { suggestions: [] });
+  await page.waitForFunction(() => document.getElementById('ownerFactsToggle'));
+  await page.waitForTimeout(300);
+  assert.ok(page.db.reads >= 1);
+  assert.equal(await page.locator('#ownerSuggestCount').count(), 0);
   assert.equal(await page.locator('#ownerSuggestTitle, #ownerSuggestState, #ownerSuggestList').count(), 0);
+  await page.context().close();
+});
+
+await check('folded: the count line says how many wait and the toggle opens them; notes stay on a phone\'s first screen (system-lists)', async () => {
+  const notes = [1, 2, 3].map(n => ({ id: `m${n}`, projectId: '', category: 'note', text: `Memory ${n}`, pinned: false, createdAt: iso(n), updatedAt: iso(n) }));
+  const page = await open(phone, { items: [fact('f1', 'You live in a two-storey house.'), ...notes], suggestions: [sug('fs-1', PLA), sug('fs-2', METRIC), sug('fs-3', LONG)], expanded: false });
+  await page.locator('#ownerSuggestCount').waitFor(T);
+  assert.equal((await page.locator('#ownerFactsBody .owner-facts__count').textContent()).trim(), '1 of 30 facts · used only in answers from this PC · 3 suggestions');
+  assert.equal(await page.locator('#ownerFactsPanel').isVisible(), false);
+  assert.equal(await page.locator('#ownerSuggestList').isVisible(), false);
+  await page.locator('#memoryList .memory-card').first().waitFor(T);
+  const top = await page.locator('#memoryList .memory-card').first().evaluate(e => e.getBoundingClientRect().top);
+  console.log(`  first note top at 390x844 with 3 suggestions: ${Math.round(top)}px`);
+  assert.ok(top < 844 - 120, `the first note starts at ${Math.round(top)}px, on the first screen`);
+  await shot(page, 'memory-folded-3-suggestions-390-dark');
+  await page.locator('#ownerFactsToggle').click();
+  await rows(page).nth(2).waitFor(T);
+  assert.equal(await page.locator('#ownerFactsToggle').getAttribute('aria-expanded'), 'true');
+  await page.context().close();
+  // No facts yet: the toggle names what is there to see.
+  const p2 = await open(desk, { suggestions: [sug('fs-1', PLA)], expanded: false });
+  await p2.locator('#ownerSuggestCount').waitFor(T);
+  assert.equal((await p2.locator('#ownerFactsToggle').textContent()).trim(), 'Show suggestions');
+  assert.equal((await p2.locator('#ownerSuggestCount').textContent()).trim(), '· 1 suggestion');
+  await p2.context().close();
+});
+
+await check('the saved facts get their own heading and count, a section gap below the suggestions', async () => {
+  const page = await open(desk, { items: [fact('f1', 'You live in a two-storey house.'), fact('f2', 'You have a heat pump.', 1)], suggestions: [sug('fs-1', PLA)] });
+  await rows(page).first().waitFor(T);
+  assert.equal((await page.locator('#ownerFactsSavedTitle').textContent()).trim(), 'Saved facts');
+  assert.equal((await page.locator('#ownerFactsSavedTitle + p').textContent()).trim(), '2 of 30');
+  const gap = await page.evaluate(() => {
+    const a = document.querySelector('.owner-facts__suggest').getBoundingClientRect(), b = document.getElementById('ownerFactsSavedTitle').getBoundingClientRect();
+    const s5 = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-s-5')) * parseFloat(getComputedStyle(document.documentElement).fontSize);
+    return { gap: b.top - a.bottom, s5 };
+  });
+  assert.ok(Math.abs(gap.gap - gap.s5) <= 1, `gap ${gap.gap}px, s-5 ${gap.s5}px`);
+  await shot(page, 'memory-saved-heading-1280-dark', '#ownerFacts');
+  await page.context().close();
+});
+
+await check('the saved facts draw without waiting for the suggestions read', async () => {
+  const page = await open(desk, { items: [fact('f1', 'You live in a two-storey house.')], suggestions: [sug('fs-1', PLA)], holdRead: true });
+  await page.locator('#ownerFactsList').waitFor(T);
+  assert.deepEqual(await factTexts(page), ['You live in a two-storey house.']);
+  assert.equal(await page.locator('#ownerSuggestList, #ownerSuggestState').count(), 0, 'still reading: nothing said yet');
+  page.db.letRead();
+  await rows(page).first().waitFor(T);
   await page.context().close();
 });
 
@@ -264,7 +329,7 @@ const openRun = async (page, id) => { await page.evaluate(i => window.LocalAIRun
 
 for (const [viewport, scheme] of [[desk, 'dark'], [desk, 'light'], [phone, 'dark'], [phone, 'light']]) {
   await check(`${viewport.width}px ${scheme}: one quiet line under the answer it came from, linking to Memory; axe`, async () => {
-    const runs = [chatRun(1, 'Which printer do I have?', 'A Bambu X2D.'), chatRun(2, 'I print mostly PLA on my X2D. What temperature?', 'Try 215 °C.')];
+    const runs = [chatRun(1, 'Which printer do I have?', 'A Bambu X2D.'), chatRun(2, 'I print mostly PLA on my X2D. What temperature?', 'Try 215 °C.', { facts: USED })];
     const page = await open(viewport, { hash: '#home', runs, suggestions: [sug('fs-1', PLA, runs[1].id)], scheme });
     await openRun(page, runs[1].id);
     const answer = page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Try 215' });
@@ -275,6 +340,8 @@ for (const [viewport, scheme] of [[desk, 'dark'], [desk, 'light'], [phone, 'dark
     assert.doesNotMatch(await line.getAttribute('class'), /ui-notice/);
     assert.equal(await line.locator('a').getAttribute('href'), '#memory');
     assert.equal(await line.locator('button').count(), 0, 'no decision under the answer: that is on Memory');
+    assert.equal(await answer.evaluate(n => n.lastElementChild.className), 'fact-line', 'last, after "Used 2 of your saved facts"');
+    assert.ok(await answer.evaluate(n => n.querySelector('.run-memory').compareDocumentPosition(n.querySelector('.fact-line')) & Node.DOCUMENT_POSITION_FOLLOWING));
     if (viewport.width < 760) assert.ok((await line.locator('a').boundingBox()).height >= 44, '44 px link');
     assert.equal(await noOverflow(page), true);
     assert.deepEqual(await axe(page, '#runDrawer'), []);
@@ -283,6 +350,7 @@ for (const [viewport, scheme] of [[desk, 'dark'], [desk, 'light'], [phone, 'dark
     await page.evaluate(() => window.dispatchEvent(new Event('resize')));
     await page.waitForTimeout(300);
     assert.equal(await answer.locator('.fact-line').count(), 1);
+    assert.equal(await answer.evaluate(n => n.lastElementChild.className), 'fact-line');
     assert.deepEqual(page.errors, []);
     await page.context().close();
   });
@@ -304,6 +372,37 @@ await check('a suggestion that arrives after the answer shows up without a reloa
   await rows(page).first().locator('[data-suggest-no]').click();
   await page.locator('#ownerSuggestList').waitFor({ state: 'detached', ...T });
   await page.waitForFunction(() => !document.querySelector('.fact-line'), null, T);
+  await page.context().close();
+});
+
+await check('only the newest answer gets a line: a late suggestion for an earlier answer never pushes the later one down', async () => {
+  const runs = [chatRun(1, 'I print mostly PLA on my X2D. What temperature?', 'Try 215 °C.'), chatRun(2, 'And for PETG?', 'Try 240 °C.')];
+  const page = await open(desk, { hash: '#home', runs, suggestions: [] });
+  await openRun(page, runs[1].id);
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Try 240' }).waitFor(T);
+  const later = () => page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Try 240' }).evaluate(n => n.getBoundingClientRect().top);
+  await page.locator('#runDrawer .answer-feedback').nth(1).waitFor(T);
+  await page.waitForTimeout(600);   // the drawer has settled
+  const before = await later();
+  page.db.sugs = [sug('fs-1', PLA, runs[0].id)];
+  const reads = page.db.reads;
+  for (let i = 0; i < 80 && page.db.reads < reads + 2; i++) await page.waitForTimeout(100);   // two more polls
+  assert.ok(page.db.reads >= reads + 2, 'it did read again');
+  assert.equal(await page.locator('#runDrawer .fact-line').count(), 0);
+  assert.equal(await later(), before, 'the later answer did not move');
+  await page.context().close();
+});
+
+await check('a failed read under a fresh answer warns, and the next check that works replaces it', async () => {
+  const runs = [chatRun(1, 'I print mostly PLA on my X2D. What temperature?', 'Try 215 °C.')];
+  const page = await open(desk, { hash: '#home', runs, fail: { read: 503 } });
+  await openRun(page, runs[0].id);
+  const line = page.locator('#runDrawer .fact-line');
+  await line.waitFor(T);
+  assert.match(await line.getAttribute('class'), /ui-notice--warn/);
+  delete page.db.fail.read; page.db.sugs = [sug('fs-1', PLA, runs[0].id)];
+  await page.locator('#runDrawer .fact-line:not(.ui-notice)', { hasText: 'Local AI suggests remembering' }).waitFor({ timeout: 12000 });
+  assert.equal(await page.locator('#runDrawer .fact-line').count(), 1);
   await page.context().close();
 });
 

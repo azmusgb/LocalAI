@@ -2753,6 +2753,8 @@ html.is-framed body.ux-v3 .ux-page-strip{top:0}
 .owner-facts__panel{display:grid;gap:var(--ui-s-3)}
 .owner-facts__panel>.ui-btn{justify-self:start}
 .owner-facts__panel[hidden]{display:none}
+/* Suggested by Local AI (owner-facts.js), then the saved facts: a section gap (the panel's gap and this margin, s-5) between them. */
+.owner-facts__suggest{display:grid;gap:var(--ui-s-3);margin-bottom:var(--ui-s-3)}.owner-facts__suggest>*{margin:0}.owner-facts__suggest>.ui-btn{justify-self:start}
 .owner-facts__wait{height:var(--ui-s-6)}
 /* A focused row clears the sticky head (two header heights: the bar and, on a phone, the strip). */
 .owner-fact,.owner-fact :is(.ui-btn,.ui-field){scroll-margin-top:calc(var(--ui-header-total) + var(--ui-header-total) + var(--ui-s-3))}
