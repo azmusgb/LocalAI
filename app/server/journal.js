@@ -18,7 +18,9 @@ function plainModelError(e) {
 const ASK_BODY_MAX = 4 * 1024;
 
 function createJournalRoutes(ctx) {
-  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, coordinator, fitMessages, journal, json, modelFetchWithTimeout, readBody, runLedger, storageError } = ctx;
+  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, coordinator, fitMessages, journal, json, modelFetchWithTimeout, prints, readBody, runLedger, storageError } = ctx;
+  // prints: Pi Hub's print list reader (app/pi-hub.js createPiHub().prints), read when a question is about prints and
+  // kept nowhere (A28 D2/D3, A29). Without one, a print question says the list can't be read from here.
   async function apiJournal(req, res, urlObj) {
     try {
       const q = urlObj.searchParams;
@@ -73,7 +75,7 @@ function createJournalRoutes(ctx) {
       let read = [], from = 'journal';
       try {
         runLedger.start(run.id, 'Reading past work');
-        const out = await askHistory({ question: q, journal, chatOnce: localTurn(local.model), onEntries: (entries, where) => { read = entries; from = where; runLedger.update(run.id, { progress: 40 }, `Asking the local model about ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`); } });
+        const out = await askHistory({ question: q, journal, chatOnce: localTurn(local.model), prints, onEntries: (entries, where) => { read = entries; from = where; runLedger.update(run.id, { progress: 40 }, `Asking the local model about ${entries.length} ${entries.length === 1 ? 'entry' : 'entries'}`); } });
         // No summary: the run view would show the answer twice; cards preview output.text (app/run-cards.js).
         return runLedger.complete(run.id, { output: runOutput(out), meta: { route: used } });
       } catch (e) {
