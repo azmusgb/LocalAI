@@ -2244,9 +2244,14 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     if (!(view.noteId && document.activeElement?.closest?.('[data-claude-note-form]'))) renderFindings(d.findings);
   }
 
+  // The newest SESSION_OPTIONS sessions (the board sends them newest first), plus the one being viewed if it is older.
+  const SESSION_OPTIONS = 50;
   function renderSessions(sessions) {
     const sel = $('claudeSession');
-    const opts = ['<option value="">All sessions</option>', ...sessions.map((s) => `<option value="${esc(s.id)}"${s.id === view.session ? ' selected' : ''}>${esc(s.title)} · ${esc(ago(s.updatedAt))}</option>`)];
+    const shown = (sessions || []).slice(0, SESSION_OPTIONS);
+    const picked = view.session && !shown.some((s) => s.id === view.session) && (sessions || []).find((s) => s.id === view.session);
+    if (picked) shown.push(picked);
+    const opts = ['<option value="">All sessions</option>', ...shown.map((s) => `<option value="${esc(s.id)}"${s.id === view.session ? ' selected' : ''}>${esc(s.title)} · ${esc(ago(s.updatedAt))}</option>`)];
     const html = opts.join('');
     if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
   }

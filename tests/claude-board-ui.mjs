@@ -157,6 +157,30 @@ await check('live titles and steps are text, never markup', async () => {
   assert.match(await pg.locator('#claudeLiveNow button').innerText(), /<img src=x/);
   await pg.close();
 });
+// The live board once held 1391 sessions and the picker built an option for each. It lists the newest 50, plus the
+// session being viewed when that is older.
+await check('the session picker lists the newest 50 sessions, plus the one being viewed', async () => {
+  const pg = await browser.newPage({ serviceWorkers: 'block', viewport: { width: 1280, height: 900 } });
+  const many = Array.from({ length: 120 }, (_, i) => ({ id: `cc-many${String(i).padStart(4, '0')}`, title: 'billrahe · Claude Code', status: 'idle', updatedAt: iso(600 + i * 60) }));
+  const old = many.at(-1);
+  await pg.route('**/api/claude/board*', async (route) => {
+    const res = await route.fetch().catch(() => null);
+    if (!res) return route.abort().catch(() => {});
+    const j = await res.json();
+    j.sessions = many;
+    j.live = [{ id: old.id, title: `${old.title} · many0119`, state: 'waiting', lastEvent: 'Finished responding', at: iso(60) }];
+    await route.fulfill({ response: res, json: j }).catch(() => {});
+  });
+  await pg.goto(base, { waitUntil: 'networkidle' });
+  await pg.evaluate(() => window.showView('claude'));
+  await pg.waitForSelector('#claudeLiveNow button[data-claude-live]');
+  assert.equal(await pg.locator('#claudeSession option').count(), 51, '"All sessions" plus the newest 50');
+  assert.equal(await pg.locator(`#claudeSession option[value="${old.id}"]`).count(), 0);
+  await liveChips(pg).first().click();
+  await pg.waitForFunction((id) => document.getElementById('claudeSession').value === id, old.id);
+  assert.equal(await pg.locator('#claudeSession option').count(), 52, 'the viewed older session is added, so the picker shows it');
+  await pg.close();
+});
 // app.js is a module, so window.toast never existed and a failed vote fell back to a blocking alert(). It says so in the toast.
 await check('a failed action says so in the toast, never a blocking alert', async () => {
   await post('/api/claude/findings', { sessionId: 'ui-test', findings: [{ id: 'ui-vote-fail', title: 'Vote target', category: 'ux', severity: 'low', summary: 'x' }] });
