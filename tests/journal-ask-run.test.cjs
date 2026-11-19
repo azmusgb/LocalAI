@@ -103,3 +103,17 @@ test('an empty question starts no run', t => {
   for (const question of ['', '   ', null, 42]) assert.throws(() => routes.startPastWork({ question }), /question/i);
   assert.equal(runLedger.list({ all: true }).length, 0);
 });
+
+// A28 D5 rule 4: no journal text goes into a run that has tools (missions, agents, changes, automations). The journal
+// and Past work reach only the journal routes and voice; no tool-running module reads the journal.
+test('the journal is handed only to the journal routes, and Past work only to voice (A28 D5)', () => {
+  const server = fs.readFileSync(path.join(__dirname, '../app/server.js'), 'utf8');
+  const wiring = [...server.matchAll(/require\('\.\/server\/([a-z-]+)'\)\.create[A-Za-z]+\(\{([^\n]*)\}\)/g)].map(m => ({ file: m[1], names: m[2] }));
+  const given = name => wiring.filter(w => new RegExp(`(?:^|[,{\\s])${name}(?=[,}\\s:])`).test(w.names)).map(w => w.file).sort();
+  assert.deepEqual(given('journal'), ['journal']);
+  assert.deepEqual(given('startPastWork'), ['voice']);
+  for (const file of ['server/agents.js', 'server/changes.js', 'server/automations.js', 'server/chat.js', 'agent-runtime.js', 'agent-orchestrator.js', 'agent-tools.js', 'mission-answer.js', 'mission-evidence.js']) {
+    const source = fs.readFileSync(path.join(__dirname, '../app', file), 'utf8');
+    assert.doesNotMatch(source, /require\([^)]*journal|startPastWork|askHistory/, `${file} reads no journal`);
+  }
+});
