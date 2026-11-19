@@ -62,13 +62,13 @@
   }
 
   // ---- How answers have landed (GET /api/runs/feedback/summary) ----
-  // Under the routing table, in the same card: counts by model for 30 and 90 days, then the newest answers marked not
-  // right with the run they came from. Loading, empty and a failed read come from LocalAIUI.loadInto; a failed read says
-  // so and never shows zeros.
-  const fb = document.createElement('div');
-  fb.id = 'answerFeedback'; fb.className = 'ui-cq ui-section';
-  fb.innerHTML = '<h3 id="answerFeedbackTitle">How answers have landed</h3><p class="meta">From the Good answer and Not right buttons under each answer. They are kept here and never sent to a model.</p><div id="answerFeedbackBody" class="ui-section"></div>';
-  function placeFeedback() { const box = $('modelRouting'); if (box && fb.parentNode !== box) box.appendChild(fb); }
+  // A section of its own on Models, right after the Cloud models card (heading and rows, no card): counts by model for 30
+  // and 90 days, then the newest answers marked not right with the run they came from. Loading, empty and a failed read
+  // come from LocalAIUI.loadInto; a failed read says so and never shows zeros.
+  const fb = document.createElement('section');
+  fb.id = 'answerFeedback'; fb.className = 'ui-cq ui-section'; fb.setAttribute('aria-labelledby', 'answerFeedbackTitle');
+  fb.innerHTML = '<h2 id="answerFeedbackTitle">How answers have landed</h2><p class="ui-section__note">From the Good answer and Not right buttons under each answer. They are kept here and never sent to a model.</p><div id="answerFeedbackBody" class="ui-section"></div>';
+  function placeFeedback() { const box = $('modelRouting'); if (box && box.nextElementSibling !== fb) box.after(fb); }
   const PROVIDERS = { ollama: 'On this PC', groq: 'Groq', cerebras: 'Cerebras' };
   const modelName = r => r.provider ? `${PROVIDERS[r.provider] || r.provider}${r.model ? ' · ' + r.model : ''}` : 'Not recorded';
   const when = iso => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? 'Time not recorded' : d.toLocaleString([], { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }); };
@@ -85,10 +85,11 @@
     if (!list.length) return '<p class="meta">No answers marked not right.</p>';
     return `<ul class="ui-rows" id="answerFeedbackRecent">${list.map(x => {
       const asked = esc(x.asked || 'Question not recorded');
-      const title = x.kept ? `<a class="ui-row__title" href="#run/${encodeURIComponent(x.runId)}">${asked}</a>` : `<span class="ui-row__title">${asked}</span>`;
       const bits = [x.note ? `"${x.note}"` : 'No note', when(x.at), modelName(x)];
       if (!x.kept) bits.push('this run is no longer kept');
-      return `<li class="ui-row"><div>${title}<span class="ui-row__detail">${esc(bits.join(' · '))}</span></div></li>`;
+      const inner = `<div><span class="ui-row__title">${asked}</span><span class="ui-row__detail">${esc(bits.join(' · '))}</span></div>`;
+      // A kept run's whole row is the link to it, so the target is the row (44 px and up), not one line of text.
+      return x.kept ? `<li><a class="ui-row" href="#run/${encodeURIComponent(x.runId)}">${inner}</a></li>` : `<li class="ui-row">${inner}</li>`;
     }).join('')}</ul>`;
   }
   function loadFeedback() {

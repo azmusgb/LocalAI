@@ -128,6 +128,7 @@ await check('a failed save says so, and the button keeps its earlier state (neve
   // Saving: the control says so and nothing is pressed yet.
   await page.waitForFunction(() => /Saving/.test(document.querySelector('#runDrawer .answer-feedback__state')?.textContent || ''), null, T);
   assert.equal(await page.locator('#runDrawer button[data-verdict="bad"]').getAttribute('aria-busy'), 'true');
+  assert.equal(await page.locator('#runDrawer .answer-feedback__state').first().getAttribute('role'), 'status', 'Saving… is in a live region');
   assert.deepEqual(await pressed(page), ['good:true', 'bad:false']);
   release();
   const fail = page.locator('#runDrawer .answer-feedback__fail');
@@ -194,6 +195,9 @@ for (const [name, viewport] of [['phone', phone], ['tablet', tablet], ['desktop'
     await page.getByLabel('What was wrong? (optional)').waitFor(T);
     assert.deepEqual(await axe(page, '#runDrawer'), []);
     const sizes = await page.evaluate(() => [...document.querySelectorAll('#runDrawer .answer-feedback button')].map(b => Math.round(b.getBoundingClientRect().height)));
+    // Save note can be seen on the answer bubble: its outline or fill differs from the bubble behind it.
+    const seen = await page.evaluate(() => { const b = [...document.querySelectorAll('#runDrawer .answer-feedback__note button')][0], s = getComputedStyle(b), bg = getComputedStyle(b.closest('.chat-turn')).backgroundColor; return (s.borderStyle !== 'none' && parseFloat(s.borderWidth) > 0 && s.borderColor !== bg) || (s.backgroundColor !== bg && s.backgroundColor !== 'rgba(0, 0, 0, 0)'); });
+    assert.ok(seen, 'Save note has a visible edge or fill on the bubble');
     if (viewport.width < 760) assert.ok(sizes.every(h => h >= 44), `touch targets: ${sizes}`);
     const over = await page.evaluate(() => { const r = document.querySelector('#runDrawer .answer-feedback').getBoundingClientRect(); return r.right > document.documentElement.clientWidth + 1; });
     assert.equal(over, false, 'no horizontal overflow');
@@ -218,7 +222,14 @@ await check('Models › How answers have landed: loaded, with counts by model, l
     const rows = await page.locator('#answerFeedbackRecent li').allInnerTexts();
     assert.match(rows[0], /It suggested PLA for a hot car/);
     assert.match(rows[1], /No note/); assert.match(rows[1], /Not recorded/); assert.match(rows[1], /this run is no longer kept/);
-    assert.deepEqual(await axe(page, '#modelRouting'), []);
+    // Its own section after the Cloud models card, not inside it: h2 for the section, h3 for the recent list.
+    assert.deepEqual(await page.evaluate(() => { const f = document.getElementById('answerFeedback'); return [f.tagName, f.closest('.card') === null, f.previousElementSibling?.id, f.querySelector('h2')?.textContent, [...f.querySelectorAll('h3')].map(h => h.textContent)]; }),
+      ['SECTION', true, 'modelRouting', 'How answers have landed', ['Recent answers marked not right']]);
+    // A kept run's row is the link: a 44 px target at every width.
+    const target = await link.evaluate(a => { const r = a.getBoundingClientRect(); return [Math.round(r.height), Math.round(r.width)]; });
+    assert.ok(target[0] >= 44, `the recent row link is ${target[0]} px tall`);
+    assert.ok(target[1] >= 200, `the recent row link spans the row (${target[1]} px)`);
+    assert.deepEqual(await axe(page, '#answerFeedback'), []);
     await page.locator('#answerFeedback').scrollIntoViewIfNeeded();
     await shot(page, `models-feedback-loaded-${name}-${scheme}.png`);
     assert.deepEqual(page.errors, []);
@@ -231,7 +242,7 @@ await check('Models › How answers have landed: empty says how to rate; a faile
   await page.evaluate(() => window.showView('models'));
   await page.locator('#answerFeedbackBody .state-empty').waitFor(T);
   assert.equal(await page.locator('#answerFeedbackBody').innerText(), 'No answers rated yet. Use the buttons under an answer.');
-  assert.deepEqual(await axe(page, '#modelRouting'), []);
+  assert.deepEqual(await axe(page, '#answerFeedback'), []);
   await page.locator('#answerFeedback').scrollIntoViewIfNeeded();
   await shot(page, 'models-feedback-empty-desktop-dark.png');
   await page.context().close();
@@ -243,7 +254,7 @@ await check('Models › How answers have landed: empty says how to rate; a faile
   assert.match(text, /Couldn't load how answers have landed/);
   assert.doesNotMatch(text, /\b0\b|No answers rated/);
   assert.equal(await bad.locator('#answerFeedbackBody table').count(), 0);
-  assert.deepEqual(await axe(bad, '#modelRouting'), []);
+  assert.deepEqual(await axe(bad, '#answerFeedback'), []);
   await bad.locator('#answerFeedback').scrollIntoViewIfNeeded();
   await shot(bad, 'models-feedback-failed-desktop-dark.png');
   // Retry reads again.

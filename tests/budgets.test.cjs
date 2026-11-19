@@ -149,9 +149,10 @@ const KB = 1024;
 // 2026-11-19: 363 → 364 KB when Past work met Past work in ⌘K on main: each fit its own raise, together 372,521 bytes
 // (363.8 KB) measured; app.js 38.9 KB, run-bodies.js 10.9 KB.
 // 2026-11-19: 364 → 365 KB for answer feedback (Good answer / Not right under an answer): the loader that fetches
-// answer-feedback.js the first time an answer is drawn (components.js +0.19 KB), the control's styles (app.css +0.16 KB)
-// and its hook in the chat and Past work bodies (run-bodies.js +0.03 KB). The control itself (answer-feedback.js, 3.0 KB)
-// and the Models summary (model-routing.js) load on demand. Main had 215 bytes left; 372,899 bytes (364.2 KB) measured.
+// answer-feedback.js the first time an answer is drawn (components.js +0.19 KB), the control's and the Models section's
+// styles (app.css +0.2 KB) and its hook in the chat and Past work bodies (run-bodies.js +0.03 KB). The control itself
+// (answer-feedback.js, 3.1 KB) and the Models section (model-routing.js) load on demand. Main had 215 bytes left;
+// 372,949 bytes (364.2 KB) measured.
 const TOTAL = 365 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
