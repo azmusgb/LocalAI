@@ -171,7 +171,8 @@ The Projects tab opens on your projects. Its tabs:
   takes effect from its next message. **Use these notes in chat**, on the project's Memory tab, turns this off for one
   project. If the notes can't be read, the answer says so and is written without them.
   Its first group, **About you and the house**, holds up to 30 lasting facts about you and your home (one sentence
-  each, up to 200 characters): add, edit or delete them there, or tap **Make this a fact** on a short shared note.
+  each, up to 200 characters). It shows only how many you have until you tap **Show facts** (it stays open while the
+  tab is open); add, edit or delete them there, or tap **Make this a fact** on a short shared note.
   Every chat, research or voice answer written on this computer starts with them (as many as fit in about 800
   characters, the newest left out first) and says **Used 2 of your saved facts**. They never leave this computer: an
   answer from a cloud model is written without them and says so, and they never make a chat stay on this computer. If

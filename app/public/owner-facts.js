@@ -19,7 +19,11 @@
 
   // 'loading' | 'ready' | 'error'. facts: oldest first, so a new one lands beside Add. shared: notes that may become one.
   // open: the list shows every fact; closed, the first SHOWN (oldest) and "Show all N facts".
-  const s = { state: 'loading', error: '', facts: [], shared: [], editing: '', seq: 0, open: false };
+  // expanded: the group shows its list and Add; folded, only its count line, so Memory's notes stay on the first screen.
+  // It holds for the tab's session, so a redraw or coming back to Memory doesn't snap it shut.
+  const EXPANDED_KEY = 'localai.ownerFacts.expanded';
+  const s = { state: 'loading', error: '', facts: [], shared: [], editing: '', seq: 0, open: false, expanded: false };
+  try { s.expanded = sessionStorage.getItem(EXPANDED_KEY) === '1'; } catch { /* storage off: start folded */ }
   const SHOWN = 5;
   const isFact = n => n && n.category === CATEGORY && !n.projectId;
   const when = n => { const v = Date.parse(n && n.createdAt); return Number.isNaN(v) ? 0 : v; };
@@ -69,22 +73,40 @@
     }
     const n = s.facts.length, full = n >= MAX_FACTS, more = n > SHOWN;
     if (!more) s.open = false;
-    const count = n ? `${n} of ${MAX_FACTS}` : '';
-    const keep = document.activeElement && document.activeElement.id === 'ownerFactText' ? $('ownerFactText').value : null;
+    const rule = `<p class="owner-facts__rule" id="ownerFactsRule">${full ? FULL : `One sentence, up to ${MAX_LENGTH} characters.`}</p>`;
+    // A redraw (Edit, Show all, a save) keeps a half-typed new fact, and its focus if it had it.
+    const addWas = $('ownerFactText'), keep = addWas ? { v: addWas.value, f: document.activeElement === addWas } : null;
     // A redraw while a fact is being edited (Show all / Show the first 5) keeps what was typed there.
     const ed = $('ownerFactEdit'), draft = ed && ed.closest('[data-fact-id]')?.dataset.factId === s.editing ? { v: ed.value, f: document.activeElement === ed } : null;
-    body.innerHTML = `${count ? `<p class="owner-facts__count" id="ownerFactsCount">${count}</p>` : ''}
-      ${n ? `<ul class="ui-rows" id="ownerFactsList">${s.facts.map(row).join('')}</ul>` : '<p class="ui-empty owner-facts__empty" id="ownerFactsEmpty">No facts yet. Add one, like the printer you use or units you prefer.</p>'}
+    // Folded: the count line (and, when full, why Add is off) with one button. Unfolded: the list, Show all and Add.
+    body.innerHTML = `<div class="owner-facts__head">${n
+        ? `<p class="owner-facts__count"><span id="ownerFactsCount">${n} of ${MAX_FACTS}</span> facts · used only in answers from this PC</p>`
+        : '<p class="owner-facts__count" id="ownerFactsEmpty">No facts yet. Add one, like the printer you use or units you prefer.</p>'}
+        <button type="button" class="ui-btn" id="ownerFactsToggle" aria-controls="ownerFactsPanel" aria-expanded="${s.expanded}">${toggleWords(n)}</button></div>
+      ${full ? rule : ''}
+      <div class="owner-facts__panel" id="ownerFactsPanel"${s.expanded ? '' : ' hidden'}>
+      ${n ? `<ul class="ui-rows" id="ownerFactsList">${s.facts.map(row).join('')}</ul>` : ''}
       ${more ? `<button type="button" class="ui-btn ui-btn--ghost" id="ownerFactsMore" aria-controls="ownerFactsList" aria-expanded="${s.open}">${s.open ? `Show the first ${SHOWN}` : `Show all ${n} facts`}</button>` : ''}
       <form class="owner-facts__form" id="ownerFactsAdd" novalidate>
         <label class="owner-facts__label" for="ownerFactText">Add a fact</label>
         <input id="ownerFactText" class="ui-field" maxlength="${MAX_LENGTH}" autocomplete="off" aria-describedby="ownerFactsRule"${full ? ' disabled' : ''}>
         <button type="submit" class="ui-btn" id="ownerFactAddBtn" aria-describedby="ownerFactsRule"${full ? ' disabled' : ''}>Add fact</button>
-        <p class="owner-facts__rule" id="ownerFactsRule">${full ? FULL : `One sentence, up to ${MAX_LENGTH} characters.`}</p>
+        ${full ? '' : rule}
         <p class="ui-notice ui-notice--bad owner-facts__error" id="ownerFactsAddError" role="alert" hidden></p>
-      </form>`;
-    if (keep !== null && !full) { const t = $('ownerFactText'); t.value = keep; t.focus(); }
+      </form></div>`;
+    if (keep && keep.v && !full) { const t = $('ownerFactText'); t.value = keep.v; if (keep.f) t.focus(); }
+    else if (keep && keep.f && !full) $('ownerFactText').focus();
     if (draft && $('ownerFactEdit')) { const t = $('ownerFactEdit'); t.value = draft.v; if (draft.f) t.focus(); }
+  }
+
+  const toggleWords = n => (s.expanded ? 'Hide facts' : n ? 'Show facts' : 'Add a fact');
+  // Unfold or fold the group in place: no redraw, so a half-typed fact or edit stays as it was.
+  function expand(on) {
+    s.expanded = on;
+    try { sessionStorage.setItem(EXPANDED_KEY, on ? '1' : '0'); } catch { /* storage off: this page view only */ }
+    const panel = $('ownerFactsPanel'), t = $('ownerFactsToggle');
+    if (panel) panel.hidden = !on;
+    if (t) { t.setAttribute('aria-expanded', String(on)); t.textContent = toggleWords(s.facts.length); }
   }
 
   const failIn = (form, text) => { const p = form.querySelector('.owner-facts__error'); p.textContent = text; p.hidden = false; };
@@ -94,6 +116,7 @@
   const focusRow = (id, opts = {}) => {
     const r = ui().refocus; if (!r) return;
     const want = [id, opts.next, opts.prev].find(x => x && s.facts.some(f => f.id === x));
+    if (!s.expanded) expand(true);   // focus never lands in a folded group
     if (want && !s.open && s.facts.findIndex(f => f.id === want) >= SHOWN) { s.open = true; paint(); }
     const add = $('ownerFactText');
     r(id, { within: '#ownerFactsList', key: 'factId', fallback: add && !add.disabled ? add : $('ownerFactsRule'), ...opts });
@@ -193,6 +216,7 @@
       const b = e.target.closest('button'); if (!b || b.disabled) return;
       const li = b.closest('[data-fact-id]');
       if (b.id === 'ownerFactsRetry') load();
+      else if (b.id === 'ownerFactsToggle') { const n = s.facts.length, on = !s.expanded; expand(on); if (on && !n) $('ownerFactText')?.focus(); }
       else if (b.id === 'ownerFactsMore') { s.open = !s.open; paint(); $('ownerFactsMore')?.focus(); }
       else if (b.matches('[data-fact-edit]')) { s.editing = li.dataset.factId; paint(); const t = $('ownerFactEdit'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
       else if (b.matches('[data-fact-cancel]')) { const id = s.editing; s.editing = ''; paint(); focusRow(id, { control: '[data-fact-edit]' }); }

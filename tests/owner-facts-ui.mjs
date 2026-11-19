@@ -22,10 +22,13 @@ const note = (id, text, projectId = '', n = 0) => ({ id, projectId, category: 'n
 const FULL = Array.from({ length: 30 }, (_, i) => fact('f' + i, `Fact number ${i + 1}.`, i));
 
 // fail: { read, add, update, delete } -> status to answer with instead of doing it. loadScript: false aborts /owner-facts.js.
-async function open(viewport, { items = [], fail = {}, loadScript = true } = {}) {
+// The group starts folded (count line and one button); open() unfolds it with that button unless folded: true, so each
+// check below asserts on the list as before. A failed read has no button, so it stays as it is.
+async function open(viewport, { items = [], fail = {}, loadScript = true, folded = false, noStorage = false } = {}) {
   const db = { items: items.map(x => ({ ...x })), posts: [], fail: { ...fail } };
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  if (noStorage) await ctx.addInitScript(() => Object.defineProperty(window, 'sessionStorage', { get() { throw new DOMException('The operation is insecure.', 'SecurityError'); } }));
   const page = await ctx.newPage();
   page.db = db; page.errors = [];
   page.on('pageerror', e => page.errors.push(e.message));
@@ -57,9 +60,16 @@ async function open(viewport, { items = [], fail = {}, loadScript = true } = {})
   await page.goto(base + '/#memory', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function' && document.getElementById('memory')?.classList.contains('active'), null, { timeout: 10000 });
   if (loadScript) await page.locator('#ownerFactsBody[aria-busy="false"]').waitFor(T);
+  if (loadScript && !folded && !fail.read) await unfold(page);
   return page;
 }
 const group = page => page.locator('#ownerFacts');
+async function unfold(page) {
+  const t = page.locator('#ownerFactsToggle');
+  if (await t.getAttribute('aria-expanded', T) === 'false') await t.click();
+  assert.equal(await t.getAttribute('aria-expanded'), 'true');
+  assert.equal(await page.locator('#ownerFactsPanel').isVisible(), true);
+}
 const rows = page => page.locator('#ownerFactsList > li');
 const close = page => page.context().close();
 
@@ -302,6 +312,89 @@ await check('390px: Shift+Tab back to row 1 brings the whole row into view: its 
   await close(page);
 });
 
+const panelShown = page => page.locator('#ownerFactsPanel').isVisible();
+await check('390px folded by default: a count line and Show facts (44 px); the notes start on the first screen; it stays open for the session', async () => {
+  const page = await open(phone, { items: [fact('a', 'Answers in metric.', 1), fact('b', 'The printer is an X2D.', 2), fact('c', 'Lives in Ohio.', 3), note('mem-s1', 'Prefers matte finishes.')], folded: true });
+  const t = page.locator('#ownerFactsToggle');
+  assert.equal((await page.locator('.owner-facts__count').textContent()).trim(), '3 of 30 facts · used only in answers from this PC');
+  assert.equal((await t.textContent()).trim(), 'Show facts');
+  assert.equal(await t.getAttribute('aria-expanded'), 'false');
+  assert.equal(await t.getAttribute('aria-controls'), 'ownerFactsPanel');
+  const box = await t.boundingBox();
+  assert.ok(box.height >= 44 && box.width >= 44, `Show facts is ${Math.round(box.width)}x${Math.round(box.height)}`);
+  assert.equal(await panelShown(page), false);
+  for (const sel of ['#ownerFactsList', '#ownerFactText', '#ownerFactsRule']) assert.equal(await page.locator(sel).isVisible(), false, `${sel} is folded away`);
+  const top = await page.locator('#memoryList .memory-card').first().evaluate(e => e.getBoundingClientRect().top);
+  assert.ok(top < 844 - 120, `the first note starts at ${Math.round(top)}px`);
+  await t.click();
+  assert.equal(await t.getAttribute('aria-expanded'), 'true');
+  assert.equal((await t.textContent()).trim(), 'Hide facts');
+  assert.equal(await rows(page).first().isVisible(), true);
+  assert.equal(await page.locator('#ownerFactText').isVisible(), true);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('#ownerFactsBody[aria-busy="false"]').waitFor(T);
+  assert.equal(await page.locator('#ownerFactsToggle').getAttribute('aria-expanded'), 'true', 'still open after a reload in the same tab');
+  assert.equal(await panelShown(page), true);
+  await page.locator('#ownerFactsToggle').click();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('#ownerFactsBody[aria-busy="false"]').waitFor(T);
+  assert.equal(await page.locator('#ownerFactsToggle').getAttribute('aria-expanded'), 'false', 'and folded again once folded');
+  await close(page);
+});
+
+await check('folded and empty: one line and Add a fact, which unfolds into the field with focus on it', async () => {
+  const page = await open(phone, { folded: true });
+  assert.equal(await page.locator('#ownerFactsEmpty').isVisible(), true);
+  const t = page.locator('#ownerFactsToggle');
+  assert.equal((await t.textContent()).trim(), 'Add a fact');
+  assert.equal(await t.getAttribute('aria-expanded'), 'false');
+  assert.equal(await page.locator('#ownerFactText').isVisible(), false);
+  await t.click();
+  assert.equal(await t.getAttribute('aria-expanded'), 'true');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'ownerFactText');
+  assert.equal(await page.locator('#ownerFactsRule').isVisible(), true);
+  await close(page);
+});
+
+await check('folded and full: the reason Add is off shows without unfolding', async () => {
+  const page = await open(phone, { items: FULL, folded: true });
+  assert.equal(await page.locator('#ownerFactsCount').textContent(), '30 of 30');
+  assert.equal(await page.locator('#ownerFactsRule').isVisible(), true);
+  assert.match(await page.locator('#ownerFactsRule').textContent(), /^Full: 30 of 30\./);
+  assert.equal(await panelShown(page), false);
+  await close(page);
+});
+
+await check('folded: "Make this a fact" unfolds the group and lands on the new fact\'s Edit', async () => {
+  const page = await open(phone, { items: [fact('a', 'Answers in metric.', 1), note('mem-s1', 'Prefers matte finishes.', '', 2)], folded: true });
+  await page.locator('#memoryList [data-mem-fact="mem-s1"]').click();
+  await page.waitForFunction(() => document.activeElement?.matches('[data-fact-id="mem-s1"] [data-fact-edit]'), null, T);
+  assert.equal(await page.locator('#ownerFactsToggle').getAttribute('aria-expanded'), 'true');
+  assert.equal(await page.evaluate(() => { const r = document.activeElement.getBoundingClientRect(); return r.width > 0 && r.top >= 0 && r.bottom <= innerHeight; }), true);
+  await close(page);
+});
+
+await check('folding keeps a half-typed fact and an unsaved edit; nothing is redrawn', async () => {
+  const page = await open(desk, { items: [fact('a', 'Answers in metric.', 1)] });
+  await page.locator('#ownerFactText').fill('Half typed');
+  await rows(page).first().getByRole('button', { name: 'Edit' }).click();
+  await page.locator('#ownerFactEdit').fill('Edited, not saved');
+  await page.locator('#ownerFactsToggle').click();
+  await page.locator('#ownerFactsToggle').click();
+  assert.equal(await page.locator('#ownerFactText').inputValue(), 'Half typed');
+  assert.equal(await page.locator('#ownerFactEdit').inputValue(), 'Edited, not saved');
+  await close(page);
+});
+
+await check('with session storage refused, the group still folds and unfolds', async () => {
+  const page = await open(desk, { items: [fact('a', 'Answers in metric.', 1)], folded: true, noStorage: true });
+  assert.equal(await page.locator('#ownerFactsToggle').getAttribute('aria-expanded'), 'false');
+  await page.locator('#ownerFactsToggle').click();
+  assert.equal(await panelShown(page), true);
+  assert.deepEqual(page.errors, []);
+  await close(page);
+});
+
 await check('error: a failed read says so, never "No facts yet", and Try again reads it again', async () => {
   const page = await open(desk, { items: [fact('a', 'Answers in metric.')], fail: { read: 500 } });
   await page.locator('#ownerFactsError[role="alert"]', { hasText: "Couldn't read your saved facts: database is locked." }).waitFor(T);
@@ -309,6 +402,7 @@ await check('error: a failed read says so, never "No facts yet", and Try again r
   assert.equal(await page.locator('#ownerFactsAdd').count(), 0, 'no Add while the list is unknown');
   page.db.fail.read = 0;
   await page.locator('#ownerFactsRetry').click();
+  await unfold(page);
   await rows(page).first().waitFor(T);
   assert.equal(await page.locator('#ownerFactsError').count(), 0);
   await close(page);
@@ -354,9 +448,14 @@ await check('Make this a fact: on short shared notes only; it moves the note int
 });
 
 await check('keyboard only: add, edit and delete with Tab, Enter and Escape, with the focus ring showing', async () => {
-  const page = await open(desk, { items: [fact('a', 'Answers in metric.', 1)] });
+  const page = await open(desk, { items: [fact('a', 'Answers in metric.', 1)], folded: true });
   const ring = () => page.evaluate(() => { const s = getComputedStyle(document.activeElement); return s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2; });
   await page.locator('#ownerFactsTitle').evaluate(h => { h.tabIndex = -1; h.focus(); });
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Show facts');
+  assert.ok(await ring(), 'Show facts shows the focus ring');
+  await page.keyboard.press('Enter');
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-expanded')), 'true', 'Enter unfolds the group and keeps focus');
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Edit');
   assert.ok(await ring(), 'Edit shows the focus ring');

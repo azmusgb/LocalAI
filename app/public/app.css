@@ -2740,10 +2740,14 @@ html.is-framed body.ux-v3 .ux-page-strip{top:0}
 .past-work__entry a.ui-row__title::after,.past-work__cites a::after{content:'';position:absolute;inset:0}
 .past-work__delete{flex:none;position:relative;z-index:1}
 /* Memory's facts (owner-facts.js) */
-.owner-facts{margin-block:var(--ui-s-5)}
+.owner-facts{margin-block:0}
 .owner-facts__body{display:grid;gap:var(--ui-s-3)}
 .owner-facts__body>*{margin:0}
 .owner-facts__body>.ui-btn{justify-self:start}
+.owner-facts__head{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-s-2) var(--ui-s-3)}
+.owner-facts__head>p{flex:1 1 14rem;margin:0}
+.owner-facts__panel{display:grid;gap:var(--ui-s-3)}
+.owner-facts__panel[hidden]{display:none}
 .owner-facts__wait{height:var(--ui-s-6)}
 /* A focused row clears the sticky head (two header heights: the bar and, on a phone, the strip). */
 .owner-fact,.owner-fact :is(.ui-btn,.ui-field){scroll-margin-top:calc(var(--ui-header-total) + var(--ui-header-total) + var(--ui-s-3))}
