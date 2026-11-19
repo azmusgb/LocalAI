@@ -86,6 +86,34 @@ test('routes that run code, write files or approve changes refuse a caller witho
   assert.ok(report.callers.some(c => c.ip === '10.0.0.37' && c.count >= 17), 'refused requests are still listed');
 });
 
+// The owner's past work (A28 D5/D6) and Claude's queue: reading or deleting journal entries, asking about them, and
+// changing, adding or handing board items to Claude are refused like /api/improve/handoff, which they would bypass.
+test('past work and the Claude queue refuse a caller without a device; a paired device and the Mac key get through', { timeout: 30000 }, async t => {
+  const base = await start(t);
+  const cookie = await pair(base);
+  const lan = viaCaddy('10.0.0.37', IPHONE);
+  const routes = [['GET', '/api/journal?limit=3'], ['POST', '/api/journal/delete', { id: 'j-none' }], ['POST', '/api/journal/ask', { question: 'what did I print' }],
+    ['POST', '/api/improve/item', { id: 'none', action: 'handToClaude' }], ['POST', '/api/improve/idea', { text: 'an idea' }],
+    ['POST', '/api/claude/findings/decision', { id: 'none', status: 'approved' }], ['POST', '/api/improve/handoff', { text: 'x' }]];
+  const send = (method, route, body, headers) => fetch(`${base}${route}`, method === 'GET' ? { headers } : { method, headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });
+  const refused = { error: 'Sign in on this device first: pair it under Improve › Claude Code.', signIn: true };
+  const got = [];
+  for (const [method, route, body] of routes) {
+    const r = await send(method, route, body, lan);
+    got.push([`${method} ${route}`, r.status, await r.json().catch(() => null)]);
+  }
+  assert.deepEqual(got, routes.map(([method, route]) => [`${method} ${route}`, 401, refused]), 'each route without a device answers like the other guarded routes');
+  // Signed in, the same reads pass (writes are checked on a route that changes nothing: the ids don't exist).
+  const paired = await send('GET', '/api/journal?limit=3', null, viaCaddy('10.0.0.40', IPHONE, { Cookie: cookie }));
+  assert.equal(paired.status, 200, 'a paired device reads past work');
+  assert.ok(Array.isArray((await paired.json()).items));
+  const mac = await send('GET', '/api/journal?limit=3', null, viaCaddy('10.0.0.5', 'python-urllib/3.14', { 'X-LocalAI-Mac-Key': KEY }));
+  assert.equal(mac.status, 200, 'the Mac key reads past work');
+  for (const [method, route, body] of routes.slice(1, 2).concat(routes.slice(3, 4), routes.slice(5, 6))) {
+    assert.notEqual((await send(method, route, body, viaCaddy('10.0.0.40', IPHONE, { Cookie: cookie }))).status, 401, `${method} ${route} paired`);
+  }
+});
+
 test('whoami renews a paired device cookie for all of Local AI; an unpaired one gets nothing', { timeout: 30000 }, async t => {
   const base = await start(t);
   const cookie = await pair(base);
