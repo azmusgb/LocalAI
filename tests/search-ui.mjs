@@ -62,8 +62,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 
   await check(`${w}px: no match says so and offers to search your work`, async () => {
     await open(page);
     await page.locator('#cmdkInput').fill('zzqx');
-    assert.match(await page.locator('#cmdkList').innerText(), /No pages match/);
-    await page.locator('#cmdkList [data-cmd-work]').click();
+    assert.match(await page.locator('#cmdkEmpty').innerText(), /No pages match/);
+    await page.locator('#cmdkEmpty [data-cmd-work]').click();
     await page.waitForSelector('#work.active');
     await page.waitForFunction(() => document.getElementById('workSearch').value === 'zzqx', null, { timeout: 3000 });
   });
