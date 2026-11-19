@@ -51,6 +51,18 @@ test('private requests never get a cloud model', () => {
   }
 });
 
+// Amendment A28 D5: a prompt that carries journal entries (Past work) is private whatever else is asked for.
+test('journal text never gets a cloud model, with "Use a bigger model" on and cloud switched on', () => {
+  assert.deepEqual(providers(R.route({ ...base, kind: 'chat', bigger: true })), ['groq', 'cerebras', 'ollama'], 'without the journal, this request would go out');
+  for (const kind of ['chat', 'research', 'plan', 'code']) {
+    const r = R.route({ ...base, kind, journal: true, bigger: true, text: 'Compare PETG and ASA for outdoor parts' });
+    assert.equal(r.class, 'private', kind);
+    assert.deepEqual(r.order, [{ provider: 'ollama', model: base.localModel }], kind);
+    assert.equal(r.why, 'Your past work stays on this PC');
+    assert.equal(R.stickyPrivate(r), true, 'and so does the rest of that conversation');
+  }
+});
+
 test('a provider without a key, or parked after a rate limit, is skipped', () => {
   assert.deepEqual(providers(R.route({ ...base, keys: { cerebras: true } })), ['cerebras', 'ollama']);
   assert.deepEqual(providers(R.route({ ...base, parked: { groq: Date.now() + 60000 } })), ['cerebras', 'ollama']);

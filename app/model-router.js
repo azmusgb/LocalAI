@@ -27,7 +27,8 @@ const PERSONAL = /\b(medic(al|ine|ation)s?|dose|dosage|prescription|diagnos\w*|s
 
 function personal(text) { return PERSONAL.test(String(text || '')); }
 
-// route({kind, text, voice, house, attachments, keepLocal, stay, bigger, model, cloud, keys, parked, env, localModel, now})
+// route({kind, text, voice, house, journal, attachments, keepLocal, stay, bigger, model, cloud, keys, parked, env, localModel, now})
+// journal: the prompt carries journal entries (Past work). Stored text never reaches a cloud model (amendment A28 D5).
 // → {class: 'private'|'shareable', why, order: [{provider, model}]}
 function route(req = {}) {
   const local = { provider: 'ollama', model: req.model || req.localModel };
@@ -36,6 +37,7 @@ function route(req = {}) {
   const why = req.keepLocal ? 'You asked to keep it on this PC'
     : req.voice ? 'Voice and Siri stay on this PC'
     : req.house ? 'House questions stay on this PC'
+    : req.journal ? 'Your past work stays on this PC'
     : req.attachments ? 'Files and photos stay on this PC'
     : typeof req.stay === 'string' && req.stay ? req.stay
     : personal(req.text) ? 'It looks personal (health, money or identity)'
