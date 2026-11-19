@@ -292,35 +292,36 @@
     li.appendChild(del);
     return li;
   }
-  // The entries were read when the run was; ask which still exist, so one deleted since (here or elsewhere) shows as
-  // deleted. A check that fails changes nothing: Delete still says "Already deleted" if it is.
+  // Entries deleted since the run (here or elsewhere) show as deleted; a failed check says so.
   async function markGone(ctx, ul, ids) {
     if (!ids.length) return;
     try {
       const have = new Set(((await RB.json('/api/journal?ids=' + ids.map(encodeURIComponent).join(','))).items || []).map(x => x.id));
       if (!ctx.alive()) return;
       for (const id of ids) if (!have.has(id)) { deletedEntries.add(id); const li = [...ul.children].find(n => n.dataset.entryId === id); if (li?.querySelector('.past-work__delete')) goneText(li, 'Deleted from your past work'); }
-    } catch {}
+    } catch { if (ctx.alive()) ul.after(h('p', 'muted past-work__source', "Couldn't check which entries were deleted since. Delete still says if one is already gone.")); }
   }
-  // A source the answer could not read is named, never drawn as "nothing matched" (the Honest states table).
+  // No entries and the journal wasn't the source: never "nothing matched" (Honest states).
   function sourceLine(o) {
-    if (o.unread) return `${String(o.unread).replace(/[.\s]+$/, '')}, so nothing was read from it.`;
     if (o.from === 'none') return 'The Assistant keeps no record of what was watched, so there was nothing to read.';
     if (o.from === 'prints') return "Bambuddy's print list had no print for this question.";
     return '';
   }
   function tryAgain(run, slot) {
-    const row = h('p', 'past-work__again'), b = h('button', 'btn-outline', 'Try again'), err = h('span', 'status-error'); b.type = 'button'; err.setAttribute('role', 'alert');
+    const row = h('p', 'past-work__again'), b = h('button', 'btn-outline', 'Try again'), err = h('span', 'status-error'); b.type = 'button'; err.setAttribute('role', 'alert'); err.hidden = true;
     b.addEventListener('click', async () => {
-      b.disabled = true; b.textContent = 'Asking again…'; err.textContent = '';
+      b.disabled = true; b.textContent = 'Asking again…'; err.textContent = ''; err.hidden = true;
       try {
         const r = await fetch('/api/runs/retry', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ id: run.id }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok || !j.runId) throw new Error(j.error || `HTTP ${r.status}`);
         window.LocalAIRuns?.refresh?.(); window.LocalAIRouter?.go(`#run/${encodeURIComponent(j.runId)}`);
-      } catch (e) { b.disabled = false; b.textContent = 'Try again'; err.textContent = ` Couldn't ask again: ${e.message || e}.`; }
+      } catch (e) { b.disabled = false; b.textContent = 'Try again'; err.textContent = `Couldn't ask again: ${e.message || e}.`; err.hidden = false; }
     });
-    row.append(b, err); slot.appendChild(row);
+    row.append(b, err);
+    // Prints unread: Workshop has them (A28 D3).
+    if (run.output?.unread && run.output?.from === 'prints') { const a = titled({ title: 'Open Workshop on Pi Hub', link: 'hub:workshop' }, 'past-work__hub'); row.append(a); }
+    slot.appendChild(row);
   }
   function mountPastWork(run, slot) {
     RB.mount(slot, ctx => {
@@ -336,7 +337,8 @@
       else if (run.status === 'failed') slot.appendChild(h('p', 'muted', 'No answer: it stopped before one was written (the reason is above).'));
       else if (run.output?.truncated) slot.appendChild(h('p', 'muted', 'This answer was too long to keep here.'));
       else slot.appendChild(h('p', 'muted', 'No answer was written.'));
-      if (run.status === 'failed' && run.input?.prompt) tryAgain(run, slot);
+      // Failed, or its source wasn't answering: ask again.
+      if ((run.status === 'failed' || (run.status === 'completed' && o.unread)) && run.input?.prompt) tryAgain(run, slot);
       if (cites.length) {
         slot.appendChild(h('h3', '', 'Cited'));
         const ol = h('ol', 'past-work__cites');
@@ -344,6 +346,7 @@
         slot.appendChild(ol);
       }
       if (live) return;
+      if (!entries.length && o.unread) return; // the answer already names the source it couldn't read
       const line = entries.length ? '' : sourceLine(o);
       if (line) { slot.appendChild(h('p', 'muted past-work__source', line)); return; }
       slot.appendChild(h('h3', '', entries.length === 1 ? 'The entry it read' : 'What it read'));

@@ -2717,5 +2717,10 @@ html.is-framed body.ux-v3 .ux-page-strip{top:0}
 .past-work__cites a,.past-work__entry a{color:var(--ui-accent-text);text-decoration:underline}
 .past-work__n{font-variant-numeric:tabular-nums;color:var(--ui-muted)}
 .past-work__status{margin:0}
-.past-work__delete{flex:none} /* its height is .btn-outline's 44px target */
 .past-work__source,.past-work__again{margin:0}
+.past-work__again{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-s-3)}
+.past-work__hub{color:var(--ui-accent-text);text-decoration:underline}
+/* Row-sized link targets; Delete above. */
+.past-work__entry,.past-work__cites li{position:relative}
+.past-work__entry a.ui-row__title::after,.past-work__cites a::after{content:'';position:absolute;inset:0}
+.past-work__delete{flex:none;position:relative;z-index:1}

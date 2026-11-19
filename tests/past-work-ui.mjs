@@ -31,7 +31,7 @@ const pastRun = (id, o = {}) => ({
   card: { kind: 'prompt', icon: 'history', title: o.title || 'what did I ask about the bracket', summary: '', badge: o.status === 'failed' ? { label: 'Failed', tone: 'bad' } : o.status === 'running' ? { label: 'Running', tone: 'accent' } : { label: 'Done', tone: 'good' }, preview: null, action: { label: 'Open' }, approval: null, route: { text: 'Answered on this PC', why: 'Your past work stays on this PC' } }
 });
 
-async function open(viewport, hash, { runs = [], askStatus = 202, deleteStatus = 200, storage = {}, gone = [], intelligence = true } = {}) {
+async function open(viewport, hash, { runs = [], askStatus = 202, deleteStatus = 200, storage = {}, gone = [], intelligence = true, idsFail = false } = {}) {
   const db = { runs, asks: [], deletes: [], retries: [], gone: new Set(gone) };
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.firstRun.done': '1', ...storage });
@@ -42,7 +42,7 @@ async function open(viewport, hash, { runs = [], askStatus = 202, deleteStatus =
   await ctx.route(u => u.pathname === '/api/approvals', r => json(r, { items: [] }));
   await page.route(u => u.pathname === '/api/capabilities', r => json(r, { services: [['ollama', intelligence], ['search', true], ['comfy', true], ['n8n', true]].map(([name, up]) => ({ name, label: name, state: up ? 'HEALTHY' : 'DOWN', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
   // ?ids=: the entries that still exist (db.gone were deleted elsewhere, or before a reload).
-  await page.route(u => u.pathname === '/api/journal' && u.searchParams.has('ids'), r => json(r, { items: new URL(r.request().url()).searchParams.get('ids').split(',').filter(id => !db.gone.has(id)).map(id => ({ id })) }));
+  await page.route(u => u.pathname === '/api/journal' && u.searchParams.has('ids'), r => idsFail ? json(r, { error: "Couldn't read your past work." }, 503) : json(r, { items: new URL(r.request().url()).searchParams.get('ids').split(',').filter(id => !db.gone.has(id)).map(id => ({ id })) }));
   await page.route(u => u.pathname === '/api/runs/retry', r => {
     const { id } = JSON.parse(r.request().postData()); db.retries.push(id);
     const was = db.runs.find(x => x.id === id), run = pastRun('run-past-retry', { title: was?.title });
@@ -189,19 +189,29 @@ await check('long content on a phone: no horizontal overflow; axe finds nothing 
   await page.context().close();
 });
 
-await check('a source that could not be read is named, never "nothing matched": prints, Bambuddy, films', async () => {
+await check('a source that could not be read: the answer names it once, with Try again and (prints) a Workshop link; films say no record is kept', async () => {
   const out = (text, from, unread) => ({ text, citations: [], entries: [], from, unread });
   const page = await open(desk, '#run/run-p1', { runs: [
     pastRun('run-p1', { title: 'did my last print finish', output: out("I can't read Pi Hub's print list from here yet, so I can't say what was printed. Workshop on Pi Hub shows it.", 'prints', "Pi Hub's print list can't be read from here") }),
     pastRun('run-p2', { title: 'did my last print finish', output: out("Bambuddy isn't answering, so I can't say what was printed.", 'prints', "Bambuddy isn't answering") }),
     pastRun('run-f1', { title: 'what did I watch on Saturday', output: out("I keep no record of what was watched, so I can't say.", 'none', null) })
   ] });
-  for (const [id, words] of [['run-p1', "Pi Hub's print list can't be read from here, so nothing was read from it."], ['run-p2', "Bambuddy isn't answering, so nothing was read from it."], ['run-f1', 'The Assistant keeps no record of what was watched, so there was nothing to read.']]) {
+  for (const id of ['run-p1', 'run-p2']) {
     await page.evaluate(h => window.LocalAIRouter.go(h), '#run/' + id);
-    await body(page).locator('.past-work__source', { hasText: words }).waitFor(T);
-    assert.equal(await body(page).locator('.ui-empty').count(), 0, `${id}: no "nothing matched" empty state`);
+    const again = body(page).locator('.past-work__again');
+    await again.locator('button', { hasText: 'Try again' }).waitFor(T);
+    assert.match(await again.locator('a.past-work__hub').getAttribute('href'), /^https:\/\/[^/]+\/workshop$/, `${id}: Workshop on Pi Hub`);
+    assert.equal(await body(page).locator('.past-work__source').count(), 0, `${id}: the answer is not repeated`);
+    assert.equal(await body(page).locator('.ui-empty').count(), 0, `${id}: no "nothing matched"`);
     assert.doesNotMatch(await body(page).innerText(), /Nothing in your past work matched/);
   }
+  await body(page).locator('.past-work__again button').click();
+  await page.waitForFunction(() => location.hash === '#run/run-past-retry', null, T);
+  assert.deepEqual(page.db.retries, ['run-p2'], 'Try again asks the same question again');
+  await page.evaluate(h => window.LocalAIRouter.go(h), '#run/run-f1');
+  await body(page).locator('.past-work__source', { hasText: 'The Assistant keeps no record of what was watched, so there was nothing to read.' }).waitFor(T);
+  assert.equal(await body(page).locator('.past-work__again').count(), 0, 'films: nothing to ask again');
+  assert.equal(await body(page).locator('.ui-empty').count(), 0);
   await page.context().close();
 });
 
@@ -211,6 +221,7 @@ await check('a failed run offers Try again, which asks the same question as a ne
   const again = body(page).locator('.past-work__again button', { hasText: 'Try again' });
   await again.waitFor(T);
   assert.doesNotMatch(await page.locator('#runDrawer').innerText(), /ECONNREFUSED|Ollama/);
+  assert.equal(await body(page).locator('.status-error:visible').count(), 0, 'no empty error box under Try again');
   await again.click();
   await page.waitForFunction(() => location.hash === '#run/run-past-retry', null, T);
   assert.deepEqual(page.db.retries, ['run-past-f']);
@@ -237,6 +248,24 @@ await check('with Intelligence down, Past work stays on and says what it needs',
   assert.equal(await row.isEnabled(), true);
   assert.equal((await row.locator('span').textContent()).trim(), "Answers need Intelligence running; it can still say what it couldn't find");
   assert.equal(await page.locator('#homeModeSheet [data-home-mode="ask"]').isDisabled(), true, 'Chat is gated as before');
+  await page.context().close();
+});
+
+await check('a failed check for deleted entries says so in one line, and keeps Delete', async () => {
+  const page = await open(desk, '#run/run-past-1', { runs: [pastRun('run-past-1')], idsFail: true });
+  await body(page).locator('.past-work__source', { hasText: "Couldn't check which entries were deleted since" }).waitFor(T);
+  assert.equal(await body(page).locator('.past-work__delete').count(), 2, 'entries are not drawn as deleted');
+  await page.context().close();
+});
+
+await check('the whole entry row is the link target, and Delete stays clickable above it', async () => {
+  const page = await open(phone, '#run/run-past-1', { runs: [pastRun('run-past-1')] });
+  const row = body(page).locator('.past-work__entry').first();
+  await row.waitFor(T);
+  const box = await row.boundingBox(), link = await row.locator('a').evaluate(a => getComputedStyle(a, '::after').position);
+  assert.equal(link, 'absolute'); assert.ok(box.height >= 44, `row is ${box.height}px tall`);
+  await row.locator('.past-work__delete').click();
+  await page.locator('dialog.ask-sheet[open]').waitFor(T);
   await page.context().close();
 });
 
