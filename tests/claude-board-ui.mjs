@@ -1,4 +1,5 @@
 // Claude Code page (System › Tools): chat and live sessions. Its findings are Improve's Backlog (tests/improve-ui.mjs).
+import './browser-target-guard.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { dirname, join } from 'node:path';

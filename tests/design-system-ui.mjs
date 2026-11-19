@@ -1,5 +1,6 @@
 // Every view follows the design system: no text under 11px, blue primary actions, clean phone breadcrumb. Every check runs
 // with the system set to dark and again set to light (step 13, L10): the page follows the system's theme.
+import './browser-target-guard.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 

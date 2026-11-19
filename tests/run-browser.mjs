@@ -18,7 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseShard, partitionSuites, SOLO_SUITES } from '../scripts/local-ci-lib.mjs';
-import { checkBrowserTarget, suitesNeedingTarget } from './browser-target.mjs';
+import { checkBrowserTarget, DEFAULT_TARGET, suitesNeedingTarget, TARGET_CHECKED } from './browser-target.mjs';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -37,15 +37,19 @@ else if (shard) {
 }
 if (list) { if (suites.length) console.log(suites.join('\n')); process.exit(0); }
 // Never against the deployed appliance (tests/browser-target.mjs): checked once, before any suite runs.
+// Each suite's own guard (browser-target-guard.mjs) skips the check for the URL named in TARGET_CHECKED.
+const checked = {};
 if (suitesNeedingTarget(suites, dir).length) {
-  const target = await checkBrowserTarget(process.env.LOCALAI_URL || 'http://127.0.0.1:3080');
+  const base = process.env.LOCALAI_URL || DEFAULT_TARGET;
+  const target = await checkBrowserTarget(base);
   if (!target.ok) { console.error(target.reason); process.exit(2); }
   if (target.warning) console.error(target.warning);
+  checked[TARGET_CHECKED] = base;
 }
 const failed = [];
 // Suites that start their own server pass this environment on. Default the Workshop display address to a dead
 // loopback port so no test server ever contacts the owner's real display; a value you set yourself is kept.
-const env = { ...process.env, LOCALAI_WORKSHOP_URL: process.env.LOCALAI_WORKSHOP_URL || 'http://127.0.0.1:9' };
+const env = { ...process.env, LOCALAI_WORKSHOP_URL: process.env.LOCALAI_WORKSHOP_URL || 'http://127.0.0.1:9', ...checked };
 for (const suite of suites) {
   console.log(`\n=== ${suite}`);
   const started = Date.now();

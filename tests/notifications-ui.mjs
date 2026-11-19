@@ -1,5 +1,6 @@
 // Assistant status › Notifications on an iPhone. The browser's push support and /api/push/* are mocked, so nothing here
 // contacts a real push service.
+import './browser-target-guard.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 

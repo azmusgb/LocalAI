@@ -112,7 +112,8 @@ themselves (`spawnAppServer()`, `tests/run-browser.mjs`, `npm run ci`) already d
 
 `tests/run-browser.mjs` refuses (exit 2) a `LOCALAI_URL` whose `/healthz` reports a `releaseCommit` (a deployed release,
 such as the live appliance on 3080 on the Windows host) or can't be read; `LOCALAI_TESTS_WRITE_TO_PRODUCTION=1`
-overrides the first only. A suite run directly with `node tests/<name>-ui.mjs` is not checked.
+overrides the first only. A suite run directly with `node tests/<name>-ui.mjs` makes the same check through its first
+import, `tests/browser-target-guard.mjs`, which every suite that reads `LOCALAI_URL` must have (`npm test` checks).
 
 Use a fresh `DATA_DIR`: the scripts write data (for example Claude board findings and paired chat devices). `tests/claude-chat-ui.mjs`
 ignores `LOCALAI_URL` and starts its own server. Run some suites with `node tests/run-browser.mjs images claude` (names are matched as substrings;

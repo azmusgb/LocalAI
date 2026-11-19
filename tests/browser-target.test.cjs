@@ -92,3 +92,35 @@ test('run-browser.mjs --list and suites that start their own server do not need 
   const { suitesNeedingTarget } = await helper();
   assert.deepEqual(suitesNeedingTarget(['visual-ui.mjs', 'claude-board-ui.mjs'], __dirname), ['claude-board-ui.mjs']);
 });
+
+// Direct runs (`node tests/<name>-ui.mjs`): every suite that reads LOCALAI_URL imports browser-target-guard.mjs, which
+// makes the same check before the suite's own code runs, unless run-browser.mjs already checked that same URL.
+const fs = require('node:fs');
+
+test('every browser suite that reads LOCALAI_URL imports the guard', () => {
+  const missing = fs.readdirSync(__dirname).filter(f => f.endsWith('-ui.mjs'))
+    .filter(f => { const s = fs.readFileSync(path.join(__dirname, f), 'utf8'); return s.includes('LOCALAI_URL') && !/^import '\.\/browser-target-guard\.mjs';$/m.test(s); });
+  assert.deepEqual(missing, []);
+});
+
+function runGuard(env) {
+  return new Promise(resolve => execFile(process.execPath, [path.join(__dirname, 'browser-target-guard.mjs')],
+    { env: { ...process.env, LOCALAI_TESTS_WRITE_TO_PRODUCTION: '', LOCALAI_TARGET_CHECKED: '', ...env }, timeout: 20000 },
+    (error, stdout, stderr) => resolve({ code: error ? error.code : 0, stdout, stderr })));
+}
+
+test('the guard exits 2 on a deployed release or an unreadable target, honours the override, and skips a URL run-browser checked', async (t) => {
+  const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(PROD)); });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  t.after(() => server.close());
+  const prod = `http://127.0.0.1:${server.address().port}`;
+  const refused = await runGuard({ LOCALAI_URL: prod });
+  assert.equal(refused.code, 2); assert.match(refused.stderr, /deployed release/);
+  const down = await runGuard({ LOCALAI_URL: 'http://127.0.0.1:9' });
+  assert.equal(down.code, 2); assert.match(down.stderr, /could not read http:\/\/127\.0\.0\.1:9\/healthz/);
+  const override = await runGuard({ LOCALAI_URL: prod, LOCALAI_TESTS_WRITE_TO_PRODUCTION: '1' });
+  assert.equal(override.code, 0); assert.match(override.stderr, /WARNING/);
+  // run-browser.mjs passes the URL it checked; a different URL is checked again.
+  assert.equal((await runGuard({ LOCALAI_URL: 'http://127.0.0.1:9', LOCALAI_TARGET_CHECKED: 'http://127.0.0.1:9' })).code, 0);
+  assert.equal((await runGuard({ LOCALAI_URL: prod, LOCALAI_TARGET_CHECKED: 'http://127.0.0.1:3183' })).code, 2);
+});

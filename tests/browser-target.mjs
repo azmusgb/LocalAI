@@ -2,11 +2,14 @@
 // and sessions, chats, settings), and most default LOCALAI_URL to 127.0.0.1:3080, which on the Windows host is the live
 // appliance. tests/run-browser.mjs asks the target's /healthz first: a deployed release reports the releaseCommit from
 // the release.json the deploy writes (app/release.js); a server started from a checkout reports null. A target that is
-// a release, or that can't be read, is refused. Only LOCALAI_TESTS_WRITE_TO_PRODUCTION=1 lets a release through.
+// a release, or that can't be read, is refused. Suites run directly make the same check (browser-target-guard.mjs). Only LOCALAI_TESTS_WRITE_TO_PRODUCTION=1 lets a release through.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const PRODUCTION_OVERRIDE = 'LOCALAI_TESTS_WRITE_TO_PRODUCTION';
+// Set by run-browser.mjs to the URL it checked, so browser-target-guard.mjs in each suite doesn't ask again.
+export const TARGET_CHECKED = 'LOCALAI_TARGET_CHECKED';
+export const DEFAULT_TARGET = 'http://127.0.0.1:3080';
 const START_ONE = 'Start a throwaway server from this checkout (docs/DEVELOPMENT.md, Browser tests) and set LOCALAI_URL to it.';
 
 // { ok: true } | { ok: true, warning } (override) | { ok: false, reason }

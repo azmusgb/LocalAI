@@ -1,6 +1,7 @@
 // Home's dense Needs-you rows stay inside their card: a long one-line detail is cut with an ellipsis and every row's
 // verb ("Open printer") is in view. The kit's list had one unsized grid column, so a long row widened it past the card
 // and the verb and the ellipsis were clipped out of sight (seen on the appliance, 18 Nov 2026).
+import './browser-target-guard.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 

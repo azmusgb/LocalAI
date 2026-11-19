@@ -1,4 +1,5 @@
 // Models page: download form, progress and errors. CI has no Ollama, so a real name starts and then fails cleanly.
+import './browser-target-guard.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 

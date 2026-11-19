@@ -3,6 +3,7 @@
 // lists every declared edge (also 120 of them), the calls with no declared edge are one grouped list off the graph, a
 // phone gets a list of systems, and loading, an error, no edges and nothing checked each say so. Reduced motion: no
 // transition or animation runs in the section. Axe at 390 in both schemes.
+import './browser-target-guard.mjs';
 import { chromium, devices } from 'playwright';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';

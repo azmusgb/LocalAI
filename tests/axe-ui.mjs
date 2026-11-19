@@ -10,6 +10,7 @@
 //  - at 1440, a Tab stop with no visible focus ring (Tab once around every page).
 // Report mode: AXE_REPORT=<file> writes every violation (all impacts) by rule, plus the small targets, and never fails.
 // AXE_ONLY=home,agents, AXE_DEVICE=1440 and AXE_SCHEME=dark narrow a run while working on a fix.
+import './browser-target-guard.mjs';
 import { chromium, devices } from 'playwright';
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

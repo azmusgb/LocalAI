@@ -1,3 +1,4 @@
+import './browser-target-guard.mjs';
 import { chromium, webkit } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

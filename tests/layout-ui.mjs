@@ -1,5 +1,6 @@
 // Layout guard: no page scrolls sideways on a phone or a desktop, run rows stay inside their list whatever they
 // hold, and the approval sheet is styled. Behaviour suites miss lost or conflicting CSS; this one doesn't.
+import './browser-target-guard.mjs';
 import assert from 'node:assert/strict';
 import { chromium, devices } from 'playwright';
 

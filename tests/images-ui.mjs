@@ -1,4 +1,5 @@
 // Images page: engines, shapes, options and the request they produce. The image API is mocked, so no GPU is needed.
+import './browser-target-guard.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 
