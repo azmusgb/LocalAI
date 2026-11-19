@@ -396,11 +396,12 @@ for (const [name, vp] of [['phone', phone], ['desktop', desk]]) {
     const over = await page.evaluate(() => [...document.querySelectorAll('#ownerFacts *')].filter(e => e.getBoundingClientRect().right > document.documentElement.clientWidth + 1).map(e => e.className || e.tagName).slice(0, 5));
     assert.deepEqual(over, []);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
-    if (vp === phone) {
-      const small = await page.evaluate(() => [...document.querySelectorAll('#ownerFacts button, #ownerFacts input, #memoryList [data-mem-fact]')].filter(e => e.offsetParent).map(e => e.getBoundingClientRect()).filter(r => r.height < 44 || r.width < 44).length);
-      assert.equal(small, 0, 'every control is at least 44 px on touch');
-    }
+    // Measure once the shared notes have their "Make this a fact" buttons: before that the page is still laying out.
     await page.locator('#memoryList [data-mem-fact]').waitFor(T);
+    if (vp === phone) {
+      const small = await page.evaluate(() => [...document.querySelectorAll('#ownerFacts button, #ownerFacts input, #memoryList [data-mem-fact]')].filter(e => e.offsetParent).map(e => [e.id || e.textContent.trim(), e.getBoundingClientRect()]).filter(([, r]) => r.height < 44 || r.width < 44).map(([n, r]) => `${n} ${Math.round(r.width)}x${Math.round(r.height)}`));
+      assert.deepEqual(small, [], 'every control is at least 44 px on touch');
+    }
     await addAxe(page, axePath);
     const found = await page.evaluate(async () => (await window.axe.run(document.querySelector('#memory'), { resultTypes: ['violations'] })).violations.filter(v => ['serious', 'critical'].includes(v.impact)).map(v => `${v.id}: ${v.nodes.map(n => n.target.join(' ')).slice(0, 3).join(', ')}`));
     assert.deepEqual(found, []);
