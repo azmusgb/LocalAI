@@ -2717,4 +2717,5 @@ html.is-framed body.ux-v3 .ux-page-strip{top:0}
 .past-work__cites a,.past-work__entry a{color:var(--ui-accent-text);text-decoration:underline}
 .past-work__n{font-variant-numeric:tabular-nums;color:var(--ui-muted)}
 .past-work__status{margin:0}
-.past-work__delete{min-height:44px}
+.past-work__delete{flex:none} /* its height is .btn-outline's 44px target */
+.past-work__source,.past-work__again{margin:0}

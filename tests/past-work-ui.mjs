@@ -31,8 +31,8 @@ const pastRun = (id, o = {}) => ({
   card: { kind: 'prompt', icon: 'history', title: o.title || 'what did I ask about the bracket', summary: '', badge: o.status === 'failed' ? { label: 'Failed', tone: 'bad' } : o.status === 'running' ? { label: 'Running', tone: 'accent' } : { label: 'Done', tone: 'good' }, preview: null, action: { label: 'Open' }, approval: null, route: { text: 'Answered on this PC', why: 'Your past work stays on this PC' } }
 });
 
-async function open(viewport, hash, { runs = [], askStatus = 202, deleteStatus = 200, storage = {} } = {}) {
-  const db = { runs, asks: [], deletes: [] };
+async function open(viewport, hash, { runs = [], askStatus = 202, deleteStatus = 200, storage = {}, gone = [], intelligence = true } = {}) {
+  const db = { runs, asks: [], deletes: [], retries: [], gone: new Set(gone) };
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.firstRun.done': '1', ...storage });
   const page = await ctx.newPage();
@@ -40,13 +40,21 @@ async function open(viewport, hash, { runs = [], askStatus = 202, deleteStatus =
   page.on('pageerror', e => page.errors.push(e.message));
   const json = (r, body, status = 200) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   await ctx.route(u => u.pathname === '/api/approvals', r => json(r, { items: [] }));
+  await page.route(u => u.pathname === '/api/capabilities', r => json(r, { services: [['ollama', intelligence], ['search', true], ['comfy', true], ['n8n', true]].map(([name, up]) => ({ name, label: name, state: up ? 'HEALTHY' : 'DOWN', required: true })), models: { defaultInstalled: true }, images: { available: true }, version: '1' }));
+  // ?ids=: the entries that still exist (db.gone were deleted elsewhere, or before a reload).
+  await page.route(u => u.pathname === '/api/journal' && u.searchParams.has('ids'), r => json(r, { items: new URL(r.request().url()).searchParams.get('ids').split(',').filter(id => !db.gone.has(id)).map(id => ({ id })) }));
+  await page.route(u => u.pathname === '/api/runs/retry', r => {
+    const { id } = JSON.parse(r.request().postData()); db.retries.push(id);
+    const was = db.runs.find(x => x.id === id), run = pastRun('run-past-retry', { title: was?.title });
+    db.runs.push(run); json(r, { ok: true, replayedFrom: id, runId: run.id });
+  });
   await page.route(u => u.pathname === '/api/journal/ask', r => {
     const b = JSON.parse(r.request().postData()); db.asks.push(b);
     if (askStatus !== 202) return json(r, { error: 'Ask a question.' }, askStatus);
     const run = pastRun('run-past-new', { status: 'running', title: b.question, output: null }); db.runs.push(run);
     json(r, { runId: run.id, run }, 202);
   });
-  await page.route(u => u.pathname === '/api/journal/delete', r => { db.deletes.push(JSON.parse(r.request().postData())); json(r, deleteStatus === 200 ? { ok: true } : { error: 'The journal is switched off' }, deleteStatus); });
+  await page.route(u => u.pathname === '/api/journal/delete', r => { const b = JSON.parse(r.request().postData()); db.deletes.push(b); if (deleteStatus === 200) db.gone.add(b.id); json(r, deleteStatus === 200 ? { ok: true } : { error: 'The journal is switched off' }, deleteStatus); });
   await page.route(u => u.pathname === '/api/runs', r => {
     const q = new URL(r.request().url()).searchParams;
     if (q.get('id')) { const it = db.runs.find(x => x.id === q.get('id')); return it ? json(r, { item: it }) : json(r, { error: 'Run not found' }, 404); }
@@ -91,7 +99,9 @@ await check('Past work: send posts the question, opens the run, waits, then show
   const cites = body(page).locator('.past-work__cites li');
   assert.equal(await cites.count(), 2);
   assert.equal(await cites.nth(0).locator('a').getAttribute('href'), '#run/run-old-1', 'an in-app route is a link');
-  assert.equal(await cites.nth(1).locator('a').count(), 0, "Pi Hub's hub: link is shown without a link");
+  const hub = cites.nth(1).locator('a');
+  assert.match(await hub.getAttribute('href'), /^https:\/\/[^/]+\/workshop$/, "a print cites Workshop on Pi Hub (A28 D3)");
+  assert.equal(await hub.getAttribute('target'), '_blank'); assert.equal(await hub.getAttribute('rel'), 'noopener');
   const rows = body(page).locator('.past-work__entry');
   assert.equal(await rows.count(), 3);
   assert.equal(await rows.nth(1).locator('a').count(), 0, 'a javascript: link never becomes a link');
@@ -176,6 +186,57 @@ await check('long content on a phone: no horizontal overflow; axe finds nothing 
   await addAxe(page, axePath);
   const found = await page.evaluate(async () => (await window.axe.run(document.querySelector('#runDrawer'), { resultTypes: ['violations'] })).violations.filter(v => ['serious', 'critical'].includes(v.impact)).map(v => `${v.id}: ${v.nodes.length}`));
   assert.deepEqual(found, []);
+  await page.context().close();
+});
+
+await check('a source that could not be read is named, never "nothing matched": prints, Bambuddy, films', async () => {
+  const out = (text, from, unread) => ({ text, citations: [], entries: [], from, unread });
+  const page = await open(desk, '#run/run-p1', { runs: [
+    pastRun('run-p1', { title: 'did my last print finish', output: out("I can't read Pi Hub's print list from here yet, so I can't say what was printed. Workshop on Pi Hub shows it.", 'prints', "Pi Hub's print list can't be read from here") }),
+    pastRun('run-p2', { title: 'did my last print finish', output: out("Bambuddy isn't answering, so I can't say what was printed.", 'prints', "Bambuddy isn't answering") }),
+    pastRun('run-f1', { title: 'what did I watch on Saturday', output: out("I keep no record of what was watched, so I can't say.", 'none', null) })
+  ] });
+  for (const [id, words] of [['run-p1', "Pi Hub's print list can't be read from here, so nothing was read from it."], ['run-p2', "Bambuddy isn't answering, so nothing was read from it."], ['run-f1', 'The Assistant keeps no record of what was watched, so there was nothing to read.']]) {
+    await page.evaluate(h => window.LocalAIRouter.go(h), '#run/' + id);
+    await body(page).locator('.past-work__source', { hasText: words }).waitFor(T);
+    assert.equal(await body(page).locator('.ui-empty').count(), 0, `${id}: no "nothing matched" empty state`);
+    assert.doesNotMatch(await body(page).innerText(), /Nothing in your past work matched/);
+  }
+  await page.context().close();
+});
+
+await check('a failed run offers Try again, which asks the same question as a new run and opens it', async () => {
+  const failed = pastRun('run-past-f', { status: 'failed', error: "The local model isn't answering, so there is no answer yet. Check Intelligence on Assistant status, then try again.", output: { text: '', citations: [], entries: entries.slice(0, 1), from: 'journal', unread: null } });
+  const page = await open(desk, '#run/run-past-f', { runs: [failed] });
+  const again = body(page).locator('.past-work__again button', { hasText: 'Try again' });
+  await again.waitFor(T);
+  assert.doesNotMatch(await page.locator('#runDrawer').innerText(), /ECONNREFUSED|Ollama/);
+  await again.click();
+  await page.waitForFunction(() => location.hash === '#run/run-past-retry', null, T);
+  assert.deepEqual(page.db.retries, ['run-past-f']);
+  await body(page).locator('.past-work__answer').waitFor(T);
+  assert.equal(await body(page).locator('.past-work__again').count(), 0, 'a finished run has no Try again');
+  await page.context().close();
+});
+
+await check('an entry deleted before a reload (or elsewhere) shows as deleted, without Delete', async () => {
+  const page = await open(desk, '#run/run-past-1', { runs: [pastRun('run-past-1')], gone: ['j-1-a'] });
+  const first = body(page).locator('.past-work__entry').first();
+  await first.locator('.past-work__status', { hasText: 'Deleted from your past work' }).waitFor(T);
+  assert.equal(await first.locator('.past-work__delete').count(), 0);
+  assert.equal(await body(page).locator('.past-work__entry').nth(1).locator('.past-work__delete').count(), 1, 'one still there keeps Delete');
+  await page.context().close();
+});
+
+await check('with Intelligence down, Past work stays on and says what it needs', async () => {
+  const page = await open(desk, '#home', { intelligence: false });
+  await page.waitForFunction(() => document.querySelector('.mode[data-mode="ask"]')?.disabled, null, T);
+  await page.locator('#homeModeChip').click();
+  const row = page.locator('#homeModeSheet [data-home-mode="history"]');
+  await row.waitFor(T);
+  assert.equal(await row.isEnabled(), true);
+  assert.equal((await row.locator('span').textContent()).trim(), "Answers need Intelligence running; it can still say what it couldn't find");
+  assert.equal(await page.locator('#homeModeSheet [data-home-mode="ask"]').isDisabled(), true, 'Chat is gated as before');
   await page.context().close();
 });
 

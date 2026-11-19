@@ -51,3 +51,11 @@ test('informative drops a context that only names the Pi Hub page', () => {
   assert.equal(informative('A printer error on the X2D'), true);
   assert.equal(informative(''), false);
 });
+
+test('hubHref: hub:<path> is that page on Pi Hub; anything else is returned as it is', () => {
+  const { hubHref } = require('../app/public/ask-context');
+  assert.equal(hubHref('hub:workshop'), 'https://hub.rahe-home.duckdns.org/workshop');
+  assert.equal(hubHref('hub:/network'), 'https://hub.rahe-home.duckdns.org/network');
+  assert.equal(hubHref('#run/run-1'), '#run/run-1');
+  assert.equal(hubHref(null), null);
+});

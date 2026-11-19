@@ -137,7 +137,10 @@ const KB = 1024;
 // +0.9 KB gzipped: the button, its reason line and the compact styles); 358.2 KB measured, 184 bytes over 358.
 // 2026-11-19: 359 → 361 KB for Past work (memory-core PR 3, A28): the composer mode, the run body with its answer,
 // citations, the entries it read and Delete on each (run-bodies.js +1.5 KB, home.js +0.2 KB, app.css +0.1 KB; 360.8 KB measured).
-const TOTAL = 361 * KB;
+// 2026-11-19: 361 → 362 KB (and run-bodies.js its own 11 KB) for Past work's review fixes: Try again on a failed answer,
+// the line naming a source it couldn't read, Workshop links for prints, deleted entries shown as deleted after a reload
+// (run-bodies.js +0.8 KB to 10.7 KB; 361.8 KB measured).
+const TOTAL = 362 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -174,7 +177,7 @@ const TOTAL = 361 * KB;
 // app.css +0.1 KB, its Atlas section rewritten in one pass without the layered overrides; 321.8 KB measured).
 // 2026-11-02: index.html 16 → 17 KB for the navigation update: the Settings and Tools pages, the Spreadsheets chip and
 // mode, and Home's On Pi Hub line (16.1 KB measured).
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 37.5 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB };
+const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 37.5 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

@@ -82,7 +82,9 @@ function paintModes(){
  const box=sheet().querySelector('.home-modes');
  box.innerHTML=(order||ordered()).map(([id,label,hint])=>{
   const gate=document.querySelector(`.mode[data-mode="${id}"]`),off=!!gate?.disabled,why=off?String(gate.title||'').replace(/^Unavailable:\s*/,''):'';
-  return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===cur()}" tabindex="${id===cur()?0:-1}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:hint)}</span></button>`}).join('');
+  // Past work stays on with Intelligence down: some answers need no model.
+  const note=id==='history'&&document.querySelector('.mode[data-mode="ask"]')?.disabled?'Answers need Intelligence running; it can still say what it couldn\'t find':'';
+  return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===cur()}" tabindex="${id===cur()?0:-1}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:note||hint)}</span></button>`}).join('');
 }
 function openSheet(){const d=sheet();if(d.open){paintModes();paintOptions();return}
  root.LocalAIUI.showSheet(d,reopened=>{order=null;if(reopened)return;const c=$('homeModeChip');if(c&&c.isConnected)c.focus()});
@@ -107,9 +109,8 @@ const hubRow=h=>{
 };
 // The kit keeps a link only if it is on this origin or was made here: hub:<path> becomes Pi Hub's address (a path on that host
 // whatever the item says), and anything else the kit decides on its own.
-// Framed by Pi Hub (A4), the hub is the page around this one: its address is the frame's parent.
-const hubBase=()=>{const F=root.LocalAIFramed;return F?.active()&&F.origin()?F.origin()+'/':root.LocalAIAskContext?.homeUrl(location.hostname)||'https://hub.rahe-home.duckdns.org/'};
-const resolve=l=>/^hub:/.test(l)?hubBase()+l.slice(4).replace(/^\/+/,''):l;
+// (ask-context.js hubHref: framed by Pi Hub, the hub is the page around this one.)
+const resolve=l=>root.LocalAIAskContext?root.LocalAIAskContext.hubHref(l):l;
 // Inside Pi Hub's shell a Pi Hub page is a page in the shell (A7 P2): it opens in the whole window, without ↗.
 function inShell(ul){
  const F=root.LocalAIFramed;if(!F?.active()||!F.origin())return;

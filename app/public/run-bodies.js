@@ -246,23 +246,31 @@
 
   // ---- Past work (a `prompt` run, meta.mode 'history': app/server/journal.js) ----
   // The answer, then what it cites, then every entry it read (also on a failed run and on "nothing found"). Text is set as
-  // text; only an in-app hash route becomes a link. Each journal entry can be deleted (A28 D6), on POST /api/journal/delete;
-  // Pi Hub's print rows can't (they are not kept here).
+  // text; an in-app hash route is a link, and hub:<path> a link to that page on Pi Hub (a print cites Workshop, A28 D3).
+  // Each journal entry can be deleted (A28 D6), on POST /api/journal/delete; Pi Hub's print rows can't (not kept here).
   const SOURCE_NAMES = { run: 'Local AI', voice: 'Voice', approval: 'Approval', release: 'Local AI update', print: 'Pi Hub · Workshop' };
   const sourceName = s => SOURCE_NAMES[s] || (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : 'Unknown source');
   const whenText = iso => { const t = Date.parse(iso); return Number.isFinite(t) ? new Date(t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Time not reported'; };
   const inApp = link => typeof link === 'string' && /^#[A-Za-z][^\s"'<>\\]*$/.test(link) ? link : '';
-  const deletedEntries = new Set();   // deleted this session: the run's output still lists them
-  const titled = (e, cls) => { const href = inApp(e.link), n = href ? h('a', cls, e.title || 'Untitled') : h('span', cls, e.title || 'Untitled'); if (href) n.href = href; return n; };
+  const onHub = link => typeof link === 'string' && /^hub:[A-Za-z0-9/_-]{1,63}$/.test(link) ? window.LocalAIAskContext?.hubHref(link) || '' : '';
+  const deletedEntries = new Set();   // gone from the journal: deleted here, or found missing when the list was drawn
+  function titled(e, cls) {
+    const href = inApp(e.link), hub = href ? '' : onHub(e.link), n = href || hub ? h('a', cls, e.title || 'Untitled') : h('span', cls, e.title || 'Untitled');
+    if (href) n.href = href;
+    else if (hub) { n.href = hub; const framed = window.LocalAIFramed?.active?.(); n.target = framed ? '_top' : '_blank'; n.rel = 'noopener'; if (!framed) n.append(' ↗'); }
+    return n;
+  }
+  const isJournal = e => /^j-/.test(String(e.id || '')) && e.source !== 'print';
+  const goneText = (li, text) => { const st = li.querySelector('.past-work__status'); li.querySelector('.past-work__delete')?.remove(); st.textContent = text; st.classList.remove('status-error'); st.setAttribute('role', 'status'); };
   function entryRow(e) {
     const li = h('li', 'ui-row ui-row--lamp past-work__entry'); li.dataset.entryId = String(e.id || '');
     const text = h('div');
     text.append(titled(e, 'ui-row__title'), h('span', 'ui-row__detail', `${whenText(e.at)} · ${sourceName(e.source)}`));
     li.appendChild(text);
-    const journalEntry = /^j-/.test(String(e.id || '')) && e.source !== 'print';
-    if (!journalEntry) return li;
+    if (!isJournal(e)) return li;
     const status = h('p', 'ui-row__detail past-work__status'); status.setAttribute('role', 'status');
-    if (deletedEntries.has(e.id)) { status.textContent = 'Deleted from your past work'; li.appendChild(status); return li; }
+    li.appendChild(status);
+    if (deletedEntries.has(e.id)) { status.textContent = 'Deleted from your past work'; return li; }
     const del = h('button', 'btn-outline past-work__delete', 'Delete'); del.type = 'button'; del.setAttribute('aria-label', `Delete "${e.title || 'Untitled'}" from your past work`);
     del.addEventListener('click', async () => {
       const ok = await window.LocalAIUI?.ask?.({ title: `Delete "${String(e.title || 'this entry').slice(0, 80)}" from your past work?`, effect: 'It is removed from the journal for good, so Past work can no longer find it. The run or chat it came from is not changed.', confirmLabel: 'Delete', tone: 'danger' });
@@ -272,22 +280,50 @@
         const r = await fetch('/api/journal/delete', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ id: e.id }) });
         if (!r.ok && r.status !== 404) { const j = await r.json().catch(() => ({})); throw new Error(j.error || `HTTP ${r.status}`); }
         deletedEntries.add(e.id);
-        status.textContent = r.status === 404 ? 'Already deleted' : 'Deleted from your past work';
         const focusTo = li.querySelector('a') || li.closest('.run-body')?.querySelector('h3');
-        del.remove(); li.appendChild(status);
+        goneText(li, r.status === 404 ? 'Already deleted' : 'Deleted from your past work');
         if (focusTo) { if (!focusTo.matches('a')) focusTo.tabIndex = -1; focusTo.focus({ preventScroll: true }); }
         window.LocalAIUI?.toast?.('Deleted from your past work');
       } catch (err) {
         del.disabled = false; del.textContent = 'Delete';
         status.textContent = `Couldn't delete it: ${err.message || err}. Try again.`; status.classList.add('status-error'); status.setAttribute('role', 'alert');
-        if (!status.isConnected) li.appendChild(status);
       }
     });
-    li.append(status, del);
+    li.appendChild(del);
     return li;
   }
+  // The entries were read when the run was; ask which still exist, so one deleted since (here or elsewhere) shows as
+  // deleted. A check that fails changes nothing: Delete still says "Already deleted" if it is.
+  async function markGone(ctx, ul, ids) {
+    if (!ids.length) return;
+    try {
+      const have = new Set(((await RB.json('/api/journal?ids=' + ids.map(encodeURIComponent).join(','))).items || []).map(x => x.id));
+      if (!ctx.alive()) return;
+      for (const id of ids) if (!have.has(id)) { deletedEntries.add(id); const li = [...ul.children].find(n => n.dataset.entryId === id); if (li?.querySelector('.past-work__delete')) goneText(li, 'Deleted from your past work'); }
+    } catch {}
+  }
+  // A source the answer could not read is named, never drawn as "nothing matched" (the Honest states table).
+  function sourceLine(o) {
+    if (o.unread) return `${String(o.unread).replace(/[.\s]+$/, '')}, so nothing was read from it.`;
+    if (o.from === 'none') return 'The Assistant keeps no record of what was watched, so there was nothing to read.';
+    if (o.from === 'prints') return "Bambuddy's print list had no print for this question.";
+    return '';
+  }
+  function tryAgain(run, slot) {
+    const row = h('p', 'past-work__again'), b = h('button', 'btn-outline', 'Try again'), err = h('span', 'status-error'); b.type = 'button'; err.setAttribute('role', 'alert');
+    b.addEventListener('click', async () => {
+      b.disabled = true; b.textContent = 'Asking again…'; err.textContent = '';
+      try {
+        const r = await fetch('/api/runs/retry', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ id: run.id }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.runId) throw new Error(j.error || `HTTP ${r.status}`);
+        window.LocalAIRuns?.refresh?.(); window.LocalAIRouter?.go(`#run/${encodeURIComponent(j.runId)}`);
+      } catch (e) { b.disabled = false; b.textContent = 'Try again'; err.textContent = ` Couldn't ask again: ${e.message || e}.`; }
+    });
+    row.append(b, err); slot.appendChild(row);
+  }
   function mountPastWork(run, slot) {
-    RB.mount(slot, () => {
+    RB.mount(slot, ctx => {
       slot.classList.add('past-work');
       const o = run.output && typeof run.output === 'object' && !run.output.truncated ? run.output : {};
       const entries = Array.isArray(o.entries) ? o.entries.filter(e => e && typeof e === 'object') : [];
@@ -300,6 +336,7 @@
       else if (run.status === 'failed') slot.appendChild(h('p', 'muted', 'No answer: it stopped before one was written (the reason is above).'));
       else if (run.output?.truncated) slot.appendChild(h('p', 'muted', 'This answer was too long to keep here.'));
       else slot.appendChild(h('p', 'muted', 'No answer was written.'));
+      if (run.status === 'failed' && run.input?.prompt) tryAgain(run, slot);
       if (cites.length) {
         slot.appendChild(h('h3', '', 'Cited'));
         const ol = h('ol', 'past-work__cites');
@@ -307,11 +344,14 @@
         slot.appendChild(ol);
       }
       if (live) return;
+      const line = entries.length ? '' : sourceLine(o);
+      if (line) { slot.appendChild(h('p', 'muted past-work__source', line)); return; }
       slot.appendChild(h('h3', '', entries.length === 1 ? 'The entry it read' : 'What it read'));
       if (!entries.length) { slot.appendChild(h('div', 'ui-empty', run.status === 'failed' ? 'Nothing was read before it stopped.' : 'Nothing in your past work matched this question.')); return; }
       const ul = h('ul', 'ui-rows');
       entries.forEach(e => ul.appendChild(entryRow(e)));
       slot.appendChild(ul);
+      markGone(ctx, ul, entries.filter(e => isJournal(e) && !deletedEntries.has(e.id)).map(e => String(e.id)).slice(0, 50));
     });
   }
   if (window.LocalAIUI?.registerRunBody) window.LocalAIUI.registerRunBody('prompt', mountPastWork);
