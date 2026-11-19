@@ -53,7 +53,7 @@
     const words = document.createElement('span');
     words.textContent = it ? `Local AI suggests remembering: “${it.text}”` : "Couldn't check whether this answer suggested a fact to remember.";
     p.append(words, ' ');
-    a.href = '#memory'; a.textContent = it ? 'Review on Memory' : 'Open Memory'; p.append(a);
+    a.href = '#memory?review=suggestions'; a.textContent = it ? 'Review on Memory' : 'Open Memory'; p.append(a);
     if (line) line.remove();
     host.append(p);
     if (had) a.focus({ preventScroll: true });

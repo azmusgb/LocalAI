@@ -64,7 +64,7 @@
       if (seq !== s.seq) return;
       s.state = 'error'; s.error = reason(e);
     }
-    paint(); decorate();
+    paint(); decorate(); review();
     return more;
   }
   // The suggestions, read beside the facts (load starts this first) and drawn when they come.
@@ -81,6 +81,7 @@
     }
     if (!sg.items.some(i => i.id === sg.editing)) sg.editing = '';
     if (s.state === 'ready' && !sg.busy) paint();
+    review();
   }
 
   function row(f, i) {
@@ -120,12 +121,11 @@
       <ul class="ui-rows" id="ownerSuggestList" aria-labelledby="ownerSuggestTitle">${sg.items.map((it, i) => suggestRow(it, i, full)).join('')}</ul>
       <p class="visually-hidden" role="status" id="ownerSuggestLive"></p></div>`;
   }
-  // Folded, the count line names what waits: "· 2 suggestions", or that they couldn't be read.
-  const suggestCount = () => {
-    const k = sg.items.length;
-    const t = sg.state === 'error' ? " · suggestions couldn't be read" : k ? ` · ${k} suggestion${k === 1 ? '' : 's'}` : '';
-    return t ? `<span id="ownerSuggestCount">${t}</span>` : '';
-  };
+  // The count line names what waits: "· 2 suggestions", or, while folded, that they couldn't be read (open, the warning
+  // in the group says it, so it isn't said twice). expand() keeps it in step without a redraw.
+  const plural = k => `${k} suggestion${k === 1 ? '' : 's'}`;
+  const suggestText = () => (sg.state === 'error' ? (s.expanded ? '' : " · suggestions couldn't be read") : sg.items.length ? ` · ${plural(sg.items.length)}` : '');
+  const suggestCount = () => `<span id="ownerSuggestCount">${suggestText()}</span>`;
 
   function paint() {
     const body = $('ownerFactsBody'); if (!body) return;
@@ -159,7 +159,7 @@
         : `<p class="owner-facts__count" id="ownerFactsEmpty">No facts yet, like your printer or the units you prefer. ${USED}${suggestCount()}</p>`}
         <button type="button" class="ui-btn owner-facts__toggle" id="ownerFactsToggle" aria-controls="ownerFactsPanel" aria-expanded="${s.expanded}"${!n && s.expanded ? ' hidden' : ''}>${toggleWords(n)}</button></div>
       <div class="owner-facts__panel" id="ownerFactsPanel"${s.expanded ? '' : ' hidden'}>
-      ${sugs}${sg.items.length ? `<h3 id="ownerFactsSavedTitle">Saved facts</h3><p class="owner-facts__rule">${n ? `${n} of ${MAX_FACTS}` : 'None yet: save a suggestion or add one below.'}</p>` : ''}
+      ${sugs}${sg.items.length || sg.state === 'error' ? `<h3 id="ownerFactsSavedTitle">Saved facts</h3>${n ? '' : '<p class="owner-facts__rule">None yet: save a suggestion or add one below.</p>'}` : ''}
       ${n ? `<ul class="ui-rows" id="ownerFactsList">${s.facts.map(row).join('')}</ul>` : ''}
       ${more ? `<button type="button" class="ui-btn ui-btn--ghost" id="ownerFactsMore" aria-controls="ownerFactsList" aria-expanded="${s.open}">${s.open ? `Show the first ${SHOWN}` : `Show all ${n} facts`}</button>` : ''}
       <form class="owner-facts__form" id="ownerFactsAdd" novalidate>
@@ -176,7 +176,8 @@
     if (ctl && !body.contains(a)) { const b = [...body.querySelectorAll('#ownerSuggestList [data-suggest-id]')].find(x => x.dataset.suggestId === sid)?.querySelector(`[${ctl}]`); if (b && !b.disabled) b.focus({ preventScroll: true }); }
   }
 
-  const toggleWords = n => (s.expanded ? 'Hide facts' : n ? 'Show facts' : sg.items.length ? 'Show suggestions' : 'Add a fact');
+  // Folded, the toggle names what waits too: "Show facts and 2 suggestions", "Show 1 suggestion".
+  const toggleWords = n => { const k = sg.items.length; return s.expanded ? 'Hide facts' : n ? (k ? `Show facts and ${plural(k)}` : 'Show facts') : k ? `Show ${plural(k)}` : 'Add a fact'; };
   // Unfold or fold the group in place: no redraw, so a half-typed fact or edit stays as it was.
   function expand(on) {
     s.expanded = on;
@@ -184,6 +185,23 @@
     const panel = $('ownerFactsPanel'), t = $('ownerFactsToggle');
     if (panel) panel.hidden = !on;
     if (t) { t.setAttribute('aria-expanded', String(on)); t.textContent = toggleWords(s.facts.length); t.hidden = on && !s.facts.length; }
+    const c = $('ownerSuggestCount'); if (c) c.textContent = suggestText();
+  }
+  // Where opening the group puts focus: the first waiting suggestion's Save (or its heading when Save is off), else Add.
+  function focusOpened() {
+    const save = document.querySelector('#ownerSuggestList [data-suggest-save]:not([disabled])'), title = $('ownerSuggestTitle');
+    if (save) return save.focus();
+    if (title) { title.tabIndex = -1; return title.focus(); }
+    $('ownerFactText')?.focus();
+  }
+  // "Review on Memory" under a chat answer links to #memory?review=suggestions: once the suggestions are read, the group
+  // opens and focus goes to them, so the suggestion isn't hidden in a folded group.
+  const reviewWanted = () => /^#memory\?(?:[^#]*&)?review=suggestions(?:&|$)/.test(location.hash);
+  function review() {
+    if (!s.review || s.state !== 'ready' || sg.state === 'loading') return;
+    s.review = false;
+    if (!s.expanded) expand(true);
+    if (sg.items.length) focusOpened(); else ($('ownerSuggestState') || $('ownerFactsToggle'))?.scrollIntoView?.({ block: 'nearest' });
   }
 
   // The lowest point of the window nothing fixed covers: the top of the phone's tab bar, or of a toast that is showing.
@@ -352,7 +370,8 @@
       else if (b.matches('[data-suggest-no]')) decide(si, b, 'no');
       else if (b.matches('[data-suggest-edit]')) { sg.editing = si.dataset.suggestId; delete sg.fail[sg.editing]; paint(); const t = $('ownerSuggestEdit'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
       else if (b.matches('[data-suggest-cancel]')) { const id = sg.editing; sg.editing = ''; delete sg.fail[id]; paint(); focusSuggest(id, { control: '[data-suggest-edit]' }); }
-      else if (b.id === 'ownerFactsToggle') { const n = s.facts.length, on = !s.expanded; expand(on); if (on && !n) $('ownerFactText')?.focus(); }
+      // Opened with no saved facts the toggle hides, so focus moves on: to a waiting suggestion first, else Add.
+      else if (b.id === 'ownerFactsToggle') { const n = s.facts.length, on = !s.expanded; expand(on); if (on && (!n || sg.items.length)) focusOpened(); }
       else if (b.id === 'ownerFactsMore') { s.open = !s.open; paint(); $('ownerFactsMore')?.focus(); }
       else if (b.matches('[data-fact-edit]')) { s.editing = li.dataset.factId; paint(); const t = $('ownerFactEdit'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
       else if (b.matches('[data-fact-cancel]')) { const id = s.editing; s.editing = ''; paint(); focusRow(id, { control: '[data-fact-edit]' }); }
@@ -384,6 +403,8 @@
     if (page) { let on = page.classList.contains('active'); new MutationObserver(() => { const now = page.classList.contains('active'); if (now && !on && !s.editing && !sg.editing && !sg.busy) load(); on = now; }).observe(page, { attributes: true, attributeFilter: ['class'] }); }
   }
 
+  s.review = reviewWanted();
+  addEventListener('hashchange', () => { if (reviewWanted()) { s.review = true; setTimeout(review, 0); } });   // after the router shows Memory
   wire(); load();
   window.LocalAIOwnerFacts = { reload: load };
 })();

@@ -245,7 +245,11 @@ await check('failed read: says it couldn\'t read the suggestions (never "none"),
   assert.match(await n.getAttribute('class'), /ui-notice--warn/, 'the same warning as under an answer');
   assert.equal(await n.getAttribute('role'), null, 'drawn with the page: no alert');
   assert.equal((await n.textContent()).trim(), "Couldn't read your suggested facts.", "the server's reason, once");
-  assert.equal((await page.locator('#ownerSuggestCount').textContent()).trim(), "· suggestions couldn't be read", 'the count line says so too');
+  assert.equal((await page.locator('#ownerSuggestCount').textContent()).trim(), '', 'open, the warning says it once');
+  assert.equal((await page.locator('#ownerFactsSavedTitle').textContent()).trim(), 'Saved facts', 'the saved list keeps its heading');
+  await page.locator('#ownerFactsToggle').click();
+  assert.equal((await page.locator('#ownerSuggestCount').textContent()).trim(), "· suggestions couldn't be read", 'folded, the count line says so');
+  await page.locator('#ownerFactsToggle').click();
   assert.deepEqual(await factTexts(page), ['You live in a two-storey house.'], 'the saved facts still show');
   assert.doesNotMatch(await page.locator('#ownerFacts').innerText(), /no suggest/i);
   assert.deepEqual(await axe(page, '#ownerFacts'), []);
@@ -269,7 +273,7 @@ await check('a device that isn\'t paired is told where suggestions show, as plai
   await page.waitForFunction(() => document.getElementById('ownerFactsToggle'));
   await page.waitForTimeout(300);
   assert.ok(page.db.reads >= 1);
-  assert.equal(await page.locator('#ownerSuggestCount').count(), 0);
+  assert.equal((await page.locator('#ownerSuggestCount').textContent()).trim(), '');
   assert.equal(await page.locator('#ownerSuggestTitle, #ownerSuggestState, #ownerSuggestList').count(), 0);
   await page.context().close();
 });
@@ -286,6 +290,7 @@ await check('folded: the count line says how many wait and the toggle opens them
   console.log(`  first note top at 390x844 with 3 suggestions: ${Math.round(top)}px`);
   assert.ok(top < 844 - 120, `the first note starts at ${Math.round(top)}px, on the first screen`);
   await shot(page, 'memory-folded-3-suggestions-390-dark');
+  assert.equal((await page.locator('#ownerFactsToggle').textContent()).trim(), 'Show facts and 3 suggestions');
   await page.locator('#ownerFactsToggle').click();
   await rows(page).nth(2).waitFor(T);
   assert.equal(await page.locator('#ownerFactsToggle').getAttribute('aria-expanded'), 'true');
@@ -293,16 +298,27 @@ await check('folded: the count line says how many wait and the toggle opens them
   // No facts yet: the toggle names what is there to see.
   const p2 = await open(desk, { suggestions: [sug('fs-1', PLA)], expanded: false });
   await p2.locator('#ownerSuggestCount').waitFor(T);
-  assert.equal((await p2.locator('#ownerFactsToggle').textContent()).trim(), 'Show suggestions');
+  assert.equal((await p2.locator('#ownerFactsToggle').textContent()).trim(), 'Show 1 suggestion');
   assert.equal((await p2.locator('#ownerSuggestCount').textContent()).trim(), '· 1 suggestion');
+  // Opening it hides the toggle (no saved facts to hide again), and focus goes to the suggestion, not past it to Add.
+  await p2.locator('#ownerFactsToggle').click();
+  await rows(p2).first().waitFor(T);
+  assert.equal(await p2.locator('#ownerFactsToggle').isHidden(), true);
+  assert.equal(await p2.evaluate(() => document.activeElement?.hasAttribute('data-suggest-save') && document.activeElement.closest('li').dataset.suggestId), 'fs-1');
   await p2.context().close();
+  // No facts and no suggestions: opening still goes to Add.
+  const p3 = await open(desk, { suggestions: [], expanded: false });
+  await p3.waitForTimeout(300);
+  await p3.locator('#ownerFactsToggle').click();
+  assert.equal(await p3.evaluate(() => document.activeElement?.id), 'ownerFactText');
+  await p3.context().close();
 });
 
 await check('the saved facts get their own heading and count, a section gap below the suggestions', async () => {
   const page = await open(desk, { items: [fact('f1', 'You live in a two-storey house.'), fact('f2', 'You have a heat pump.', 1)], suggestions: [sug('fs-1', PLA)] });
   await rows(page).first().waitFor(T);
   assert.equal((await page.locator('#ownerFactsSavedTitle').textContent()).trim(), 'Saved facts');
-  assert.equal((await page.locator('#ownerFactsSavedTitle + p').textContent()).trim(), '2 of 30');
+  assert.equal(await page.locator('#ownerFactsSavedTitle + #ownerFactsList').count(), 1, 'the count line above says how many: not repeated here');
   const gap = await page.evaluate(() => {
     const a = document.querySelector('.owner-facts__suggest').getBoundingClientRect(), b = document.getElementById('ownerFactsSavedTitle').getBoundingClientRect();
     const s5 = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-s-5')) * parseFloat(getComputedStyle(document.documentElement).fontSize);
@@ -338,7 +354,7 @@ for (const [viewport, scheme] of [[desk, 'dark'], [desk, 'light'], [phone, 'dark
     assert.equal((await line.textContent()).trim(), `Local AI suggests remembering: “${PLA}” Review on Memory`);
     assert.equal(await page.locator('#runDrawer .fact-line').count(), 1, 'only under the answer it came from');
     assert.doesNotMatch(await line.getAttribute('class'), /ui-notice/);
-    assert.equal(await line.locator('a').getAttribute('href'), '#memory');
+    assert.equal(await line.locator('a').getAttribute('href'), '#memory?review=suggestions');
     assert.equal(await line.locator('button').count(), 0, 'no decision under the answer: that is on Memory');
     assert.equal(await answer.evaluate(n => n.lastElementChild.className), 'fact-line', 'last, after "Used 2 of your saved facts"');
     assert.ok(await answer.evaluate(n => n.querySelector('.run-memory').compareDocumentPosition(n.querySelector('.fact-line')) & Node.DOCUMENT_POSITION_FOLLOWING));
@@ -372,6 +388,22 @@ await check('a suggestion that arrives after the answer shows up without a reloa
   await rows(page).first().locator('[data-suggest-no]').click();
   await page.locator('#ownerSuggestList').waitFor({ state: 'detached', ...T });
   await page.waitForFunction(() => !document.querySelector('.fact-line'), null, T);
+  await page.context().close();
+});
+
+await check('390: "Review on Memory" opens a folded group with the suggestion in view and focus on it', async () => {
+  const runs = [chatRun(1, 'I print mostly PLA on my X2D. What temperature?', 'Try 215 °C.')];
+  const page = await open(phone, { hash: '#home', runs, items: [fact('f1', 'You live in a two-storey house.')], suggestions: [sug('fs-1', PLA, runs[0].id)], expanded: false });
+  await openRun(page, runs[0].id);
+  await page.locator('#runDrawer .fact-line a').click();
+  await page.locator('#memory.active').waitFor(T);
+  await page.locator('#ownerSuggestList').waitFor({ state: 'visible', ...T });
+  await page.waitForFunction(() => document.activeElement?.closest('#ownerSuggestList'), null, T);
+  assert.equal(await page.locator('#ownerFactsToggle').getAttribute('aria-expanded'), 'true');
+  const r = await page.evaluate(() => { const b = document.activeElement.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, h: innerHeight }; });
+  assert.ok(r.top >= 0 && r.bottom <= r.h, `the focused Save is on screen (${JSON.stringify(r)})`);
+  await shot(page, 'memory-review-link-390-dark');
+  assert.deepEqual(page.errors, []);
   await page.context().close();
 });
 
