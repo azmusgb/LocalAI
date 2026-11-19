@@ -167,8 +167,7 @@ test('facts share an 800-character budget; the newest are left out first', async
   assert.ok(!c.includes('4'.repeat(199)) && !c.includes('5'.repeat(199)));
 });
 
-test('a failed turn shows no facts line', async t => {
-  const env = setup(t, { cloud: false });
+test('a failed turn shows no facts line', () => {
   const run = { id: 'r1', type: 'chat', status: 'failed', meta: { memoryFacts: ['mem_pla'] }, input: {}, createdAt: '2026-11-19T00:00:00Z' };
   assert.equal(runCard(run).facts, null);
   assert.equal(OF.cardLine({}), null);
