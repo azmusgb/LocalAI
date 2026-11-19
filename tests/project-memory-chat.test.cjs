@@ -172,3 +172,10 @@ test('research in a project: the web search is the question only; the answer is 
   assert.ok(msgs[1].content.includes(PM.OPEN), 'notes come right after the system prompt');
   assert.ok(msgs[2].content.includes('PETG guide'), 'then the sources');
 });
+
+test('the line is only under a written answer: a failed or stopped run shows none', () => {
+  const meta = { memoryNotes: ['mem_layer'], memoryProject: { id: 'prj_rift', name: 'RIFT tiles' } };
+  assert.equal(runCard({ type: 'chat', status: 'completed', meta }).memory.text, 'Used 1 note from RIFT tiles');
+  for (const status of ['failed', 'cancelled', 'streaming', 'running']) assert.equal(runCard({ type: 'chat', status, meta }).memory, null, status);
+  assert.equal(runCard({ type: 'agent', status: 'completed', meta }).memory, null, 'never on a mission');
+});

@@ -12,8 +12,6 @@
   "/api/powershell/cancel",
   "/api/powershell/host/result",
   "/api/powershell/jobs",
-  "/api/projects/intelligence",
-  "/api/projects/update",
   "/api/quality/scan",
   "/api/repo/inspect",
   "/api/workbench/diff",
