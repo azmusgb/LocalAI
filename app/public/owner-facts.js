@@ -7,6 +7,7 @@
   'use strict';
   // The same limits as app/owner-facts.js (tests/owner-facts.test.cjs keeps them equal).
   const MAX_FACTS = 30, MAX_LENGTH = 200, CATEGORY = 'owner';
+  const FULL = `Full: ${MAX_FACTS} of ${MAX_FACTS}. Delete or edit a fact to add another.`;
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const one = t => String(t ?? '').replace(/\s+/g, ' ').trim();
@@ -17,7 +18,9 @@
   const reason = e => one(e && e.message || e).replace(/\.$/, '') || 'no answer';
 
   // 'loading' | 'ready' | 'error'. facts: oldest first, so a new one lands beside Add. shared: notes that may become one.
-  const s = { state: 'loading', error: '', facts: [], shared: [], editing: '', seq: 0 };
+  // open: the list shows every fact; closed, the first SHOWN (oldest) and "Show all N facts".
+  const s = { state: 'loading', error: '', facts: [], shared: [], editing: '', seq: 0, open: false };
+  const SHOWN = 5;
   const isFact = n => n && n.category === CATEGORY && !n.projectId;
   const when = n => { const v = Date.parse(n && n.createdAt); return Number.isNaN(v) ? 0 : v; };
 
@@ -41,13 +44,13 @@
   function row(f, i) {
     const tid = `ownerFact${i}`;
     if (s.editing === f.id) {
-      return `<li class="ui-row owner-fact owner-fact--edit" data-fact-id="${esc(f.id)}"><form class="owner-facts__form" data-fact-form novalidate>
+      return `<li class="ui-row owner-fact owner-fact--edit" data-fact-id="${esc(f.id)}"${i >= SHOWN && !s.open ? ' hidden' : ''}><form class="owner-facts__form" data-fact-form novalidate>
         <label class="visually-hidden" for="ownerFactEdit">Edit this fact</label>
         <input id="ownerFactEdit" class="ui-field" maxlength="${MAX_LENGTH}" autocomplete="off" value="${esc(f.text)}" aria-describedby="ownerFactsRule">
         <button type="submit" class="ui-btn ui-btn--primary">Save fact</button><button type="button" class="ui-btn ui-btn--ghost" data-fact-cancel>Cancel</button>
         <p class="ui-notice ui-notice--bad owner-facts__error" role="alert" hidden></p></form></li>`;
     }
-    return `<li class="ui-row ui-row--lamp owner-fact" data-fact-id="${esc(f.id)}"><span class="owner-fact__text" id="${tid}">${esc(f.text)}</span>
+    return `<li class="ui-row ui-row--lamp owner-fact" data-fact-id="${esc(f.id)}"${i >= SHOWN && !s.open ? ' hidden' : ''}><span class="owner-fact__text" id="${tid}">${esc(f.text)}</span>
       <span class="owner-fact__actions"><button type="button" class="ui-btn ui-btn--ghost" data-fact-edit aria-describedby="${tid}">Edit</button><button type="button" class="ui-btn ui-btn--ghost" data-fact-delete aria-describedby="${tid}">Delete</button></span></li>`;
   }
 
@@ -64,24 +67,34 @@
       body.innerHTML = `<p class="ui-notice ui-notice--bad" role="alert" id="ownerFactsError">Couldn't read your saved facts: ${esc(s.error)}.</p><button type="button" class="ui-btn" id="ownerFactsRetry">Try again</button>`;
       return;
     }
-    const n = s.facts.length, full = n >= MAX_FACTS;
-    const count = full ? `Full: ${MAX_FACTS} of ${MAX_FACTS}. Delete or edit a fact to add another.` : n ? `${n} of ${MAX_FACTS}` : '';
+    const n = s.facts.length, full = n >= MAX_FACTS, more = n > SHOWN;
+    if (!more) s.open = false;
+    const count = n ? `${n} of ${MAX_FACTS}` : '';
     const keep = document.activeElement && document.activeElement.id === 'ownerFactText' ? $('ownerFactText').value : null;
     body.innerHTML = `${count ? `<p class="owner-facts__count" id="ownerFactsCount">${count}</p>` : ''}
       ${n ? `<ul class="ui-rows" id="ownerFactsList">${s.facts.map(row).join('')}</ul>` : '<p class="ui-empty owner-facts__empty" id="ownerFactsEmpty">No facts yet. Add one, like the printer you use or units you prefer.</p>'}
+      ${more ? `<button type="button" class="ui-btn ui-btn--ghost" id="ownerFactsMore" aria-controls="ownerFactsList" aria-expanded="${s.open}">${s.open ? `Show the first ${SHOWN}` : `Show all ${n} facts`}</button>` : ''}
       <form class="owner-facts__form" id="ownerFactsAdd" novalidate>
         <label class="owner-facts__label" for="ownerFactText">Add a fact</label>
-        <input id="ownerFactText" class="ui-field" maxlength="${MAX_LENGTH}" autocomplete="off" aria-describedby="ownerFactsRule${full ? ' ownerFactsCount' : ''}"${full ? ' disabled' : ''}>
-        <button type="submit" class="ui-btn ui-btn--primary" id="ownerFactAddBtn"${full ? ' disabled' : ''}>Add fact</button>
-        <p class="owner-facts__rule" id="ownerFactsRule">One sentence, up to ${MAX_LENGTH} characters.</p>
+        <input id="ownerFactText" class="ui-field" maxlength="${MAX_LENGTH}" autocomplete="off" aria-describedby="ownerFactsRule"${full ? ' disabled' : ''}>
+        <button type="submit" class="ui-btn" id="ownerFactAddBtn" aria-describedby="ownerFactsRule"${full ? ' disabled' : ''}>Add fact</button>
+        <p class="owner-facts__rule" id="ownerFactsRule">${full ? FULL : `One sentence, up to ${MAX_LENGTH} characters.`}</p>
         <p class="ui-notice ui-notice--bad owner-facts__error" id="ownerFactsAddError" role="alert" hidden></p>
       </form>`;
     if (keep !== null && !full) { const t = $('ownerFactText'); t.value = keep; t.focus(); }
   }
 
   const failIn = (form, text) => { const p = form.querySelector('.owner-facts__error'); p.textContent = text; p.hidden = false; };
-  const busy = (btn, on, words) => { if (on) { btn.dataset.words = btn.textContent; btn.textContent = words; } else if (btn.dataset.words) btn.textContent = btn.dataset.words; btn.disabled = on; };
-  const focusRow = (id, opts = {}) => { const r = ui().refocus; if (r) r(id, { within: '#ownerFactsList', key: 'factId', fallback: '#ownerFactText', ...opts }); };
+  const busy = (btn, on, words) => { if (on) { btn.dataset.words = btn.textContent; btn.textContent = words; } else if (btn.dataset.words) { btn.textContent = btn.dataset.words; delete btn.dataset.words; } btn.disabled = on; };
+  // Focus a fact's control after a redraw; a row past the first SHOWN opens the list first. The fallback is the element
+  // itself: refocus looks a selector up inside the list, which is gone once the last fact is.
+  const focusRow = (id, opts = {}) => {
+    const r = ui().refocus; if (!r) return;
+    const want = [id, opts.next, opts.prev].find(x => x && s.facts.some(f => f.id === x));
+    if (want && !s.open && s.facts.findIndex(f => f.id === want) >= SHOWN) { s.open = true; paint(); }
+    const add = $('ownerFactText');
+    r(id, { within: '#ownerFactsList', key: 'factId', fallback: add && !add.disabled ? add : $('ownerFactsRule'), ...opts });
+  };
 
   async function add(form) {
     const input = $('ownerFactText'), btn = $('ownerFactAddBtn'), text = one(input.value);
@@ -90,7 +103,7 @@
     input.removeAttribute('aria-invalid'); input.readOnly = true; busy(btn, true, 'Adding…');
     try {
       const j = await post('/api/memory/add', { projectId: '', category: CATEGORY, text });
-      input.value = ''; s.facts.push(j.item); paint(); said('Added the fact'); $('ownerFactText')?.focus();
+      input.value = ''; s.facts.push(j.item); paint(); decorate(); said('Added the fact'); $('ownerFactText')?.focus();
       if (s.facts.length >= MAX_FACTS) focusRow(j.item.id);
     } catch (e) {
       input.readOnly = false; busy(btn, false); failIn(form, `Couldn't add this fact: ${reason(e)}.`); input.focus();
@@ -135,12 +148,16 @@
   function decorate() {
     const list = $('memoryList'); if (!list || s.state !== 'ready') return;
     const ok = new Map(s.shared.filter(n => one(n.text).length && one(n.text).length <= MAX_LENGTH).map(n => [n.id, n]));
+    const full = s.facts.length >= MAX_FACTS;
     list.querySelectorAll('[data-mem-del]').forEach(del => {
       const id = del.getAttribute('data-mem-del'), bar = del.parentElement, has = bar.querySelector('[data-mem-fact]');
       if (!ok.has(id)) { if (has) has.remove(); return; }
-      if (has) return;
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-outline'; b.dataset.memFact = id; b.textContent = 'Make this a fact';
-      bar.insertBefore(b, del);
+      const b = has || document.createElement('button');
+      if (!has) { b.type = 'button'; b.className = 'btn-outline'; b.dataset.memFact = id; b.textContent = 'Make this a fact'; bar.insertBefore(b, del); }
+      // Full: the button stays, disabled, and names the reason (the line beside Add says it on screen).
+      if (b.dataset.words) return;   // a request is in flight
+      b.disabled = full;
+      if (full) b.setAttribute('aria-describedby', 'ownerFactsRule'); else b.removeAttribute('aria-describedby');
     });
   }
 
@@ -150,7 +167,7 @@
     busy(btn, true, 'Making it a fact…');
     try {
       const j = await post('/api/memory/update', { id, category: CATEGORY });
-      s.shared = s.shared.filter(n => n.id !== id); s.facts.push(j.item); paint(); said('Made it a fact');
+      s.shared = s.shared.filter(n => n.id !== id); s.facts.push(j.item); paint(); decorate(); said('Made it a fact');
       const pick = $('memoryProject'); if (pick) pick.dispatchEvent(new Event('change'));   // app.js redraws the notes without it
       focusRow(id, { control: '[data-fact-edit]', highlight: false });
     } catch (e) {
@@ -172,6 +189,7 @@
       const b = e.target.closest('button'); if (!b || b.disabled) return;
       const li = b.closest('[data-fact-id]');
       if (b.id === 'ownerFactsRetry') load();
+      else if (b.id === 'ownerFactsMore') { s.open = !s.open; paint(); $('ownerFactsMore')?.focus(); }
       else if (b.matches('[data-fact-edit]')) { s.editing = li.dataset.factId; paint(); const t = $('ownerFactEdit'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
       else if (b.matches('[data-fact-cancel]')) { const id = s.editing; s.editing = ''; paint(); focusRow(id, { control: '[data-fact-edit]' }); }
       else if (b.matches('[data-fact-delete]')) remove(li, b);

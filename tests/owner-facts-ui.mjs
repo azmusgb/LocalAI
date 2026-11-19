@@ -162,17 +162,97 @@ await check('Delete asks first in the shared sheet; Cancel keeps the fact, Delet
   await close(page);
 });
 
-await check('full: says Full: 30 of 30, and Add stays visible but disabled with the reason beside it', async () => {
+const hiddenFrom = page => page.evaluate(() => [...document.querySelectorAll('#ownerFactsList > li')].filter(li => li.hidden).length);
+// The focused element is on screen and not under the sticky head: the point at its centre is it or inside it.
+const uncovered = page => page.evaluate(() => {
+  const el = document.activeElement, r = el.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return !!hit && (hit === el || el.contains(hit));
+});
+
+await check('full: the list shows 5 with "Show all 30 facts"; the reason sits beside the disabled Add', async () => {
   const page = await open(desk, { items: FULL });
   assert.equal(await rows(page).count(), 30);
-  assert.equal((await page.locator('#ownerFactsCount').textContent()).trim(), 'Full: 30 of 30. Delete or edit a fact to add another.');
+  assert.equal(await hiddenFrom(page), 25, 'the first 5 show');
+  assert.equal(await rows(page).nth(4).isVisible(), true);
+  assert.equal(await rows(page).nth(5).isVisible(), false);
+  assert.equal((await page.locator('#ownerFactsCount').textContent()).trim(), '30 of 30');
+  assert.equal((await page.locator('#ownerFactsRule').textContent()).trim(), 'Full: 30 of 30. Delete or edit a fact to add another.');
   assert.equal(await page.locator('#ownerFactText').isDisabled(), true);
   assert.equal(await page.locator('#ownerFactAddBtn').isDisabled(), true);
-  assert.match(await page.locator('#ownerFactText').getAttribute('aria-describedby'), /ownerFactsCount/);
+  assert.equal(await page.locator('#ownerFactText').getAttribute('aria-describedby'), 'ownerFactsRule');
+  // Reason beside Add: the rule line is right under the field, not past the list.
+  const [field, rule] = await Promise.all([page.locator('#ownerFactText').boundingBox(), page.locator('#ownerFactsRule').boundingBox()]);
+  assert.ok(rule.y - (field.y + field.height) < 60, 'the reason is next to Add');
+  const more = page.locator('#ownerFactsMore');
+  assert.equal(await more.getAttribute('aria-expanded'), 'false');
+  assert.equal((await more.textContent()).trim(), 'Show all 30 facts');
+  await more.focus(); await page.keyboard.press('Enter');
+  assert.equal(await page.locator('#ownerFactsMore').getAttribute('aria-expanded'), 'true');
+  assert.equal(await hiddenFrom(page), 0);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'ownerFactsMore', 'focus stays on the toggle');
+  await page.keyboard.press('Enter');
+  assert.equal(await hiddenFrom(page), 25);
   await rows(page).nth(3).getByRole('button', { name: 'Edit' }).click();
   await page.locator('#ownerFactEdit').fill('Fact four, edited.');
   await page.locator('#ownerFactEdit').press('Enter');
   await rows(page).nth(3).locator('.owner-fact__text', { hasText: 'Fact four, edited.' }).waitFor(T);
+  // While editing, Save fact is the only primary button in the group.
+  await rows(page).nth(0).getByRole('button', { name: 'Edit' }).click();
+  assert.equal(await group(page).locator('.ui-btn--primary').count(), 1);
+  assert.equal((await group(page).locator('.ui-btn--primary').textContent()).trim(), 'Save fact');
+  await close(page);
+});
+
+await check('full: "Make this a fact" is disabled with the reason, and comes back when a fact is deleted', async () => {
+  const page = await open(desk, { items: [...FULL, note('mem-s1', 'Prefers matte finishes.')] });
+  const btn = page.locator('#memoryList [data-mem-fact="mem-s1"]');
+  await btn.waitFor({ state: 'attached', ...T });
+  assert.equal(await btn.isDisabled(), true);
+  assert.equal(await btn.getAttribute('aria-describedby'), 'ownerFactsRule');
+  await rows(page).nth(0).getByRole('button', { name: 'Delete' }).click();
+  await page.locator('dialog.ask-sheet--danger').getByRole('button', { name: 'Delete' }).click();
+  await page.waitForFunction(() => document.querySelectorAll('#ownerFactsList > li').length === 29, null, T);
+  assert.equal(await btn.isEnabled(), true);
+  assert.equal(await btn.getAttribute('aria-describedby'), null);
+  assert.equal(await page.locator('#ownerFactText').isEnabled(), true);
+  assert.equal((await page.locator('#ownerFactsRule').textContent()).trim(), 'One sentence, up to 200 characters.');
+  await close(page);
+});
+
+await check('delete the only fact, keyboard: focus lands on the Add field', async () => {
+  const page = await open(desk, { items: [fact('a', 'Answers in metric.')] });
+  await rows(page).nth(0).getByRole('button', { name: 'Delete' }).focus();
+  await page.keyboard.press('Enter');
+  await page.locator('dialog.ask-sheet--danger').waitFor(T);
+  await page.keyboard.press('Tab');                  // Cancel → Delete
+  assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Delete');
+  await page.keyboard.press('Enter');
+  await page.locator('#ownerFactsEmpty').waitFor(T);
+  await page.waitForFunction(() => document.activeElement?.id === 'ownerFactText', null, T);
+  await close(page);
+});
+
+for (const vp of [{ width: 1366, height: 768 }, phone]) {
+  await check(`${vp.width}px: after "Make this a fact" the focused Edit is in view, past the first 5, not under the sticky head`, async () => {
+    const page = await open(vp, { items: [...FULL.slice(0, 8), note('mem-s1', 'Prefers matte finishes.')] });
+    const btn = page.locator('#memoryList [data-mem-fact="mem-s1"]');
+    await btn.scrollIntoViewIfNeeded(); await btn.click();
+    await page.waitForFunction(() => document.activeElement?.matches('[data-fact-id="mem-s1"] [data-fact-edit]'), null, T);
+    assert.equal(await page.locator('#ownerFactsMore').getAttribute('aria-expanded'), 'true', 'the list opened to show it');
+    assert.equal(await uncovered(page), true);
+    await close(page);
+  });
+}
+
+await check('editing a fact past the first 5 keeps focus on it after Save', async () => {
+  const page = await open(desk, { items: FULL.slice(0, 9) });
+  await page.locator('#ownerFactsMore').click();
+  await rows(page).nth(7).getByRole('button', { name: 'Edit' }).click();
+  await page.locator('#ownerFactEdit').fill('Fact eight, edited.');
+  await page.locator('#ownerFactEdit').press('Enter');
+  await page.waitForFunction(() => document.activeElement?.matches('[data-fact-id="f7"] [data-fact-edit]'), null, T);
+  assert.equal(await uncovered(page), true);
   await close(page);
 });
 

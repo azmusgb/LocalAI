@@ -2745,6 +2745,8 @@ html.is-framed body.ux-v3 .ux-page-strip{top:0}
 .owner-facts__body>*{margin:0}
 .owner-facts__body>.ui-btn{justify-self:start}
 .owner-facts__wait{height:var(--ui-s-6)}
+/* A focused row clears the sticky head (two header heights: the bar and, on a phone, the strip). */
+.owner-fact,.owner-fact :is(.ui-btn,.ui-field){scroll-margin-top:calc(var(--ui-header-total) + var(--ui-header-total) + var(--ui-s-3))}
 .owner-facts__count,.owner-facts__rule{margin:0;color:var(--ui-muted);font-size:var(--ui-fs-2)}
 .owner-fact__actions,.owner-facts__form{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-s-2)}
 .owner-facts__form{width:100%;margin:0}
