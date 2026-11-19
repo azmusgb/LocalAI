@@ -41,6 +41,14 @@
     const el=document.getElementById(id);if(!el)return;
     el.innerHTML=`${el.hasAttribute('data-part')?'':'Sources: '}${esc(name)}: <span class="ui-chip ui-chip--${SOURCE_WORD[tone]?tone:'unknown'}">${SOURCE_WORD[tone]||'Not read yet'}</span>${when?` ${esc(when)}`:''}`;
   }
+  // A quiet refresh that failed (DESIGN, Honest states: stale): the list stays, and a notice beside it says which source
+  // isn't answering and when what is shown was read. since: the Date of the last good read, or null to clear it.
+  function staleNotice(id,name,what,since){
+    const el=document.getElementById(id);if(!el)return;
+    if(!since){el.hidden=true;el.textContent='';return}
+    const down=(window.ApplianceNeeds?.PHRASES?.source_down||"{name} isn't answering").replace('{name}',name);
+    el.textContent=`${down}. Showing ${what} as it was at ${since.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}.`;el.hidden=false;
+  }
   // The one approval sheet for risky actions. ask({title,effect,confirmLabel,tone,typed,input}) -> {ok,value?}.
   // tone: default|danger|host. typed: a word to type before Confirm enables. input: {label,type,placeholder} collects a value.
   // select: {label,options:[{value,label}],value?} replaces input with a chooser; the chosen value comes back in `value`.
@@ -258,7 +266,7 @@
     if(m.target.dataset?.runList||[...m.removedNodes].some(n=>n.classList?.contains('run-card')))boxes.add(m.target);
     for(const n of m.addedNodes){if(n.nodeType!==1)continue;if(n.classList.contains('run-card'))boxes.add(m.target);else n.querySelectorAll('.run-card').forEach(c=>boxes.add(c.parentElement))}}
     boxes.forEach(markRunList)}).observe(document.documentElement,{subtree:true,childList:true});
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{approvalSheet,plate,sources,toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,showSheet,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{approvalSheet,plate,sources,staleNotice,toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,showSheet,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();
 // Pull to refresh (touch only): on a list page that registered a refresh, a finger pulling down from the very top by
 // more than 64px refreshes the page once; a small status line says "Updating…", then "Updated just now".

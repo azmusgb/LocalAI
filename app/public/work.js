@@ -8,7 +8,7 @@ const key=it=>it.threadId||it.id,NONE={needs:'Nothing needs you.',chats:'No chat
 // Threads sort and page by their latest run's (createdAt, id), newest first, the same key the server's `before` uses.
 const newest=(a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))||String(b.id).localeCompare(String(a.id));
 const store={get:()=>{try{return localStorage.getItem(KEY)}catch{return null}},set:v=>{try{localStorage.setItem(KEY,v)}catch{}}};
-const st={threads:new Map(),items:[],more:false,loaded:false,started:false,kind:'all',gen:0,query:'',shown:'',rows:new Map(),timer:0,selecting:false,picked:new Set()}; // gen: bumps when the chip changes, so a late page of the old kind is dropped
+const st={threads:new Map(),items:[],more:false,loaded:false,started:false,kind:'all',gen:0,query:'',shown:'',rows:new Map(),timer:0,selecting:false,picked:new Set(),readAt:null,stale:false}; // gen: bumps when the chip changes, so a late page of the old kind is dropped; readAt: the last good read; stale: a refresh since then failed
 function groupOf(it){
  const t=new Date(it.createdAt),d=x=>new Date(x.getFullYear(),x.getMonth(),x.getDate()).getTime();
  if(isNaN(t))return 3;
@@ -97,16 +97,22 @@ function setKept(k,kept){const it=st.threads.get(k);if(!it)return;st.threads.set
 const text=it=>`${it.card?.title||''} ${it.card?.summary||''}`.toLowerCase();
 const visible=()=>{const q=st.query.trim().toLowerCase();return st.items.filter(it=>!q||text(it).includes(q))};
 // Work's faceplate (Pi Hub A7 P1, L2b), from the rows loaded for the chip: how many are running, the newest, and how many
-// started today and this week. `failed` (the first page didn't load) shows no count rather than an old one.
+// started today and this week. `failed` (the first page didn't load) shows no count rather than an old one, and so does a
+// stale list (a refresh failed): the rows stay, but its running count is no longer known.
 const KIND_WORD={needs:'Needs you',chats:'Chats',images:'Images',missions:'Missions',sheets:'Spreadsheets',changes:'Changes',other:'Other'};
+// A good read clears the stale notice; a failed quiet refresh keeps the rows and puts it up (A28: unreadable is not current).
+function clearStale(){st.stale=false;window.LocalAIUI?.staleNotice?.('workNotice',"Local AI's runs",'your work',null)}
+function readOk(){st.readAt=new Date();clearStale()}
+function readFailed(){st.stale=true;window.LocalAIUI?.staleNotice?.('workNotice',"Local AI's runs",'your work',st.readAt||new Date());plate()}
 function plate(failed){
  const ui=window.LocalAIUI;if(!ui?.plate)return;const latest=$('workLatest'),readings=$('workReadings');
  if(failed){ui.plate('workPlate',{lamp:['unknown','Unknown'],readout:'—'});if(latest)latest.textContent="Couldn't read your work.";if(readings)readings.hidden=true;ui.sources('workSources',"Local AI's runs",'bad');return}
+ if(st.stale){ui.plate('workPlate',{lamp:['unknown','Unknown'],readout:'—'});if(readings)readings.hidden=true;ui.sources('workSources',"Local AI's runs",'bad',st.readAt?`last read ${clock(st.readAt)}`:'');return}
  const running=st.items.filter(it=>LIVE.has(it.status)).length,top=st.items[0],filter=st.kind!=='all'?` · ${KIND_WORD[st.kind]}`:'';
  ui.plate('workPlate',{lamp:running?['ok','Running']:['unknown','Idle'],readout:running||'Nothing',unit:running?'running':'running now'});
  if(latest)latest.textContent=top?`Latest${filter}: ${top.card?.title||top.title||'Untitled'}`:st.kind==='all'?'Nothing yet. Start something from Home.':`No ${KIND_WORD[st.kind].toLowerCase()} yet.`;
  if(readings){readings.hidden=!st.items.length;$('workToday').textContent=String(st.items.filter(it=>groupOf(it)===0).length);$('workWeek').textContent=String(st.items.filter(it=>groupOf(it)<=2).length)}
- ui.sources('workSources',"Local AI's runs",'ok',`read ${new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`);
+ ui.sources('workSources',"Local AI's runs",'ok',st.readAt?`read ${clock(st.readAt)}`:'');
 }
 function paint(){
  const box=$('workList'),list=visible();plate();
@@ -139,13 +145,13 @@ const url=before=>`/api/runs?threads=1&limit=${PAGE}${st.kind!=='all'?'&kind='+s
 function render(box,data){
  if(data.gen!==st.gen)return; // the chip changed while this page loaded
  box.removeAttribute('aria-busy');st.threads.clear();st.rows.clear();st.shown='';
- merge(data.items||[]);st.more=(data.items||[]).length>=PAGE;st.loaded=true;paint();schedule();
+ readOk();merge(data.items||[]);st.more=(data.items||[]).length>=PAGE;st.loaded=true;paint();schedule();
 }
 const load=()=>{const gen=st.gen;return window.LocalAIUI.fetchJson(url()).then(d=>({...d,gen}))};
 const first=()=>{const box=$('workList'),gen=st.gen;st.started=true;box.setAttribute('aria-busy','true');return window.LocalAIUI.loadInto(box,load,{render,what:'your work'}).catch(()=>{if(gen===st.gen)plate(true)}).finally(()=>{if(gen===st.gen)box.removeAttribute('aria-busy')})};
 // A quiet refresh of the newest page: updates rows in place, adds new threads, keeps what Show more loaded.
 async function refresh(){
- const gen=st.gen;try{const d=await window.LocalAIUI.fetchJson(url());if(gen!==st.gen)return;merge(d.items||[],{window:true});paint()}catch{}
+ const gen=st.gen;try{const d=await window.LocalAIUI.fetchJson(url());if(gen!==st.gen)return;readOk();merge(d.items||[],{window:true});paint()}catch{if(gen===st.gen)readFailed()}
 }
 async function more(){
  const b=$('workMore'),last=st.items[st.items.length-1];if(!last)return;
@@ -165,7 +171,7 @@ function setKind(k,{mirror=true,remember=true,fetch=true}={}){
  if(remember&&k!=='needs')store.set(k); // Needs you is a look from Home's See all, not where Work opens next time
  if(mirror){const h='#work'+(k==='all'?'':'?kind='+k);if(location.hash!==h)history.replaceState(null,'',location.pathname+location.search+h)}
  if(changed){ // the rows on screen are another kind's: clear them and load this one (activate() loads on its own)
-  st.gen++;st.threads.clear();st.items=[];st.more=false;st.loaded=false;st.shown='';st.rows.clear();
+  st.gen++;st.threads.clear();st.items=[];st.more=false;st.loaded=false;st.shown='';st.rows.clear();clearStale();st.readAt=null;
   const box=$('workList');if(box&&st.started){box.textContent='';$('workMore').hidden=true;if(fetch)first()}
  }else if(st.loaded)paint();
  return changed;

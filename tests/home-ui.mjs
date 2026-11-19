@@ -219,6 +219,24 @@ await check('Needs you shows only Local AI\'s own rows when Pi Hub doesn\'t answ
   await page.context().close();
 });
 
+await check('a failed Recent refresh keeps the rows but says they are stale; the next good one clears that', async () => {
+  // A28: unreadable is not current. A dead server left Recent on screen as if it had just been read.
+  const page = await open(desk, '#home', { threads: six });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  assert.equal(await page.locator('#homeRecentNotice').isHidden(), true, 'no notice while the reads are good');
+  const dead = u => u.pathname === '/api/runs' && !!u.searchParams.get('threads');
+  await page.route(dead, r => r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Server blew up"}' }));
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await page.waitForSelector('#homeRecentNotice:not([hidden])', T);
+  assert.match(await page.locator('#homeRecentNotice').innerText(), /Local AI's runs isn't answering\. Showing Recent as it was at /);
+  assert.equal(await page.locator('#homeRecentNotice').getAttribute('role'), 'status');
+  assert.equal(await page.locator('#homeRecent2 .run-card').count(), 6, 'the last rows stay on screen');
+  await page.unroute(dead);
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await page.waitForSelector('#homeRecentNotice[hidden]', { ...T, state: 'attached' });
+  await page.context().close();
+});
+
 await check('Recent and Needs you show a run summary once, not again as preview text', async () => {
   const dup = (title, o) => { const r = item('chat', title, 5 * 60e3, o); r.card.preview = { type: 'text', text: 'The answer is forty-two, as computed by Deep Thought.' }; r.card.summary = 'The answer is forty-two'; return r; };
   const a = dup('Meaning of life'), f = dup('Failed meaning', { status: 'failed' });

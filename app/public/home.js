@@ -248,14 +248,17 @@ async function loadNeeds(){
  paintNeeds();
  if(lastRecent?.box.isConnected&&!lastRecent.box.querySelector(':scope > .state-loading,:scope > .state-error'))paintRecent(lastRecent.box,lastRecent.data); // Recent may have painted before Needs you knew its rows
 }
+// A failed quiet refresh keeps Recent's rows and says how old they are; the next good read clears that (A28).
+let recentReadAt=null;
+function recentRead(ok){if(ok)recentReadAt=new Date();root.LocalAIUI?.staleNotice?.('homeRecentNotice',"Local AI's runs",'Recent',ok?null:recentReadAt||new Date())}
 let inflight=null;
 function refresh(){
  if(inflight)return inflight;
  if(!active()||!onHomeHash())return Promise.resolve();
  const box=$('homeRecent2');if(!box)return Promise.resolve();
  const first=!loaded;
- const recent=first?root.LocalAIUI.loadInto(box,()=>root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}),{what:'your recent work',empty:'Nothing yet. Ask a question or make an image below.',render:paintRecent}).then(()=>{loaded=true},()=>{})
-  :root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}).then(d=>{if(!paintRecent(box,d))box.innerHTML='<div class="state-empty empty-state">Nothing yet. Ask a question or make an image below.</div>'}).catch(()=>{});
+ const recent=first?root.LocalAIUI.loadInto(box,()=>root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}),{what:'your recent work',empty:'Nothing yet. Ask a question or make an image below.',render:paintRecent}).then(()=>{loaded=true;recentRead(true)},()=>{})
+  :root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}).then(d=>{recentRead(true);if(!paintRecent(box,d))box.innerHTML='<div class="state-empty empty-state">Nothing yet. Ask a question or make an image below.</div>'}).catch(()=>recentRead(false));
  return inflight=Promise.all([recent,loadNeeds()]).finally(()=>{inflight=null});
 }
 function schedule(){clearTimeout(timer);timer=setTimeout(()=>{if(active()&&!document.hidden)refresh().then(schedule);else schedule()},30000)}

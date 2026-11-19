@@ -253,6 +253,27 @@ await check('a running row updates in place within 6 s and the scroll position s
   await page.context().close();
 });
 
+await check('a failed refresh keeps the list but says it is stale; the next good one clears that', async () => {
+  // A28: unreadable is not current. With the server down the last list (a "running" run included) stayed on screen
+  // with no cue at all.
+  let n = 0;
+  const run = item('agent', 'Sorting the archive', 60e3, { status: 'running' });
+  const page = await open(desk, '#work', async () => { n++; return n === 2 ? { status: 500 } : [run, ...mixed()]; });
+  await page.waitForSelector('#work .run-card', T);
+  assert.equal(await page.locator('#workNotice').isHidden(), true, 'no notice while the reads are good');
+  await page.waitForSelector('#workNotice:not([hidden])', T);
+  assert.match(await page.locator('#workNotice').innerText(), /Local AI's runs isn't answering\. Showing your work as it was at /);
+  assert.equal(await page.locator('#workNotice').getAttribute('role'), 'status');
+  assert.equal(await rows(page).count(), 8, 'the last list stays on screen');
+  assert.equal(await page.locator('#workPlate [data-plate-lamp]').innerText(), 'Unknown', 'a stale running count is not shown as Running');
+  assert.equal(await page.locator('#workPlate .ui-readout').innerText(), '—');
+  assert.match(await page.locator('#workSources').innerText(), /Not answering/);
+  await page.waitForSelector('#workNotice[hidden]', { ...T, state: 'attached' });
+  assert.equal(await page.locator('#workPlate [data-plate-lamp]').innerText(), 'Running');
+  assert.match(await page.locator('#workSources').innerText(), /Answering/);
+  await page.context().close();
+});
+
 await check('a chat thread says how many turns (from the server) and keeps its latest summary', async () => {
   const a = { ...item('chat', 'Budget talk', 1 * HOUR, { threadId: 'tb', summary: 'Latest answer about the budget' }), turns: 3 };
   const c = { ...item('chat', 'Lone chat', 3 * HOUR, { threadId: 'tl', summary: 'Just one turn' }), turns: 1 };
