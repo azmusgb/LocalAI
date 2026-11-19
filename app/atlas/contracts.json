@@ -65,6 +65,24 @@
     "source": "pi-hub hub/app.py; spec 2026-11-07-atlas-across-repos-design.md"
   },
   {
+    "id": "now-prints",
+    "contract": null,
+    "label": "Print list for Past work",
+    "provider": {
+      "repo": "pi-hub",
+      "module": "hub/app.py",
+      "method": "GET",
+      "path": "/api/now/prints"
+    },
+    "consumers": [
+      {
+        "repo": "localai",
+        "module": "app/pi-hub.js"
+      }
+    ],
+    "source": "pi-hub hub/app.py; platform amendment A29 D1"
+  },
+  {
     "id": "needs-v1",
     "contract": "needs-item.v1",
     "provider": {

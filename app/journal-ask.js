@@ -22,7 +22,9 @@ const { PHRASES } = require('./public/ui/needs.js');
 const NOTHING = "I don't have anything about that.";
 const UNREADABLE = "Couldn't read your past work.";
 const NO_FILMS = "I keep no record of what was watched, so I can't say.";
-const NO_PRINT_READER = "I can't read Pi Hub's print list from here yet, so I can't say what was printed. Workshop on Pi Hub shows it.";
+// Only when Pi Hub is switched off here (LOCALAI_PI_HUB_URL=off): there is no reader, which is not Pi Hub being down.
+const NO_PRINT_READER = "I can't read Pi Hub's print list from here, so I can't say what was printed. Workshop on Pi Hub shows it.";
+const NO_PRINT_READER_UNREAD = "Pi Hub's print list can't be read from here";
 const QUESTION_MAX = 500, TERM_LIMIT = 12, WINDOW_LIMIT = 30, TERMS_MAX = 8, TITLE_MAX = 200, LINK_MAX = 100;
 // The run ledger keeps at most 24 KB of a run's output and replaces anything larger with a preview (app/run-ledger.js).
 const OUTPUT_MAX_BYTES = 22 * 1024;
@@ -175,13 +177,13 @@ function printItem(p, timeZone) {
 // What Pi Hub's print list gives a question: {items} to read, or {answer, unread} when there is nothing a model may
 // be asked about (the list could not be read, or holds nothing for the days asked about).
 async function printsFor({ question, journal, prints, timeZone }) {
-  // No reader: this Local AI has no way to read Pi Hub's print list (app/pi-hub.js printLog says why). Said as that,
-  // never as an empty list or as Pi Hub being down.
-  if (typeof prints !== 'function') return { answer: NO_PRINT_READER, unread: "Pi Hub's print list can't be read from here" };
+  // No reader (Pi Hub switched off here: the server passes app/pi-hub.js prints, which says 'off'). Said as that, never
+  // as an empty list or as Pi Hub being down.
+  if (typeof prints !== 'function') return { answer: NO_PRINT_READER, unread: NO_PRINT_READER_UNREAD };
   let read = null;
   try { read = await prints(); } catch { read = null; }
   if (!read || read.ok !== true || !Array.isArray(read.prints)) {
-    if (read?.source === 'off') return { answer: "Pi Hub isn't connected here, so I can't say what was printed.", unread: "Pi Hub isn't connected here" };
+    if (read?.source === 'off') return { answer: NO_PRINT_READER, unread: NO_PRINT_READER_UNREAD };
     const name = read?.source === 'bambuddy' ? 'Bambuddy' : 'Pi Hub';
     return { answer: `${down(name)}, so I can't say what was printed.`, unread: down(name) };
   }

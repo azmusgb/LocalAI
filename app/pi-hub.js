@@ -85,13 +85,11 @@ function printerRecord(body, now = Date.now()) {
   };
 }
 
-// Bambuddy's print log as Pi Hub's Workshop page serves it (GET /api/workshop: prints, newest first, at most 20, and
-// prints_available: false when Bambuddy didn't answer the hub) → {ok: true, prints} or {ok: false, source}: which source
-// could not be read. Untrusted text: only these fields leave, cut to size; times become ISO strings. Past work (A28 D3)
-// reads prints at ask time through this shape. Not fetched yet: Local AI reaches the hub over plain http, where only
-// the machine paths (/api/now, /api/needs, /api/records, /api/systems) answer, and A28 approves no new route, key or
-// gate change, so how /api/workshop is read is the owner's decision.
-const PRINTS_MAX = 20;
+// Bambuddy's print log as Pi Hub serves it to machines (GET /api/now/prints, platform amendment A29 D1: prints, newest
+// first, at most 20, and prints_available: false when Bambuddy didn't answer the hub) → {ok: true, prints} or
+// {ok: false, source}: which source could not be read. Untrusted text: only these fields leave, cut to size; times
+// become ISO strings. Past work (A28 D3) reads it at ask time through createPiHub().prints and keeps none of it.
+const PRINTS_MAX = 20, PRINTS_CACHE_MS = 15000;
 const isoOf = s => (Number.isFinite(s) && s > 0 && s < 8.64e12 ? new Date(s * 1000).toISOString() : null);
 function printLog(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, source: 'pi-hub' };
@@ -104,7 +102,7 @@ function printLog(body) {
   return { ok: true, prints };
 }
 
-function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80', fetchImpl = fetch, now = Date.now } = {}) {
+function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80', fetchImpl = fetch, now = Date.now, timeoutMs = TIMEOUT_MS } = {}) {
   const off = !url || url === 'off';
   let cache = { at: -Infinity, value: null };
   async function read() {
@@ -112,7 +110,7 @@ function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80
     if (now() - cache.at < CACHE_MS) return cache.value;
     let value = null;
     try {
-      const r = await fetchImpl(new URL('/api/now', url), { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      const r = await fetchImpl(new URL('/api/now', url), { signal: AbortSignal.timeout(timeoutMs) });
       if (r.ok) value = summarize(await r.json());
     } catch { value = null; }
     cache = { at: now(), value };
@@ -130,7 +128,7 @@ function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80
     needsInFlight = (async () => {
       let value = null;
       try {
-        const r = await fetchImpl(new URL('/api/needs', url), { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { Accept: 'application/json' } });
+        const r = await fetchImpl(new URL('/api/needs', url), { signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json' } });
         if (r.ok) value = needsList(await r.json());
       } catch { value = null; }
       needsCache = { at: now(), value };
@@ -146,7 +144,7 @@ function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80
         printerInFlight = (async () => {
           let body = null;
           try {
-            const r = await fetchImpl(new URL('/api/records', url), { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { Accept: 'application/json' } });
+            const r = await fetchImpl(new URL('/api/records', url), { signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json' } });
             if (r.ok) body = await r.json();
           } catch { body = null; }
           printerCache = { at: now(), body };
@@ -156,17 +154,39 @@ function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80
     }
     return printerRecord(printerCache.body, now());
   }
+  // Pi Hub's print list for one Past work answer (A29): {ok: true, prints} or {ok: false, source}. 'off' when
+  // LOCALAI_PI_HUB_URL is off; 'bambuddy' when the hub answered that Bambuddy didn't; 'pi-hub' for anything else (no
+  // answer, slow past the timeout, a redirect to the signed-in hub, a non-200, a body that isn't the list). A list read
+  // is kept 15 s so a quick second question doesn't ask again; a failure is not kept, so asking again reads again.
+  // One fetch at a time. Never throws.
+  let printsCache = { at: -Infinity, value: null }, printsInFlight = null;
+  async function prints() {
+    if (off) return { ok: false, source: 'off' };
+    if (printsCache.value && now() - printsCache.at < PRINTS_CACHE_MS) return printsCache.value;
+    if (!printsInFlight) {
+      printsInFlight = (async () => {
+        let value;
+        try {
+          const r = await fetchImpl(new URL('/api/now/prints', url), { signal: AbortSignal.timeout(timeoutMs), redirect: 'error', headers: { Accept: 'application/json' } });
+          value = r.ok && r.status === 200 ? printLog(await r.json()) : { ok: false, source: 'pi-hub' };
+        } catch { value = { ok: false, source: 'pi-hub' }; }
+        if (value.ok) printsCache = { at: now(), value };
+        return value;
+      })().finally(() => { printsInFlight = null; });
+    }
+    return printsInFlight;
+  }
   // The poster of playing item `n` (a JPEG), or null.
   async function poster(n) {
     if (off || !Number.isInteger(n) || n < 0 || n > 5) return null;
     try {
-      const r = await fetchImpl(new URL(`/api/now/poster/${n}.jpg`, url), { signal: AbortSignal.timeout(TIMEOUT_MS) });
+      const r = await fetchImpl(new URL(`/api/now/poster/${n}.jpg`, url), { signal: AbortSignal.timeout(timeoutMs) });
       if (!r.ok || !/^image\/jpeg/.test(r.headers.get('content-type') || '')) return null;
       const buf = Buffer.from(await r.arrayBuffer());
       return buf.length > 4 && buf.length <= 400 * 1024 ? buf : null;
     } catch { return null; }
   }
-  return { read, needs, poster, printer };
+  return { read, needs, poster, printer, prints };
 }
 
 module.exports = { createPiHub, summarize, playingItem, needsList, printerRecord, printLog };

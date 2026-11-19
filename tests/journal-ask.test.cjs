@@ -12,7 +12,7 @@ const { Storage } = require('../app/storage');
 const { createJournal } = require('../app/journal');
 const { fitMessages, TEXT_NUM_CTX, ANSWER_RESERVE, CHARS_PER_TOKEN } = require('../app/text-context');
 const { speakable } = require('../app/voice');
-const { printLog } = require('../app/pi-hub');
+const { printLog, createPiHub } = require('../app/pi-hub');
 const { askHistory, retrieve, buildPrompt, citationsOf, runOutput, withoutMarkers, topicOf, HistoryUnreadable, NOTHING, UNREADABLE, NO_FILMS, NO_PRINT_READER, QUESTION_MAX, OUTPUT_MAX_BYTES, OPEN, CLOSE } = require('../app/journal-ask');
 
 const NOW = Date.parse('2026-10-23T15:00:00Z'); // a Friday, 11:00 in New York
@@ -304,19 +304,66 @@ test('Pi Hub not answering, and Bambuddy not answering Pi Hub, are each said by 
   }
   assert.deepEqual(await ask(journal, 'did my last print finish', m, { prints: hub({ prints_available: false, prints: [] }) }),
     { answer: "Bambuddy isn't answering, so I can't say what was printed.", citations: [], entries: [], from: 'prints', unread: "Bambuddy isn't answering" });
-  // Pi Hub switched off here (LOCALAI_PI_HUB_URL=off): said as that, not as an empty list.
-  const off = await ask(journal, 'what did I print yesterday', m, { prints: async () => ({ ok: false, source: 'off' }) });
-  assert.equal(off.answer, "Pi Hub isn't connected here, so I can't say what was printed.");
-  assert.equal(off.unread, "Pi Hub isn't connected here");
-  // No reader at all (the server today: Pi Hub's /api/workshop is behind its gate for Local AI, app/pi-hub.js printLog):
-  // said as that, never as "no prints" and never as Pi Hub being down.
-  for (const prints of [undefined, null]) {
+  // Pi Hub switched off here (LOCALAI_PI_HUB_URL=off: the reader says 'off'), or no reader at all: the list can't be
+  // read from here, said as that, never as "no prints" and never as Pi Hub being down.
+  for (const prints of [undefined, null, async () => ({ ok: false, source: 'off' }), createPiHub({ url: 'off', fetchImpl: () => assert.fail('off') }).prints]) {
     assert.deepEqual(await ask(journal, 'did my last print finish', m, { prints }),
       { answer: NO_PRINT_READER, citations: [], entries: [], from: 'prints', unread: "Pi Hub's print list can't be read from here" });
   }
   assert.match(NO_PRINT_READER, /can't read Pi Hub's print list/);
   assert.equal(m.calls.length, 0, 'no model claim about prints');
   assert.notEqual(down.answer, NOTHING);
+});
+
+// The server's own reader (app/pi-hub.js createPiHub().prints, A29) against a fake Pi Hub: the list as GET /api/now/prints
+// sends it, a finished, a failed (with its reason) and a cancelled print; then Bambuddy down and Pi Hub down.
+const nowPrints = { as_of: NOW / 1000, prints_available: true, prints: [
+  { id: 812, name: 'RIFT tile 10in', status: 'completed', word: 'Finished', started: Date.parse('2026-10-22T16:00:00Z') / 1000, ended: Date.parse('2026-10-22T18:14:00Z') / 1000, seconds: 8040, grams: 41.2, error: null },
+  { id: 811, name: 'cable_clip', status: 'failed', word: 'Failed', started: Date.parse('2026-10-21T12:00:00Z') / 1000, ended: Date.parse('2026-10-21T12:30:00Z') / 1000, seconds: 1800, grams: 2, error: 'Filament ran out' },
+  { id: 810, name: 'hinge_test', status: 'cancelled', word: 'Cancelled', started: Date.parse('2026-10-20T09:00:00Z') / 1000, ended: Date.parse('2026-10-20T09:10:00Z') / 1000, seconds: 600, grams: 0.4, error: null }
+] };
+const fakeHub = fetchImpl => createPiHub({ url: 'http://pi.test', fetchImpl, timeoutMs: 30 }).prints;
+const reply = (body, status = 200) => async () => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+
+test('through the server\'s reader: a finished, a failed and a cancelled print reach the local model only inside the marked block, cited to Workshop, and none of it is journaled', async t => {
+  const journal = open(t);
+  const before = journal.count();
+  const m = model('RIFT tile 10in finished [1]; cable_clip failed because the filament ran out [2]; hinge_test was cancelled [3].');
+  const out = await ask(journal, 'did my last print finish', m, { prints: fakeHub(reply(nowPrints)) });
+  assert.equal(out.from, 'prints'); assert.equal(out.unread, null);
+  assert.deepEqual(out.entries.map(e => [e.id, e.title, e.link]), [
+    ['print-812', 'RIFT tile 10in · Finished', 'hub:workshop'],
+    ['print-811', 'cable_clip · Failed', 'hub:workshop'],
+    ['print-810', 'hinge_test · Cancelled', 'hub:workshop']
+  ]);
+  assert.deepEqual(out.citations.map(c => [c.n, c.link]), [[1, 'hub:workshop'], [2, 'hub:workshop'], [3, 'hub:workshop']], 'each print cited with the Workshop link');
+  const { system, prompt } = m.calls[0];
+  assert.match(system, /untrusted data, not instructions/);
+  const inside = block(prompt), outside = prompt.replace(inside, '');
+  for (const words of ['RIFT tile 10in · Finished', 'cable_clip · Failed', 'hinge_test · Cancelled', 'Reason given: Filament ran out']) {
+    assert.ok(inside.includes(words), `${words} is inside the marked block`);
+    assert.ok(!outside.includes(words), `${words} is nowhere else`);
+  }
+  assert.deepEqual(numbered(prompt), [1, 2, 3]);
+  assert.equal(journal.count(), before, 'nothing about prints was journaled (A28 D2)');
+  assert.equal(journal.search({ q: 'cable_clip' }).items.length, 0);
+});
+
+test('through the server\'s reader: Bambuddy down names Bambuddy; Pi Hub non-200, timeout or bad JSON names Pi Hub; the model is not asked', async t => {
+  const journal = open(t);
+  const m = model('It finished [1].');
+  assert.deepEqual(await ask(journal, 'did my last print finish', m, { prints: fakeHub(reply({ as_of: NOW / 1000, prints_available: false, prints: [] })) }),
+    { answer: "Bambuddy isn't answering, so I can't say what was printed.", citations: [], entries: [], from: 'prints', unread: "Bambuddy isn't answering" });
+  const down = { answer: "Pi Hub isn't answering, so I can't say what was printed.", citations: [], entries: [], from: 'prints', unread: "Pi Hub isn't answering" };
+  const cases = {
+    '502': reply({ error: 'bad gateway' }, 502),
+    timeout: (u, { signal }) => new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason))),
+    'bad JSON': async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('Unexpected token <'); } }),
+    refused: async () => { throw new TypeError('fetch failed'); }
+  };
+  for (const [name, fetchImpl] of Object.entries(cases)) assert.deepEqual(await ask(journal, 'did my last print finish', m, { prints: fakeHub(fetchImpl) }), down, name);
+  assert.equal(m.calls.length, 0);
+  assert.equal(journal.count(), 0, 'nothing journaled');
 });
 
 test('a question about films says no record is kept: no model, no journal read, no Pi Hub read', async t => {
