@@ -88,9 +88,15 @@ test('a big chat history never blocks the server for long', async () => {
     for (let i = 0; i < 50; i++) messages.push({ role: 'user', content: `Chat ${c} turn ${i}`, createdAt: now }, { role: 'assistant', content: 'y'.repeat(500) });
     storage.put('conversations', { id: `big-${c}`, title: `Big ${c}`, createdAt: now, messages });
   }
-  let last = Date.now(), worst = 0;
-  await importAll({ storage, journal, runLedger, pause: async () => { worst = Math.max(worst, Date.now() - last); await new Promise(r => setImmediate(r)); last = Date.now(); } });
-  assert.ok(worst < 400, `blocked ${worst} ms`);
+  // The work between two pauses is bounded by entries written, not by a wall-clock limit: commit time depends on how
+  // busy the machine is (a 400 ms limit failed local CI under load), the number of entries per transaction does not.
+  const record = journal.record.bind(journal);
+  let since = 0, most = 0, pauses = 0;
+  journal.record = entry => { since++; return record(entry); };
+  await importAll({ storage, journal, runLedger, batch: 200, pause: async () => { most = Math.max(most, since); since = 0; pauses++; await new Promise(r => setImmediate(r)); } });
+  most = Math.max(most, since);
+  assert.ok(most <= 200, `${most} entries between two pauses`);
+  assert.ok(pauses >= 5000 / 200, `${pauses} pauses for 5,000 chat turns`);
   assert.equal(journal.search({ q: 'turn', limit: 200 }).items.length, 200);
   storage.close();
 });

@@ -21,6 +21,7 @@ async function importAll({ storage, journal, runLedger, batch = 200, pause = () 
   const progress = storage.readSetting(IMPORT_KEY, null) || { done: false, stage: STAGES[0], offset: 0 };
   if (progress.done) return { added: 0, done: true };
   let added = 0;
+  const cap = Math.max(1, Math.floor(Number(batch)) || 200);
   const add = entry => { if (entry && journal.record(entry)) added++; };
   // A chat or mission that a run entry already holds (within a day, same opening words) is not imported again. The
   // run titles are indexed once by UTC day, so each check is a few comparisons, not a query.
@@ -74,13 +75,21 @@ async function importAll({ storage, journal, runLedger, batch = 200, pause = () 
     const stage = STAGES[s];
     let offset = stage === progress.stage ? progress.offset || 0 : 0;
     // A conversation holds many turns, so fewer of them go in one transaction.
-    const size = stage === 'conversations' ? Math.max(1, Math.floor(batch / 20)) : batch;
+    const size = stage === 'conversations' ? Math.max(1, Math.floor(cap / 20)) : cap;
     // Runs come from the ledger (oldest last); everything else pages through its collection.
     const all = stage === 'runs' ? runLedger.list({ all: true }) : null;
     for (;;) {
       const items = all ? all.slice(offset, offset + size) : storage.list(collection[stage], { limit: size, offset });
       if (!items.length) break;
-      storage.transaction(() => { for (const item of items) [].concat(builders[stage](item) || []).forEach(add); });
+      // One transaction holds at most `batch` entries, with a pause between them: a long chat yields many entries, and
+      // sizing the transaction by conversations alone let one batch write thousands at once.
+      const entries = [];
+      for (const item of items) for (const entry of [].concat(builders[stage](item) || [])) entries.push(entry);
+      for (let i = 0; i < entries.length; i += cap) {
+        if (i) await pause();
+        const chunk = entries.slice(i, i + cap);
+        storage.transaction(() => { chunk.forEach(add); });
+      }
       offset += items.length;
       storage.writeSetting(IMPORT_KEY, { done: false, stage, offset });
       await pause();
