@@ -355,7 +355,11 @@ async function main() {
   await status(state, description);
   if (failedSteps.length) comment(failureComment({ failedSteps, failingTests: unit.ok ? [] : failingUnitTests(unit.out), failingSuites: browser.failing, host: os.hostname() }));
   else if (browser.retried.length) comment(retryComment(browser.retried));
+  // Recorded only if the tree is still the one read at the start (a local run tests the checkout live, so an edit or a
+  // commit during the run would otherwise be recorded as tested).
   if (shouldRecordGreen({ key: tested.key, dry: DRY, stopped: stopping, state, failedSteps })) {
+    const now = testedKey();
+    if (now.key !== tested.key) { say(`(not recorded as green: the tree changed during the run; ${now.key ? 'it is now another commit' : now.why})`); return true; }
     try {
       const entry = { key: tested.key, tree: tested.tree, node: process.version, at: new Date().toISOString(), pr: pr ? Number(pr) : null, summary: description };
       writeJsonAtomic(GREEN_FILE, { green: addGreen(readJson(GREEN_FILE, {}, cacheWarning)?.green, entry) });
