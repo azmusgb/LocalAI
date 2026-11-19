@@ -56,8 +56,35 @@ test('missions, agents, GridCraft and change planning neither read notes nor bui
 test('chat puts the block only in what this PC\'s model is sent, never in what a cloud model is sent', () => {
   const src = read(path.join('server', 'chat.js'));
   const fn = name => { const at = src.indexOf(`function ${name}(`); assert.ok(at >= 0, name); return src.slice(at, src.indexOf('\n  }\n', at)); };
-  assert.match(fn('chatMessages'), /projectMemory\.memoryMessage\(prep\.memory\)/);
-  assert.doesNotMatch(fn('cloudMessages'), /prep\.memory|memoryMessage/);
+  assert.match(fn('chatMessages'), /projectMemory\.memoryMessage\(\{ project: prep\.memory\?\.project, notes, facts \}\)/);
+  assert.doesNotMatch(fn('cloudMessages'), /prep\.memory|prep\.facts|memoryMessage/);
   // The memory message is built in exactly one place.
   assert.equal(src.split('memoryMessage(').length - 1, 1);
+});
+
+// Owner facts (docs/superpowers/specs/2026-11-19-owner-facts-design.md §3): the same rule. Only chat (chat, research and
+// voice turns) reads them, through the shared-notes reader it already has, and only the run card reads their line.
+test('only app/server/chat.js (and the run card, for its line) use the owner facts in a turn', () => {
+  const loaders = SERVER_FILES.filter(f => /require\(['"](?:\.\.?\/)+owner-facts['"]\)/.test(read(f))).sort();
+  assert.deepEqual(loaders, ['run-cards.js', path.join('server', 'chat.js'), path.join('server', 'projects.js')].sort());
+  assert.match(read('run-cards.js'), /const \{ cardLine: factsLine \} = require\('\.\/owner-facts'\);/);
+  // The memory routes use only the list's rules, never the turn's reader.
+  assert.doesNotMatch(read(path.join('server', 'projects.js')), /forTurn|runMeta|cardLine/);
+});
+
+test('missions, agents, GridCraft and change planning never get the owner facts', () => {
+  const toolRuns = ['agent-orchestrator.js', 'agent-runtime.js', 'agent-tools.js', 'mission-answer.js', 'mission-evidence.js',
+    path.join('server', 'agents.js'), path.join('server', 'gridcraft.js'), path.join('server', 'changes.js'), path.join('server', 'workbench.js')];
+  for (const f of toolRuns) assert.doesNotMatch(read(f), /owner-facts|ownerFacts|forTurn|category\s*===?\s*['"]owner['"]/, `${f} must not reach the owner facts`);
+});
+
+test("facts are read after routing and never go into a cloud model's messages", () => {
+  const src = read(path.join('server', 'chat.js')).replace(/^\s*\/\/.*$/gm, '');   // code, not comments
+  const prep = src.slice(src.indexOf('async function prepareChat('), src.indexOf('function projectFor('));
+  assert.ok(prep.indexOf('coordinator.route(') < prep.indexOf('ownerFacts.forTurn('), 'the route is decided before the facts are read');
+  assert.doesNotMatch(prep.slice(0, prep.indexOf('coordinator.route(')), /ownerFacts|prep\.facts/);
+  const cloud = src.slice(src.indexOf('function cloudMessages('), src.indexOf('async function prepareChat('));
+  assert.doesNotMatch(cloud, /prep\.facts|ownerFacts/);
+  // The run says who answered: a cloud answer records that the facts were left out.
+  assert.equal(src.split('ownerFacts.runMeta(prep.facts, { sent: local.factsSent, cloud: !!cloud })').length - 1, 2);
 });

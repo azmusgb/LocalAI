@@ -170,6 +170,12 @@ The Projects tab opens on your projects. Its tabs:
   12), on this computer only, and the answer says **Used 3 notes from RIFT tiles**, which opens them here. Filing a chat
   takes effect from its next message. **Use these notes in chat**, on the project's Memory tab, turns this off for one
   project. If the notes can't be read, the answer says so and is written without them.
+  Its first group, **About you and the house**, holds up to 30 lasting facts about you and your home (one sentence
+  each, up to 200 characters): add, edit or delete them there, or tap **Make this a fact** on a short shared note.
+  Every chat, research or voice answer written on this computer starts with them (as many as fit in about 800
+  characters, the newest left out first) and says **Used 2 of your saved facts**. They never leave this computer: an
+  answer from a cloud model is written without them and says so, and they never make a chat stay on this computer. If
+  they can't be read, the answer says so and is written without them.
 - **Library**: what you kept. Chats and research arrive only when you tap **☆ Keep** on them (in the open chat or
   on their row in Work); images you make arrive by themselves (a Best quick preview only when you keep it). Conversations and research are a list, newest first,
   and images are pictures after them. Filter by kind, or show only what you **pinned**. ☆ pins an item. × takes a

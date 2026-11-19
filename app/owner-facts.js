@@ -70,4 +70,44 @@ function select(notes, budget = BUDGET, overhead = 3) {
   return { kept, left: left.reverse(), used };
 }
 
-module.exports = { CATEGORY, MAX_FACTS, MAX_LENGTH, BUDGET, isFact, normalise, sameKey, check, facts, canSave, fullMessage, select };
+// --- In a turn (spec §3, §4). app/server/chat.js reads the shared notes once per turn (nothing is cached across turns)
+// and puts the facts that fit in the notes block (app/project-memory.js memoryMessage) of what this PC's model is
+// sent, never in what a cloud model is sent. Facts never decide where a turn goes (owner decision D1).
+const UNREADABLE = "Couldn't read your saved facts";
+const CLOUD = "Your saved facts weren't used: this answer came from a cloud model.";
+
+// read() -> the shared notes (may throw). -> {state:'used', facts} | {state:'none'} | {state:'unreadable'}; never
+// 'none' for a read that failed.
+function forTurn(read, budget = BUDGET) {
+  let items;
+  try {
+    items = read();
+    if (!Array.isArray(items)) throw new TypeError('The notes are not a list');
+  } catch {
+    return { state: 'unreadable' };
+  }
+  const { kept } = select(items, budget);
+  return kept.length ? { state: 'used', facts: kept } : { state: 'none' };
+}
+
+// What the run keeps (run.meta) once it is known who answered. sent: the block reached this PC's model. cloud: a cloud
+// model wrote the answer, so the facts were left out. A failed read is said only under an answer from this PC.
+function runMeta(found, { sent = false, cloud = false } = {}) {
+  if (!found || typeof found !== 'object') return {};
+  if (found.state === 'unreadable') return cloud ? {} : { memoryFactsUnread: true };
+  if (found.state !== 'used') return {};
+  if (cloud) return { memoryFactsCloud: true };
+  return sent ? { memoryFacts: found.facts.map(f => f.id) } : {};
+}
+
+// The line under the answer, from run.meta: {text, count, unread, cloud} or null.
+function cardLine(meta) {
+  if (!meta || typeof meta !== 'object') return null;
+  if (meta.memoryFactsUnread === true) return { text: UNREADABLE, count: 0, unread: true, cloud: false };
+  if (meta.memoryFactsCloud === true) return { text: CLOUD, count: 0, unread: false, cloud: true };
+  const ids = Array.isArray(meta.memoryFacts) ? meta.memoryFacts.filter(x => typeof x === 'string') : [];
+  if (!ids.length) return null;
+  return { text: `Used ${ids.length} of your saved facts`, count: ids.length, unread: false, cloud: false };
+}
+
+module.exports = { CATEGORY, MAX_FACTS, MAX_LENGTH, BUDGET, UNREADABLE, CLOUD, isFact, normalise, sameKey, check, facts, canSave, fullMessage, select, forTurn, runMeta, cardLine };

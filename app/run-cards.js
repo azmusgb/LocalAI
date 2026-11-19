@@ -3,6 +3,7 @@
 // STATUS mirrors LocalAIKit.statusBadge in public/ui.js: keep the two tables identical.
 const { label: routeLabel } = require('./model-router');
 const { cardLine: memoryLine } = require('./project-memory');
+const { cardLine: factsLine } = require('./owner-facts');
 const STATUS = Object.freeze({awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],error:['Failed','bad'],validation_failed:['Needs a look','bad'],patch_failed:['Needs a look','bad'],rejected:['Rejected','neutral'],cancelled:['Cancelled','neutral'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']});
 const KINDS = Object.freeze({chat:['compose','ask'],prompt:['history','ask'],research:['globe','ask'],image:['image','create'],agent:['automate','agents'],automation:['refresh','automationStudio'],engineering:['build','changes'],spreadsheet:['file','spreadsheets']});
 const LEGACY_TYPES = Object.freeze({mission:'agent',specialist:'agent'});
@@ -89,7 +90,9 @@ function runCard(run, { approvalFor, changeFor, feedbackFor } = {}) {
   const route = text ? { text, why: typeof used.why === 'string' ? used.why.slice(0, 160) : '' } : null;
   // A chat in a project: which of its Memory notes the answer used, or that they couldn't be read (app/project-memory.js).
   // Only under an answer that was written: a failed or stopped run used nothing.
-  const memory = (kind === 'chat' || kind === 'research') && run.status === 'completed' ? memoryLine(meta) : null;
+  // And the owner's saved facts: used, left out for a cloud model, or couldn't be read (app/owner-facts.js).
+  const answered = (kind === 'chat' || kind === 'research') && run.status === 'completed';
+  const memory = answered ? memoryLine(meta) : null, facts = answered ? factsLine(meta) : null;
   // The owner's verdict on an answer (app/answer-feedback.js): {verdict, note} or null, or {unread: true} when it couldn't
   // be read. Only answers carry one; without a lookup the card says nothing about it.
   const rated = {};
@@ -97,6 +100,6 @@ function runCard(run, { approvalFor, changeFor, feedbackFor } = {}) {
     const f = feedbackFor(run);
     rated.feedback = f && f.unread ? { unread: true } : f && f.verdict ? { verdict: f.verdict, note: f.note || '' } : null;
   }
-  return { kind, icon, title: readableTitle(run), summary, badge: outcomeBadge(run, kind, summary) || badge(run.status), preview, action, approval, view, route, memory, ...rated };
+  return { kind, icon, title: readableTitle(run), summary, badge: outcomeBadge(run, kind, summary) || badge(run.status), preview, action, approval, view, route, memory, facts, ...rated };
 }
 module.exports = { runCard, readableTitle, STATUS, workKind, WORK_CHIPS };

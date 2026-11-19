@@ -162,3 +162,25 @@ test('the page uses the same limits as the server', () => {
   assert.match(page, new RegExp(`MAX_LENGTH\\s*=\\s*${rules.MAX_LENGTH}\\b`));
   assert.match(page, /CATEGORY\s*=\s*'owner'/);
 });
+
+test('forTurn: used, none, and a failed read that is never "none"', () => {
+  assert.deepEqual(rules.forTurn(() => [fact('a', 'Metric.')]).facts.map(f => f.id), ['a']);
+  assert.deepEqual(rules.forTurn(() => [{ id: 's', projectId: '', category: 'note', text: 'shared' }]), { state: 'none' });
+  assert.deepEqual(rules.forTurn(() => { throw new Error('locked'); }), { state: 'unreadable' });
+  assert.deepEqual(rules.forTurn(() => null), { state: 'unreadable' });
+});
+
+test('runMeta and cardLine: used on this PC, left out for a cloud model, unreadable', () => {
+  const used = { state: 'used', facts: [fact('a', 'Metric.'), fact('b', 'PLA.')] };
+  assert.deepEqual(rules.runMeta(used, { sent: true }), { memoryFacts: ['a', 'b'] });
+  assert.deepEqual(rules.runMeta(used, { sent: false }), {}, 'fitting left the block out: nothing claimed');
+  assert.deepEqual(rules.runMeta(used, { sent: true, cloud: true }), { memoryFactsCloud: true });
+  assert.deepEqual(rules.runMeta({ state: 'unreadable' }), { memoryFactsUnread: true });
+  assert.deepEqual(rules.runMeta({ state: 'none' }), {});
+  assert.equal(rules.cardLine({ memoryFacts: ['a'] }).text, 'Used 1 of your saved facts');
+  assert.equal(rules.cardLine({ memoryFacts: ['a', 'b'] }).text, 'Used 2 of your saved facts');
+  assert.equal(rules.cardLine({ memoryFactsCloud: true }).text, rules.CLOUD);
+  assert.equal(rules.cardLine({ memoryFactsUnread: true, memoryFacts: ['a'] }).text, rules.UNREADABLE, 'a failed read wins');
+  assert.equal(rules.cardLine({ memoryFacts: [] }), null);
+  assert.equal(rules.cardLine(null), null);
+});

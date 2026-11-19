@@ -41,8 +41,10 @@
   const sortRuns = list => list.slice().sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.id).localeCompare(String(b.id)));
   const isWeb = run => run?.type === 'research' || run?.input?.webSearch === true;
   // A chat in a project (app/project-memory.js cardLine): "Used 3 notes from RIFT tiles", a link to Projects › Memory on it, or a warning that they couldn't be read.
+  // Also the owner's facts (app/owner-facts.js cardLine); a cloud answer's is plain text.
   const memoryLine = m => {
     if (!m?.text) return null;
+    if (m.cloud) return h('p', 'run-memory', m.text);
     const p = h('p', m.unread ? 'run-memory ui-notice ui-notice--warn' : 'run-memory', m.unread ? m.text + '. This answer was written without them. ' : null), a = h('a', '', m.unread ? 'Open Memory' : m.text);
     a.href = '#memory' + (/^[\w-]{1,100}$/.test(m.projectId || '') ? '?p=' + m.projectId : ''); p.append(a); return p;
   };
@@ -89,7 +91,7 @@
       else if (r.status === 'cancelled' && !answer) { answer = 'Stopped.'; kind = 'error'; }
       else if (!answer) { answer = 'Thinking…'; kind = 'wait'; }
       else if (lv?.streaming) kind = 'live';
-      out.push({ key: r.id, prompt, answer, kind, lost, sources: Array.isArray(o?.sources) ? o.sources : [], route: RB.routeText(r), memory: r.card?.memory || null, run: r });
+      out.push({ key: r.id, prompt, answer, kind, lost, sources: Array.isArray(o?.sources) ? o.sources : [], route: RB.routeText(r), memory: r.card?.memory || null, facts: r.card?.facts || null, run: r });
     }
     if (live && !(live.runId && runs.some(r => r.id === live.runId))) out.push({ key: 'live', prompt: live.prompt, answer: live.text || (live.err ? '' : 'Thinking…'), kind: live.err ? 'error' : live.text ? 'live' : 'wait', sources: [] });
     return out;
@@ -118,7 +120,7 @@
         if (n.dataset.text !== text) { n.dataset.text = text; n.textContent = text; }
         // Where the answer came from, under it: "Answered by Llama 3.3 70B · Groq. Not private: …" (the model coordinator).
         if (who === 'assistant') { const want = t.route || '', rt = n.querySelector('.run-route'); if ((rt?.textContent || '') !== want) { rt?.remove(); if (want) n.appendChild(h('p', 'run-route', want)); } }
-        if (who === 'assistant') { const line = memoryLine(t.memory), old = n.querySelector('.run-memory'); if (old?.textContent !== line?.textContent) { old?.remove(); if (line) n.appendChild(line); } }
+        if (who === 'assistant') { const want = [t.facts, t.memory].map(memoryLine).filter(Boolean), old = [...n.querySelectorAll('.run-memory')], sig = l => l.map(x => x.textContent).join('|'); if (sig(old) !== sig(want)) { old.forEach(x => x.remove()); n.append(...want); } }
         if (who === 'assistant') { n.dataset.srcs = ''; const ul = t.sources.length ? sourceLinks(t.sources) : null; const sig = ul ? ul.textContent : ''; if (n.dataset.srcSig !== sig) { n.dataset.srcSig = sig; n.querySelector('.chat-turn__sources')?.remove(); if (ul) n.appendChild(ul); } }
         if (who === 'assistant') window.LocalAIUI.rateAnswer(n, t.run);
         rows.push(n);

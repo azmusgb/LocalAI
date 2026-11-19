@@ -160,6 +160,11 @@ const KB = 1024;
 // +0.2 KB). main had 372,521 bytes with app.js 39,836 (100 bytes under its limit); 374,037 bytes measured, app.js 40,760,
 // run-bodies.js 11,409.
 // Together with answer feedback (merged first): 374,476 bytes (365.7 KB) measured.
+// 2026-11-19: owner facts (PR 1) fit the 366 KB above with project Memory in chat (374,521 bytes measured; index.html 17,404): Memory's
+// "About you and the house" section in index.html, its styles, ui.js's page-script loader taking /owner-facts.js too
+// (owner-facts.js, 4.3 KB, loads when Memory first opens) and app.js keeping facts out of the shared notes. run-bodies.js
+// 11.2 → 11.3 KB for the facts line under a chat answer (used / left out for a cloud model / couldn't be read; +105
+// bytes to 11,514).
 const TOTAL = 366 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
@@ -197,7 +202,7 @@ const TOTAL = 366 * KB;
 // app.css +0.1 KB, its Atlas section rewritten in one pass without the layered overrides; 321.8 KB measured).
 // 2026-11-02: index.html 16 → 17 KB for the navigation update: the Settings and Tools pages, the Spreadsheets chip and
 // mode, and Home's On Pi Hub line (16.1 KB measured).
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 40 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.2 * KB };
+const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 40 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.3 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
