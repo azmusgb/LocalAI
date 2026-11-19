@@ -94,6 +94,12 @@ test('the note and the question are redacted, one line, and cut to 300 and 200 c
   const long = storage.db.prepare("SELECT note, asked FROM answer_feedback WHERE run_id = 'run-long'").get();
   assert.equal(long.note.length, 300);
   assert.equal(long.asked.length, 200);
+  // A long secret that redacts to a few characters must not pull a second secret's fragment into the kept 200.
+  const hex = 'f'.repeat(64);
+  // The key is 223 characters and redacts to 10; the hex starts at character 380, so a cut at 400 leaves 20 of it.
+  feedback.set(answer({ id: 'run-two', input: { prompt: `${'sk-' + 'b'.repeat(220)} ${'w'.repeat(155)} ${hex}` } }), 'bad');
+  const two = storage.db.prepare("SELECT asked FROM answer_feedback WHERE run_id = 'run-two'").get();
+  assert.equal(/f{8,}|b{8,}/.test(two.asked), false, two.asked);
   storage.close();
 });
 
