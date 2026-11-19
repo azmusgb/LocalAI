@@ -1028,7 +1028,7 @@ function buildDesktopNav(){
 function buildContext(){
  const main=q('main');if(!main||q('#uxContextBar'))return;
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
- bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><small id="uxContextGreeting"></small><strong>Local AI</strong></span></span><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" aria-label="Needs you, nothing waiting">'+icon('bell','ux-ico')+'<span>Needs you</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search commands">'+icon('search','ux-ico')+'<span>Search commands</span><kbd>⌘K</kbd></button></div>';
+ bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><small id="uxContextGreeting"></small><strong>Local AI</strong></span></span><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" aria-label="Needs you, nothing waiting">'+icon('bell','ux-ico')+'<span>Needs you</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search pages and past work">'+icon('search','ux-ico')+'<span>Search pages and past work</span><kbd>⌘K</kbd></button></div>';
  main.prepend(bar);
  // "← Pi Hub" (the kit's back bar, Pi Hub A22 6.4) is the first thing in the page, with Pi Hub's address in the markup. This keeps it
  // in step with the tool registry, and a visitor who came from a Pi Hub page goes back to that page (the kit's backbar.js).
@@ -4036,7 +4036,8 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
   }
   // The one way for a page to open a run view: pushes a history entry marked as in-app, so Close and Back return to the page you were on.
   function show(id) { openRun(String(id)); }
-  window.LocalAIRuns = { open: openRunBySource, openPending, show, refresh: () => loadRuns(true) };
+  // kindLabel names a run's kind (Chat, Image, Mission…) for other lists that show runs, such as ⌘K's Past work.
+  window.LocalAIRuns = { open: openRunBySource, openPending, show, refresh: () => loadRuns(true), kindLabel };
 
   function init() {
     ensureSurface();

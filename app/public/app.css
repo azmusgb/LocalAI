@@ -1785,6 +1785,14 @@ h2.run-drawer-title{margin:0;letter-spacing:normal}
 .cmdk-group{display:grid;gap:4px}
 .cmdk-group+.cmdk-group{margin-top:6px}
 .cmdk-group__label{padding:6px 10px 2px;color:var(--ui-muted);font-size:var(--ui-fs-2);font-weight:600}
+/* Past work hits: the entry's title (two lines at most; the whole title stays in the accessible name), then its source
+   and date. While searching, one skeleton row holds the place; a failed search is a compact warning with Try again. */
+.cmdk-item__title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.cmdk-item .meta{display:block}
+.cmdk-item--wait{display:grid;gap:var(--ui-s-1);pointer-events:none}
+.cmdk-item--wait .ui-skeleton:last-child{width:40%;font-size:var(--ui-fs-2)} /* the meta line: shorter and smaller */
+.cmdk-past{display:grid;gap:var(--ui-s-1);margin-top:var(--ui-s-2)}
+.cmdk-notice{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--ui-s-2);padding:var(--ui-s-2) var(--ui-s-3);font-size:var(--ui-fs-2)}
 
 /* Phone polish: layout and install (appended; nothing above edited). No keyboard-shortcut hint where there is no hover
    (an iPad, a phone); the sticky header's hairline once the page scrolls (ui.js headerLine sets body.ux-scrolled). */
