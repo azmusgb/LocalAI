@@ -1,0 +1,194 @@
+// Projects › Memory › About you and the house: the owner's short list of lasting facts
+// (docs/superpowers/specs/2026-11-19-owner-facts-design.md, PR 1). Loaded by ui.js the first time Memory opens; the
+// section is in index.html (#ownerFacts). Facts are shared memory notes in the 'owner' category, read with GET
+// /api/memory and changed through /api/memory/add|update|delete, which enforce the rules (app/owner-facts.js).
+// Each shared note in the list below that fits gets "Make this a fact"; nothing else about those notes changes.
+(function () {
+  'use strict';
+  // The same limits as app/owner-facts.js (tests/owner-facts.test.cjs keeps them equal).
+  const MAX_FACTS = 30, MAX_LENGTH = 200, CATEGORY = 'owner';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const one = t => String(t ?? '').replace(/\s+/g, ' ').trim();
+  const ui = () => window.LocalAIUI || {};
+  const getJson = (url, opt) => (ui().fetchJson ? ui().fetchJson(url, opt) : fetch(url, opt).then(async r => { const j = await r.json().catch(() => null); if (!r.ok || !j) throw new Error((j && j.error) || `HTTP ${r.status}`); return j; }));
+  const post = (url, body) => getJson(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const said = m => (ui().toast ? ui().toast(m) : null);
+  const reason = e => one(e && e.message || e).replace(/\.$/, '') || 'no answer';
+
+  // 'loading' | 'ready' | 'error'. facts: oldest first, so a new one lands beside Add. shared: notes that may become one.
+  const s = { state: 'loading', error: '', facts: [], shared: [], editing: '', seq: 0 };
+  const isFact = n => n && n.category === CATEGORY && !n.projectId;
+  const when = n => { const v = Date.parse(n && n.createdAt); return Number.isNaN(v) ? 0 : v; };
+
+  async function load() {
+    const seq = ++s.seq;
+    if (s.state !== 'ready') { s.state = 'loading'; paint(); }
+    try {
+      const j = await getJson('/api/memory', { cache: 'no-store' });
+      if (!Array.isArray(j.items)) throw new Error('The server sent an unreadable reply');
+      if (seq !== s.seq) return;
+      s.facts = j.items.filter(isFact).sort((a, b) => when(a) - when(b));
+      s.shared = j.items.filter(n => n && !n.projectId && n.category !== CATEGORY && typeof n.text === 'string');
+      s.state = 'ready'; s.error = '';
+    } catch (e) {
+      if (seq !== s.seq) return;
+      s.state = 'error'; s.error = reason(e);
+    }
+    paint(); decorate();
+  }
+
+  function row(f, i) {
+    const tid = `ownerFact${i}`;
+    if (s.editing === f.id) {
+      return `<li class="ui-row owner-fact owner-fact--edit" data-fact-id="${esc(f.id)}"><form class="owner-facts__form" data-fact-form novalidate>
+        <label class="visually-hidden" for="ownerFactEdit">Edit this fact</label>
+        <input id="ownerFactEdit" class="ui-field" maxlength="${MAX_LENGTH}" autocomplete="off" value="${esc(f.text)}" aria-describedby="ownerFactsRule">
+        <button type="submit" class="ui-btn ui-btn--primary">Save fact</button><button type="button" class="ui-btn ui-btn--ghost" data-fact-cancel>Cancel</button>
+        <p class="ui-notice ui-notice--bad owner-facts__error" role="alert" hidden></p></form></li>`;
+    }
+    return `<li class="ui-row ui-row--lamp owner-fact" data-fact-id="${esc(f.id)}"><span class="owner-fact__text" id="${tid}">${esc(f.text)}</span>
+      <span class="owner-fact__actions"><button type="button" class="ui-btn ui-btn--ghost" data-fact-edit aria-describedby="${tid}">Edit</button><button type="button" class="ui-btn ui-btn--ghost" data-fact-delete aria-describedby="${tid}">Delete</button></span></li>`;
+  }
+
+  function paint() {
+    const body = $('ownerFactsBody'); if (!body) return;
+    body.removeAttribute('data-load-failed');
+    body.setAttribute('aria-busy', String(s.state === 'loading'));
+    if (s.state === 'loading') {
+      body.innerHTML = '<p class="visually-hidden" role="status">Loading your facts…</p><span class="ui-skeleton owner-facts__wait" aria-hidden="true"></span><span class="ui-skeleton owner-facts__wait" aria-hidden="true"></span>';
+      return;
+    }
+    if (s.state === 'error') {
+      // Never "No facts yet": the list wasn't read, so nobody knows what is on it, and Add waits for it too.
+      body.innerHTML = `<p class="ui-notice ui-notice--bad" role="alert" id="ownerFactsError">Couldn't read your saved facts: ${esc(s.error)}.</p><button type="button" class="ui-btn" id="ownerFactsRetry">Try again</button>`;
+      return;
+    }
+    const n = s.facts.length, full = n >= MAX_FACTS;
+    const count = full ? `Full: ${MAX_FACTS} of ${MAX_FACTS}. Delete or edit a fact to add another.` : n ? `${n} of ${MAX_FACTS}` : '';
+    const keep = document.activeElement && document.activeElement.id === 'ownerFactText' ? $('ownerFactText').value : null;
+    body.innerHTML = `${count ? `<p class="owner-facts__count" id="ownerFactsCount">${count}</p>` : ''}
+      ${n ? `<ul class="ui-rows" id="ownerFactsList">${s.facts.map(row).join('')}</ul>` : '<p class="ui-empty owner-facts__empty" id="ownerFactsEmpty">No facts yet. Add one, like the printer you use or units you prefer.</p>'}
+      <form class="owner-facts__form" id="ownerFactsAdd" novalidate>
+        <label class="owner-facts__label" for="ownerFactText">Add a fact</label>
+        <input id="ownerFactText" class="ui-field" maxlength="${MAX_LENGTH}" autocomplete="off" aria-describedby="ownerFactsRule${full ? ' ownerFactsCount' : ''}"${full ? ' disabled' : ''}>
+        <button type="submit" class="ui-btn ui-btn--primary" id="ownerFactAddBtn"${full ? ' disabled' : ''}>Add fact</button>
+        <p class="owner-facts__rule" id="ownerFactsRule">One sentence, up to ${MAX_LENGTH} characters.</p>
+        <p class="ui-notice ui-notice--bad owner-facts__error" id="ownerFactsAddError" role="alert" hidden></p>
+      </form>`;
+    if (keep !== null && !full) { const t = $('ownerFactText'); t.value = keep; t.focus(); }
+  }
+
+  const failIn = (form, text) => { const p = form.querySelector('.owner-facts__error'); p.textContent = text; p.hidden = false; };
+  const busy = (btn, on, words) => { if (on) { btn.dataset.words = btn.textContent; btn.textContent = words; } else if (btn.dataset.words) btn.textContent = btn.dataset.words; btn.disabled = on; };
+  const focusRow = (id, opts = {}) => { const r = ui().refocus; if (r) r(id, { within: '#ownerFactsList', key: 'factId', fallback: '#ownerFactText', ...opts }); };
+
+  async function add(form) {
+    const input = $('ownerFactText'), btn = $('ownerFactAddBtn'), text = one(input.value);
+    form.querySelector('.owner-facts__error').hidden = true;
+    if (!text) { input.setAttribute('aria-invalid', 'true'); failIn(form, 'Write the fact first.'); input.focus(); return; }
+    input.removeAttribute('aria-invalid'); input.readOnly = true; busy(btn, true, 'Adding…');
+    try {
+      const j = await post('/api/memory/add', { projectId: '', category: CATEGORY, text });
+      input.value = ''; s.facts.push(j.item); paint(); said('Added the fact'); $('ownerFactText')?.focus();
+      if (s.facts.length >= MAX_FACTS) focusRow(j.item.id);
+    } catch (e) {
+      input.readOnly = false; busy(btn, false); failIn(form, `Couldn't add this fact: ${reason(e)}.`); input.focus();
+    }
+  }
+
+  async function save(form, id) {
+    const input = form.querySelector('input'), btn = form.querySelector('button[type="submit"]'), text = one(input.value);
+    form.querySelector('.owner-facts__error').hidden = true;
+    if (!text) { input.setAttribute('aria-invalid', 'true'); failIn(form, 'Write the fact first, or Delete it.'); input.focus(); return; }
+    input.readOnly = true; busy(btn, true, 'Saving…'); form.querySelector('[data-fact-cancel]').disabled = true;
+    try {
+      const j = await post('/api/memory/update', { id, category: CATEGORY, text });
+      const i = s.facts.findIndex(f => f.id === id); if (i >= 0) s.facts[i] = j.item;
+      s.editing = ''; paint(); said('Saved the fact'); focusRow(id, { control: '[data-fact-edit]' });
+    } catch (e) {
+      input.readOnly = false; busy(btn, false); form.querySelector('[data-fact-cancel]').disabled = false;
+      failIn(form, `Couldn't save this fact: ${reason(e)}.`); input.focus();
+    }
+  }
+
+  async function remove(li, btn) {
+    const id = li.dataset.factId, f = s.facts.find(x => x.id === id); if (!f) return;
+    const ask = ui().ask; if (!ask) return;
+    const q = await ask({ title: 'Delete this fact?', effect: `"${f.text}" comes off your list for good.`, confirmLabel: 'Delete', tone: 'danger' });
+    if (!q.ok) return;
+    li.querySelector('.owner-facts__error')?.remove();
+    busy(btn, true, 'Deleting…');
+    const at = s.facts.indexOf(f), next = s.facts[at + 1]?.id || '', prev = s.facts[at - 1]?.id || '';
+    try {
+      await post('/api/memory/delete', { id });
+      s.facts = s.facts.filter(x => x.id !== id); paint(); said('Deleted the fact'); focusRow('', { next, prev, control: '[data-fact-delete]' });
+      decorate();
+    } catch (e) {
+      busy(btn, false);
+      const p = document.createElement('p'); p.className = 'ui-notice ui-notice--bad owner-facts__error'; p.setAttribute('role', 'alert');
+      p.textContent = `Couldn't delete this fact: ${reason(e)}.`; li.append(p); btn.focus();
+    }
+  }
+
+  // "Make this a fact" on each shared note in Memory's list (#memoryList, drawn by app.js) that is short enough.
+  function decorate() {
+    const list = $('memoryList'); if (!list || s.state !== 'ready') return;
+    const ok = new Map(s.shared.filter(n => one(n.text).length && one(n.text).length <= MAX_LENGTH).map(n => [n.id, n]));
+    list.querySelectorAll('[data-mem-del]').forEach(del => {
+      const id = del.getAttribute('data-mem-del'), bar = del.parentElement, has = bar.querySelector('[data-mem-fact]');
+      if (!ok.has(id)) { if (has) has.remove(); return; }
+      if (has) return;
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'btn-outline'; b.dataset.memFact = id; b.textContent = 'Make this a fact';
+      bar.insertBefore(b, del);
+    });
+  }
+
+  async function promote(btn) {
+    const id = btn.dataset.memFact, card = btn.closest('.memory-card') || btn.parentElement;
+    card.querySelector('.owner-facts__error')?.remove();
+    busy(btn, true, 'Making it a fact…');
+    try {
+      const j = await post('/api/memory/update', { id, category: CATEGORY });
+      s.shared = s.shared.filter(n => n.id !== id); s.facts.push(j.item); paint(); said('Made it a fact');
+      const pick = $('memoryProject'); if (pick) pick.dispatchEvent(new Event('change'));   // app.js redraws the notes without it
+      focusRow(id, { control: '[data-fact-edit]', highlight: false });
+    } catch (e) {
+      busy(btn, false);
+      const p = document.createElement('p'); p.className = 'ui-notice ui-notice--bad owner-facts__error'; p.setAttribute('role', 'alert');
+      p.textContent = `Couldn't make it a fact: ${reason(e)}.`; card.append(p); btn.focus();
+    }
+  }
+
+  function wire() {
+    const sec = $('ownerFacts'); if (!sec || sec.dataset.wired) return;
+    sec.dataset.wired = '1';
+    sec.addEventListener('submit', e => {
+      const form = e.target; e.preventDefault();
+      if (form.id === 'ownerFactsAdd') add(form);
+      else if (form.matches('[data-fact-form]')) save(form, form.closest('[data-fact-id]').dataset.factId);
+    });
+    sec.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b || b.disabled) return;
+      const li = b.closest('[data-fact-id]');
+      if (b.id === 'ownerFactsRetry') load();
+      else if (b.matches('[data-fact-edit]')) { s.editing = li.dataset.factId; paint(); const t = $('ownerFactEdit'); t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+      else if (b.matches('[data-fact-cancel]')) { const id = s.editing; s.editing = ''; paint(); focusRow(id, { control: '[data-fact-edit]' }); }
+      else if (b.matches('[data-fact-delete]')) remove(li, b);
+    });
+    sec.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && e.target.id === 'ownerFactEdit') { e.preventDefault(); sec.querySelector('[data-fact-cancel]').click(); }
+    });
+    const list = $('memoryList');
+    if (list) {
+      list.addEventListener('click', e => { const b = e.target.closest('[data-mem-fact]'); if (b && !b.disabled) promote(b); });
+      new MutationObserver(decorate).observe(list, { childList: true });
+    }
+    // Opening Memory again reads the list again (a fact may have changed on another device).
+    const page = $('memory');
+    if (page) { let on = page.classList.contains('active'); new MutationObserver(() => { const now = page.classList.contains('active'); if (now && !on && !s.editing) load(); on = now; }).observe(page, { attributes: true, attributeFilter: ['class'] }); }
+  }
+
+  wire(); load();
+  window.LocalAIOwnerFacts = { reload: load };
+})();
