@@ -95,7 +95,8 @@ forwards it. Nothing on the Mac listens for the appliance.
 - **PowerShell** jobs are created and approved on `:3090`, signed in the browser, then pulled by the host runner
   from `/api/powershell/host/next` and verified before they run.
 - **Runs** (chat, images, missions, automations, engineering) are recorded in one ledger, shown in **System › Runs**.
-- **Deploys** come from the host pulling `origin/main`, never from the app.
+- **Deploys** come from the host pulling `origin/release`, which only `npm run ship` moves; never from the app,
+  and never from `main` (see [Deploying](DEPLOY.md)).
 - **Change requests** plan a patch with a local model. A `self` change is staged in a copy of `SELF_APP_ROOT`
   under `DATA_DIR/change-staging/<id>/app` and validated there (syntax, DOM ids, a smoke run of the staged
   server). Shipping it ("Ship as a pull request") hands its Improve item to Claude: a session opens a PR with the staged

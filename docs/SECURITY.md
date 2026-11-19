@@ -141,9 +141,9 @@ Details in [Claude chat › Security notes](CLAUDE-CHAT.md#security-notes). In s
 - **No secrets in the image or repo.** `.gitignore` excludes keys and `.env`; CI and the candidate test
   fail on `.env`, `.key`, `.pem`, `.pfx` or `.p12` files under `app/`. Tokens reach the container only as
   environment variables; `Enable-LocalAI-HostOnlyPort.ps1` passes them through a user-only temp file that it deletes.
-- **Deploys** are pulled: the host fetches `origin/main` every five minutes and runs whatever is there,
+- **Deploys** are pulled: the host fetches `origin/release` every five minutes and runs whatever is there,
   including that commit's own candidate tests and deploy scripts. Nothing on the LAN can push code to the
-  appliance, but anyone who can push to `main` can run code on the host (see gaps).
+  appliance, but anyone who can push to `release` can run code on the host (see gaps).
 - **HTTPS.** Shipped: Caddy (`local-ai-https`) terminates TLS on 443 with its own local CA
   (`deploy/caddy/Caddyfile`, `deploy/Install-LocalAI-HTTPS.ps1`), redirects port 80 to HTTPS, and serves the CA
   certificate at `http://<host>/localai-ca.crt`. Each device trusts the CA once; **Health › Secure connection**

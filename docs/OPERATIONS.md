@@ -11,7 +11,7 @@ in [Architecture](ARCHITECTURE.md).
 | Appliance alive, which release | `curl -s https://<host>/healthz` (on the host: `http://127.0.0.1:3080/healthz`) | `status: ok`, `releaseCommit` = the SHA you expect |
 | Services it depends on | **System › Health** page, or `GET /api/status` | Core services `HEALTHY`; the two Mac companions may show *optional offline* |
 | Database | `GET /api/storage/status` | `engine: sqlite`, `journalMode: wal`, collection counts |
-| Deploys | `.\deploy\Get-LocalAI-DeployStatus.ps1` | Running SHA = recorded SHA = `origin/main`, task `Ready` |
+| Deploys | `.\deploy\Get-LocalAI-DeployStatus.ps1` | Running SHA = recorded SHA = `origin/release`, task `Ready` |
 | Last backup | `Get-Content C:\LocalAI\backups\last-backup.json` | `ok: true`, `at` within the last day |
 | Host services stay on loopback | see [below](#check-loopback-bindings) | every address `127.0.0.1` |
 

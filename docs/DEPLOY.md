@@ -1,6 +1,6 @@
 # Deploying the appliance
 
-LocalAI deploys by pulling: the Windows host fetches `origin/main`, certifies the commit in a disposable
+LocalAI deploys by pulling: the Windows host fetches `origin/release`, certifies the commit in a disposable
 candidate, promotes it into the running container, checks health, and rolls back on its own if the new
 release is unhealthy. Nothing pushes to the host.
 
@@ -51,7 +51,7 @@ The Inbox gets a notice when a release goes live or a deploy fails.
 `deploy\Deploy-LocalAI.ps1`, in order:
 
 1. Takes the deploy lock (`C:\LocalAI\.deploy\deploy.lock`); a lock whose process is gone is removed as stale.
-2. `git fetch --prune origin` (skip with `-SkipFetch`) and resolves `-TargetRef` (default `origin/main`) to a SHA.
+2. `git fetch --prune origin` (skip with `-SkipFetch`) and resolves `-TargetRef` (default `origin/release`) to a SHA.
 3. Stops early with `NO CHANGE` when `state.json`, the live `app\release.json` and `/healthz` all already
    report that SHA.
 4. Extracts `app`, `deploy` and `tests` at that SHA into `C:\LocalAI\releases\<sha>` (always re-extracted).
@@ -133,7 +133,7 @@ Install, change or remove the task:
 
 ```powershell
 .\deploy\Install-LocalAI-DeployAgent.ps1                                   # dry run: prints what it would register
-.\deploy\Install-LocalAI-DeployAgent.ps1 -Install -StartNow                # deploy origin/main every 5 minutes
+.\deploy\Install-LocalAI-DeployAgent.ps1 -Install -StartNow                # deploy origin/release every 5 minutes
 .\deploy\Install-LocalAI-DeployAgent.ps1 -Install -ValidateOnly -StartNow  # certify only (Deploy-LocalAI.ps1 -CheckOnly), never promote
 .\deploy\Install-LocalAI-DeployAgent.ps1 -Install -TargetRef <ref>         # follow another ref
 .\deploy\Install-LocalAI-DeployAgent.ps1 -Install -EveryMinutes 15         # another interval (1-1440)
@@ -311,9 +311,9 @@ shown on Pi Hub's System › Versions. Safe Deploy writes it:
 ## Manual deploys
 
 ```powershell
-.\deploy\Get-LocalAI-DeployStatus.ps1           # health, running vs recorded SHA, origin/main, task state
+.\deploy\Get-LocalAI-DeployStatus.ps1           # health, running vs recorded SHA, origin/release, task state
 .\deploy\Get-LocalAI-DeployStatus.ps1 -AsJson
-.\deploy\Deploy-LocalAI.ps1 -CheckOnly          # certify origin/main without touching production
+.\deploy\Deploy-LocalAI.ps1 -CheckOnly          # certify origin/release without touching production
 .\deploy\Deploy-LocalAI.ps1                     # certify and promote
 .\deploy\Deploy-LocalAI.ps1 -TargetRef <ref>    # a specific ref or SHA
 ```
@@ -357,8 +357,9 @@ first exports the database to JSON; see [Storage › Code rollback across the JS
 Rolling back code does not roll back data. To return data to an earlier point, restore a backup
 ([Operations › Restore](OPERATIONS.md#restore)).
 
-The auto-deploy task will redeploy `origin/main` on its next run if `main` still points at the bad commit.
-Revert the commit on `main`, or uninstall the task, before rolling back by hand.
+The auto-deploy task will redeploy `origin/release` on its next run if `release` still points at the bad commit.
+Ship a revert, move `release` back to an earlier commit (see [The normal path](#the-normal-path-merge-and-wait)), or
+uninstall the task, before rolling back by hand.
 
 ### Deploy states
 
