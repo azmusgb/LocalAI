@@ -82,7 +82,7 @@ test('a picked model keeps a reason from the request, so it stays sticky for the
     [{ stay: 'Project notes stay on this PC' }, 'Project notes stay on this PC'],
     [{ voice: true }, 'Voice and Siri stay on this PC'],
     [{ attachments: true }, 'Files and photos stay on this PC'],
-    [{ text: 'what dose of insulin' }, 'It looks personal (health, money or identity)'],
+    [{ text: 'what dose of insulin' }, 'It looks personal (health, money, legal, family or identity)'],
   ]) {
     const r = R.route({ ...base, model: 'gemma3:4b', ...extra });
     assert.deepEqual(r.order, [{ provider: 'ollama', model: 'gemma3:4b' }]);
@@ -141,7 +141,7 @@ test('stickyPrivate: request reasons stick to a conversation, kind defaults and 
 // Owner carry-forward: the personal words missed common health, money, legal, family and identity words, so a request
 // like "refinance my mortgage" could go out. Each prompt below must stay on this PC with the personal reason, in every
 // kind that could otherwise reach a cloud model.
-const PERSONAL_WHY = 'It looks personal (health, money or identity)';
+const PERSONAL_WHY = 'It looks personal (health, money, legal, family or identity)';
 const NEW_PERSONAL = [
   // Money
   'Should I refinance the loan on my car?', 'Compare my mortgage offers', 'How fast can I pay off this debt?',

@@ -277,7 +277,7 @@ function createFactSuggestions({ storage, coordinator, runLocalModel, busyNow, m
     if (reason) throw httpError(reason === 'duplicate' ? 409 : 400, {
       duplicate: 'That fact is already on your list.',
       secret: 'That looks like a key or password, so it is not kept as a fact.',
-      personal: 'Health, money and identity are not kept as facts.',
+      personal: 'Health, money, legal, family and identity details are not kept as facts.',
       state: 'That describes how things are right now, so it would go out of date. Keep facts to what stays true.',
       steering: 'Keep a fact to something about you or the house.',
     }[reason] || 'That cannot be kept as a fact.');

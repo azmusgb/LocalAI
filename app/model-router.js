@@ -62,7 +62,7 @@ function route(req = {}) {
     : req.journal ? 'Your past work stays on this PC'
     : req.attachments ? 'Files and photos stay on this PC'
     : typeof req.stay === 'string' && req.stay ? req.stay
-    : personal(req.text) ? 'It looks personal (health, money or identity)'
+    : personal(req.text) ? 'It looks personal (health, money, legal, family or identity)'
     : null;
   if (req.model) return { class: 'private', why: asked || 'You picked this model', order: [local] };
   const kind = Object.prototype.hasOwnProperty.call(KINDS, req.kind) ? req.kind : 'quick';
