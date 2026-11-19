@@ -903,7 +903,7 @@ function commandPalette(){
   const dateOf=at=>{const d=new Date(at);if(!Number.isFinite(d.getTime()))return '';return d.toLocaleDateString(undefined,{day:'numeric',month:'short',...(d.getFullYear()!==new Date().getFullYear()?{year:'numeric'}:{})})};
   function dropJournal(){journal.seq++;clearTimeout(journal.timer);journal.ctrl?.abort();journal.ctrl=null}
   function askJournal(){
-    const q=input.value.trim();if(q===journal.q&&journal.state!=='idle')return;
+    const q=input.value.trim();if(q===journal.q&&journal.state!=='idle'&&journal.state!=='error')return; // a failed search is asked again
     dropJournal();journal.q=q;journal.items=[];journal.state=q.length>=2?'loading':'idle';if(journal.state==='idle')return;
     const seq=journal.seq;
     journal.timer=setTimeout(async()=>{
@@ -915,7 +915,10 @@ function commandPalette(){
     },150);
   }
   function journalHtml(from){
-    const body=journal.state==='error'?`<p class="cmdk-note" data-cmd-journal-error>Couldn't search past work</p>`:journal.state==='ok'?journal.items.map((e,i)=>{const d=dateOf(e.at),src=sourceOf(e);
+    // Loading keeps the group's place with one skeleton row; a failure is a warning with Try again (Tab reaches it; the
+    // arrows stay on the options).
+    const body=journal.state==='loading'?`<div class="cmdk-item cmdk-item--wait" aria-hidden="true" data-cmd-journal-loading><span class="ui-skeleton"></span><span class="ui-skeleton"></span></div>`
+      :journal.state==='error'?`<div class="ui-notice ui-notice--warn cmdk-notice" data-cmd-journal-error><span>Couldn't search past work.</span><button type="button" class="btn-outline" data-cmd-journal-retry>Try again</button></div>`:journal.state==='ok'?journal.items.map((e,i)=>{const d=dateOf(e.at),src=sourceOf(e);
       return `<button type="button" id="cmdk-opt-${from+i}" role="option" class="cmdk-item" data-cmd-journal="${esc(e.link)}"><span class="cmdk-item__title">${esc(String(e.title||'').trim()||'Untitled')}</span><span class="meta">${esc(src)}${src&&d?' · ':''}${d?`<time datetime="${esc(e.at)}">${esc(d)}</time>`:''}</span></button>`}).join(''):'';
     return body&&`<div class="cmdk-group" role="group" aria-labelledby="cmdk-group-journal" data-cmd-group="journal"><div class="cmdk-group__label" id="cmdk-group-journal">Past work</div>${body}</div>`;
   }
@@ -939,6 +942,7 @@ function commandPalette(){
     {const c=$('cmdkCount'),t=found-pages;if(c)c.textContent=(found?(pages?`${pages} page${pages===1?'':'s'}`:'')+(pages&&t?', ':'')+(t?`${t} tool${t===1?'':'s'}`:''):'No pages match')+(hits.length?`, ${hits.length} from past work`:'')+(journal.state==='error'?"; couldn't search past work":'')} // a screen reader hears the count
     list.querySelectorAll('[data-cmd-view]').forEach(b=>b.onclick=()=>go(b.dataset.cmdView));
     list.querySelectorAll('[data-cmd-journal]').forEach(b=>b.onclick=()=>follow(b.dataset.cmdJournal));
+    list.querySelector('[data-cmd-journal-retry]')?.addEventListener('click',()=>{journal.q='';askJournal();render(true);input.focus()});
     list.querySelectorAll('[data-cmd-tool]').forEach(b=>b.onclick=()=>go(b.dataset.cmdTool));
     list.querySelector('[data-cmd-work]')?.addEventListener('click',searchWork);
     select(keep?active:0); // hits arriving later keep the highlight where the arrows left it

@@ -62,7 +62,7 @@ await check('hits show below the page matches as Past work, with title, date and
   ] } }));
   await open();
   await page.locator('#cmdkInput').fill('model');
-  await group().waitFor();
+  await journalRows().first().waitFor(); // the group shows while loading too; wait for the hits
   assert.equal(await page.locator('#cmdkList [data-cmd-group="journal"] .cmdk-group__label').innerText(), 'Past work');
   // Page matches come first; the journal group is the last thing in the list.
   const order = await page.evaluate(() => [...document.querySelectorAll('#cmdkList [role="option"]')].map(o => o.dataset.cmdJournal ? 'j' : 'p').join(''));
@@ -166,7 +166,8 @@ for (const [name, handler] of [['a non-200 reply', () => ({ status: 500, body: {
     await page.locator('#cmdkInput').fill('health');
     const err = page.locator('#cmdkList [data-cmd-journal-error]');
     await err.waitFor();
-    assert.equal((await err.innerText()).trim(), "Couldn't search past work");
+    assert.match(await err.innerText(), /^Couldn't search past work\.\s*Try again$/);
+    assert.ok(await err.evaluate(n => n.classList.contains('ui-notice--warn')), 'drawn as a warning, not grey text');
     assert.equal(await journalRows().count(), 0);
     assert.ok(await pageRows().count() > 0, 'page matches still listed');
     assert.doesNotMatch(await page.locator('#cmdkList').innerText(), /no results|nothing found/i);
@@ -175,6 +176,73 @@ for (const [name, handler] of [['a non-200 reply', () => ({ status: 500, body: {
     await page.waitForFunction(() => !document.querySelector('#cmdk.show'));
   });
 }
+
+await check('Try again after a failed search asks again and shows the hits; Tab reaches it and the arrows skip it', async () => {
+  let fail = true;
+  const seen = await mock(page, () => (fail ? { status: 503, body: { error: 'busy' } } : { body: { items: [entry('rt1', 'Health retried')] } }));
+  await open();
+  await page.locator('#cmdkInput').fill('health');
+  const retry = page.locator('#cmdkList [data-cmd-journal-retry]');
+  await retry.waitFor();
+  // The arrows never land on the button: the last option stays selected.
+  const options = await page.locator('#cmdkList [role="option"]').count();
+  for (let i = 0; i <= options; i++) await page.keyboard.press('ArrowDown');
+  assert.equal(await page.locator('#cmdkList [aria-selected="true"]').count(), 1);
+  assert.equal(await page.locator('#cmdkList [aria-selected="true"][data-cmd-journal-retry]').count(), 0);
+  let reached = false;
+  for (let i = 0; i <= options + 1 && !reached; i++) { await page.keyboard.press('Tab'); reached = await page.evaluate(() => document.activeElement?.hasAttribute('data-cmd-journal-retry')); }
+  assert.ok(reached, 'Tab reaches Try again');
+  fail = false;
+  await page.keyboard.press('Enter');
+  await journalRows().first().waitFor();
+  assert.equal(await journalRows().first().locator('.cmdk-item__title').innerText(), 'Health retried');
+  assert.equal(seen.length, 2, 'asked twice');
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'cmdkInput', 'focus back in the search box');
+});
+
+await check('retyping the same text after a failure asks again', async () => {
+  let fail = true;
+  const seen = await mock(page, () => (fail ? 'abort' : { body: { items: [entry('rr1', 'Health again')] } }));
+  await open();
+  await page.locator('#cmdkInput').fill('health');
+  await page.locator('#cmdkList [data-cmd-journal-error]').waitFor();
+  fail = false;
+  await page.locator('#cmdkInput').fill('health ');
+  await journalRows().first().waitFor();
+  assert.equal(seen.length, 2);
+});
+
+await check('while searching, Past work holds its place with one skeleton row and the page rows stay put', async () => {
+  let release; const gate = new Promise(r => { release = r; });
+  await mock(page, async () => { await gate; return { body: { items: [entry('rl1', 'Loaded')] } }; });
+  await open();
+  await page.locator('#cmdkInput').fill('health');
+  const loading = page.locator('#cmdkList [data-cmd-group="journal"] [data-cmd-journal-loading]');
+  await loading.waitFor();
+  assert.equal(await loading.count(), 1);
+  assert.equal(await loading.getAttribute('aria-hidden'), 'true');
+  assert.equal(await page.locator('#cmdkList [data-cmd-group="journal"] .cmdk-group__label').innerText(), 'Past work');
+  const before = await pageRows().evaluateAll(b => b.map(x => x.getBoundingClientRect().top));
+  release();
+  await journalRows().first().waitFor();
+  assert.equal(await loading.count(), 0);
+  assert.deepEqual(await pageRows().evaluateAll(b => b.map(x => x.getBoundingClientRect().top)), before, 'page rows did not move');
+});
+
+await check('a long title is cut to two lines, and the whole title stays in the row\'s accessible text', async () => {
+  const long = 'Which printer settings work best for PETG on the X2D with a long bridging section across the top of the enclosure lid and a brim that peels '.repeat(3).trim();
+  await mock(page, () => ({ body: { items: [entry('rlong', long), entry('rshort', 'Short one')] } }));
+  await page.setViewportSize({ width: 320, height: 640 });
+  try {
+    await open();
+    await page.locator('#cmdkInput').fill('print');
+    await journalRows().first().waitFor();
+    const h = id => page.locator(`#cmdkList [data-cmd-journal="#run/${id}"] .cmdk-item__title`).evaluate(n => n.getBoundingClientRect().height);
+    const lines = Math.round((await h('rlong')) / (await h('rshort'))); // a one-line title is the unit
+    assert.ok(lines <= 2, `${lines} lines`);
+    assert.equal(await page.locator('#cmdkList [data-cmd-journal="#run/rlong"] .cmdk-item__title').textContent(), long);
+  } finally { await page.setViewportSize({ width: 1440, height: 900 }); }
+});
 
 await check('no page match, but hits: the hits are listed and Enter opens the first', async () => {
   await mock(page, () => ({ body: { items: [entry('rz1', 'zzqx in a chat')] } }));
