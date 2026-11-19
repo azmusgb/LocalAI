@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { Storage } = require('../app/storage');
 const { createJournal } = require('../app/journal');
-const { runEntry, runText, voiceEntry, approvalEntry, releaseEntry, record, recordRelease, RELEASE_SETTING } = require('../app/journal-recorders');
+const { runEntry, runText, voiceEntry, approvalEntry, powerShellApprovalEntry, releaseEntry, record, recordRelease, RELEASE_SETTING } = require('../app/journal-recorders');
 
 const run = (over = {}) => ({ id: 'run-1', type: 'chat', title: 'Which filament for a bracket?', status: 'completed', createdAt: '2026-10-22T18:00:00.000Z', finishedAt: '2026-10-22T18:01:00.000Z', summary: 'short', input: { prompt: 'Which filament for a bracket?' }, output: { text: 'PETG is a good choice.' }, error: null, meta: {}, ...over });
 
@@ -114,6 +114,40 @@ test('an approval for a host command keeps its text out, as PowerShell runs do',
   const item = { id: 'appr-2', title: 'Run a PowerShell script', detail: 'Remove-Item C:\\secret -Recurse', status: 'approved', meta: { powershell: true } };
   assert.equal(approvalEntry(item).body, 'Approved in Local AI.');
   assert.equal(approvalEntry({ ...item, meta: { jobId: 'ps-123' } }).body, 'Approved in Local AI.');
+});
+
+// PowerShell Workbench decisions: title and risk only, never the script, its folder or its output.
+test('a PowerShell job decision is an approval entry with no command text', () => {
+  const job = { id: 'ps-1795536000000-abc1234', script: 'Remove-Item C:\\Projects\\x -Recurse', cwd: 'C:\\Projects', risk: 'high', status: 'approved', updatedAt: '2026-11-19T15:00:00.000Z', stdout: 'secret-output', stderr: '' };
+  assert.deepEqual(powerShellApprovalEntry(job), {
+    at: '2026-11-19T15:00:00.000Z', source: 'approval', kind: 'approved', title: 'PowerShell job (high risk)',
+    body: 'Approved in the PowerShell Workbench.', ref: 'approval:ps-1795536000000-abc1234:approved', meta: { approvalId: job.id, by: 'workbench' }
+  });
+  const declined = powerShellApprovalEntry({ ...job, status: 'rejected' });
+  assert.equal(declined.body, 'Declined in the PowerShell Workbench.');
+  assert.doesNotMatch(JSON.stringify([powerShellApprovalEntry(job), declined]), /Remove-Item|Projects|secret-output/);
+  assert.equal(powerShellApprovalEntry({ ...job, risk: 'odd' }).title, 'PowerShell job');
+});
+
+test('cancelling a job still waiting for approval declines it; other cancels and states are not decisions', () => {
+  const job = { id: 'ps-1-a', risk: 'low', status: 'cancelled' };
+  const cancelled = powerShellApprovalEntry(job, { cancelledFrom: 'pending_approval' });
+  assert.equal(cancelled.ref, 'approval:ps-1-a:rejected', 'the same entry as declining it');
+  for (const was of ['approved', 'run_requested', undefined]) assert.equal(powerShellApprovalEntry(job, { cancelledFrom: was }), null, String(was));
+  for (const status of ['pending_approval', 'run_requested', 'running', 'completed', 'failed']) assert.equal(powerShellApprovalEntry({ ...job, status }), null, status);
+  assert.equal(powerShellApprovalEntry({ ...job, id: 'approval-1', status: 'approved' }), null, 'only Workbench jobs');
+  assert.equal(powerShellApprovalEntry(null), null);
+});
+
+// Job ids are ps-…, approvals approval-… (makeId), and the one-time import reads only approvals: the refs never meet.
+test('PowerShell decision refs cannot collide with approval or import refs', () => {
+  const { storage, journal } = fresh();
+  const at = '2026-11-19T15:00:00.000Z';
+  assert.ok(record(journal, approvalEntry({ id: 'approval-1795536000000-abc1234', title: 'Agent action approval', status: 'approved', meta: {} })));
+  assert.ok(record(journal, powerShellApprovalEntry({ id: 'ps-1795536000000-abc1234', risk: 'low', status: 'approved', updatedAt: at })));
+  assert.equal(record(journal, powerShellApprovalEntry({ id: 'ps-1795536000000-abc1234', risk: 'low', status: 'approved', updatedAt: at })), null, 'approving twice adds nothing');
+  assert.equal(journal.search({ sources: ['approval'] }).items.length, 2);
+  storage.close();
 });
 
 test('a release entry names the version and lists the release notes', () => {

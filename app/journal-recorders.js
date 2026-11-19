@@ -47,7 +47,7 @@ function voiceEntry({ intent, question, answer, runId, at } = {}) {
 
 // An approval decided in the app or on the Workshop display. Same ref as the one-time import's (app/journal-import.js),
 // so a decision the import already took is not written again. Host commands keep their text out, as PowerShell runs do.
-const WHERE = { app: 'in Local AI', display: 'on the Workshop display' };
+const WHERE = { app: 'in Local AI', display: 'on the Workshop display', workbench: 'in the PowerShell Workbench' };
 function approvalEntry(item, { where = 'app', at } = {}) {
   if (!item || typeof item.id !== 'string' || !['approved', 'rejected'].includes(item.status)) return null;
   const hidden = item.meta?.powershell === true || /^ps-/.test(String(item.meta?.jobId || ''));
@@ -56,8 +56,20 @@ function approvalEntry(item, { where = 'app', at } = {}) {
   return {
     at: iso(at) || iso(item.updatedAt), source: 'approval', kind: item.status, title: str(item.title) || 'Approval',
     body: detail ? `${said}\n${detail}` : said, ref: `approval:${item.id}:${item.status}`,
-    meta: { approvalId: item.id, by: where === 'display' ? 'display' : 'app', ...(item.meta?.changeId ? { changeId: item.meta.changeId } : {}) }
+    meta: { approvalId: item.id, by: WHERE[where] ? where : 'app', ...(item.meta?.changeId ? { changeId: item.meta.changeId } : {}) }
   };
+}
+
+// A PowerShell job approved or declined in the Workbench (app/server/powershell.js). Its ids are `ps-…`, so its refs
+// never meet an approval's (`approval-…`, the one-time import's too). Cancelling a job that was still waiting for approval
+// is declining it, so both give the one `rejected` entry. Never the script, its folder or its output: title and risk only.
+const PS_DECIDED = { approved: 'approved', rejected: 'rejected' };
+function powerShellApprovalEntry(job, { cancelledFrom, at } = {}) {
+  if (!job || typeof job.id !== 'string' || !/^ps-/.test(job.id)) return null;
+  const status = job.status === 'cancelled' ? (cancelledFrom === 'pending_approval' ? 'rejected' : null) : PS_DECIDED[job.status];
+  if (!status) return null;
+  const risk = ['low', 'medium', 'high'].includes(job.risk) ? ` (${job.risk} risk)` : '';
+  return approvalEntry({ id: job.id, title: `PowerShell job${risk}`, status, updatedAt: job.updatedAt, meta: { powershell: true, jobId: job.id } }, { where: 'workbench', at });
 }
 
 // The release Local AI is running (app/release.js readRelease), with the merged PR titles the deploy wrote as its notes.
@@ -95,4 +107,4 @@ function recordRelease({ journal, storage, release, version, now = Date.now }) {
   } catch { return null; }
 }
 
-module.exports = { runEntry, runText, voiceEntry, approvalEntry, releaseEntry, record, recordRelease, RELEASE_SETTING };
+module.exports = { runEntry, runText, voiceEntry, approvalEntry, powerShellApprovalEntry, releaseEntry, record, recordRelease, RELEASE_SETTING };

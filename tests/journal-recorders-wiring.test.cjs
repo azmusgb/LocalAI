@@ -12,6 +12,7 @@ const { createJournal } = require('../app/journal');
 const voice = require('../app/voice');
 const { createVoice } = require('../app/server/voice');
 const { createNotifications } = require('../app/server/notifications');
+const { createPowerShell } = require('../app/server/powershell');
 
 const fresh = t => {
   const storage = new Storage({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'journal-wire-')) });
@@ -132,4 +133,52 @@ test('the display still decides when the journal fails', async t => {
   assert.equal(v.out.status, 200);
   assert.equal(v.store.items[0].status, 'approved');
   assert.equal(j.calls.length, 1);
+});
+
+// PowerShell Workbench (host-only port; LOCAL_UI_PORT unset here, so the Host and token checks are what it asks).
+const psJob = (over = {}) => ({ id: 'ps-1795536000000-abc1234', script: 'Remove-Item C:\\Projects\\old -Recurse', cwd: 'C:\\Projects', timeoutSec: 120, risk: 'high', status: 'pending_approval', createdAt: '2026-11-19T14:00:00.000Z', updatedAt: '2026-11-19T14:00:00.000Z', stdout: '', stderr: '', exitCode: null, ...over });
+function powerShellCtx({ journal, jobs }) {
+  const r = reply();
+  const store = { items: jobs };
+  const api = createPowerShell({
+    LOCAL_UI_PORT: 0, POWERSHELL_BRIDGE_TOKEN: '', POWERSHELL_UI_TOKEN: 'ui-token', journalWriter: journal, json: r.json, listenPort: () => 3090,
+    makeId: p => `${p}-1`, nowIso: () => '2026-11-19T15:04:00.000Z', objectStore: () => store.items, readBody: async req => req.body,
+    recordActivity: () => {}, requireFeature: () => true, saveStore: (name, items) => { store.items = items; }, storageError: (res, e) => { throw e; }
+  });
+  const call = async (fn, body) => { await api[fn]({ body, headers: { host: 'localhost:3090', 'x-localai-powershell-token': 'ui-token' }, socket: {} }, r.res); return { ...r.out }; };
+  return { store, call };
+}
+
+test('a PowerShell job approved twice is journaled once, without its script', async t => {
+  const { journal } = fresh(t);
+  const ps = powerShellCtx({ journal, jobs: [psJob()] });
+  assert.equal((await ps.call('apiPowerShellApprove', { id: psJob().id, decision: 'approved' })).status, 200);
+  assert.equal((await ps.call('apiPowerShellApprove', { id: psJob().id, decision: 'approved' })).status, 409, 'already decided');
+  const items = journal.search({ sources: ['approval'] }).items;
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, 'PowerShell job (high risk)');
+  assert.equal(items[0].body, 'Approved in the PowerShell Workbench.');
+  assert.doesNotMatch(JSON.stringify(items), /Remove-Item|Projects/);
+});
+
+test('declining a PowerShell job, or cancelling it before approval, is one declined entry', async t => {
+  const { journal } = fresh(t);
+  const ps = powerShellCtx({ journal, jobs: [psJob(), psJob({ id: 'ps-2', risk: 'low' }), psJob({ id: 'ps-3', status: 'approved' })] });
+  assert.equal((await ps.call('apiPowerShellApprove', { id: psJob().id, decision: 'rejected' })).status, 200);
+  assert.equal((await ps.call('apiPowerShellCancel', { id: 'ps-2' })).status, 200);
+  assert.equal((await ps.call('apiPowerShellCancel', { id: 'ps-3' })).status, 200, 'cancelling an approved job is not a decision');
+  const items = journal.search({ sources: ['approval'] }).items;
+  assert.deepEqual(items.map(i => [i.kind, i.title]).sort(), [['rejected', 'PowerShell job (high risk)'], ['rejected', 'PowerShell job (low risk)']]);
+  assert.ok(items.every(i => i.body === 'Declined in the PowerShell Workbench.'));
+});
+
+test('a PowerShell job is still approved and cancelled when the journal fails', async t => {
+  const j = broken();
+  const ps = powerShellCtx({ journal: j, jobs: [psJob(), psJob({ id: 'ps-2' })] });
+  const out = await ps.call('apiPowerShellApprove', { id: psJob().id, decision: 'approved' });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.item.status, 'approved');
+  assert.equal((await ps.call('apiPowerShellCancel', { id: 'ps-2' })).status, 200);
+  assert.deepEqual(ps.store.items.map(x => x.status), ['approved', 'cancelled'], 'saved');
+  assert.equal(j.calls.length, 2, 'both were tried');
 });
