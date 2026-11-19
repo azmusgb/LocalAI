@@ -23,19 +23,20 @@ const CLOUD = Object.freeze({
 
 // Words that make a request private whatever its kind: health, money, legal, family, identity. The guard only ever moves
 // work toward this PC; a false match costs a slower answer, a missed one would send something personal out. So it leans
-// inclusive ("bank of the river", "attorney general" match), but a word too common to mean anything alone counts only in
-// a personal phrase: "will" (my will, living will), "PIN" (PIN code, my PIN), "pain" (not "pain point").
+// inclusive ("bank of the river", "attorney general", "loan calculator" match), but a word too common to mean anything
+// alone counts only in a personal phrase: "will" (my will, living will), "PIN" (PIN code, my PIN), "pain" (not "pain
+// point"), "debt" (not "tech debt"). Words that mostly mean code or business work (pill, income, invoice) are left out.
 const PERSONAL_WORDS = [
   // Health
   'medic(al|ine|ation)s?', 'dose', 'dosage', 'prescriptions?', 'diagnos\\w*', 'symptoms?', 'therapy', 'therapist', 'doctor',
   'clinic', 'hospital', 'blood', 'pregnan\\w*', 'mental health', 'anxiety', 'depression', 'weight loss', 'insulin',
-  'surger(y|ies)', 'surgeon', 'cancer', 'tumou?rs?', 'allerg(y|ies|ic)', 'pills?', 'rash(es)?', 'pain(?![\\s-]*points?\\b)',
+  'surger(y|ies)', 'surgeon', 'cancer', 'tumou?rs?', 'allerg(y|ies|ic)', 'rash(es)?', 'pain(?![\\s-]*points?\\b)',
   'painkillers?', 'injur(y|ies|ed)', 'fever', 'diabet\\w*', 'asthma', 'cholesterol', 'vaccin\\w*', 'infection',
   'migraines?', 'dentist', 'panic attacks?', 'adhd',
   // Money
   'bank', 'account (number|no)', 'routing number', 'credit (card|score|report)', 'iban', 'pin (code|number)', 'my pin',
-  'loans?', 'mortgages?', 'debts?', 'bankrupt\\w*', 'insurance', 'pensions?', '401k', 'iras?', 'paychecks?', 'pay ?stubs?',
-  'payslips?', 'salary', 'income', 'invoices?', 'tax (return|refund)s?', 'w-?2',
+  'loans?', 'mortgages?', '(?<!\\btech(nical)?[\\s-]+)debts?', 'bankrupt\\w*', 'insurance', 'pensions?', '401k', 'iras?',
+  'paychecks?', 'pay ?stubs?', 'payslips?', 'salary', 'tax (return|refund)s?', 'w-?2',
   // Legal
   'lawyers?', 'attorneys?', 'lawsuits?', 'divorc\\w*', 'custody', 'my will', 'living will', 'will and testament',
   'estate plan\\w*', 'probate', 'court (date|case|hearing)s?', 'restraining order',
