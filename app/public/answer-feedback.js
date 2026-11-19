@@ -57,7 +57,7 @@
     row.append(pick, state, form, fail, unread);
     const st = row._feedback = { runId: run.id, verdict: '', note: '', busy: false, buttons, form, input, save, state, fail, unread };
 
-    const showFail = e => { fail.textContent = e?.signIn ? "Couldn't save that: sign in on this device first (Build › Claude Code)." : "Couldn't save that. Try again."; fail.hidden = false; };
+    const showFail = e => { fail.textContent = e?.signIn ? "Couldn't save that: sign in on this device first (Improve › Claude Code)." : "Couldn't save that. Try again."; fail.hidden = false; };
     // Saving: the pressed state stays what it was until the server has it; the control says it is saving.
     const busy = (on, b) => { st.busy = on; for (const x of [buttons.good, buttons.bad, save]) { x.setAttribute('aria-disabled', String(on)); x.removeAttribute('aria-busy'); } if (on) b.setAttribute('aria-busy', 'true'); state.textContent = on ? 'Saving…' : ''; };
     for (const v of ['good', 'bad']) buttons[v].addEventListener('click', async () => {
@@ -114,6 +114,15 @@
     const rt = host.querySelector(':scope > .run-route');
     if (rt) row.prepend(rt);
     sync(row, run);
+    if (run.type === 'chat') suggestLine(host, run);
+  }
+
+  // "Local AI suggests remembering: …" under a chat answer: fact-suggestion-line.js, loaded the first time one is marked.
+  let lq;
+  function suggestLine(host, run) {
+    const L = window.LocalAIFactLine; if (L) return L.mark(host, run);
+    if (!lq) { lq = []; const s = document.createElement('script'); s.src = '/fact-suggestion-line.js'; s.onload = () => lq.splice(0).forEach(a => window.LocalAIFactLine.mark(...a)); s.onerror = () => { lq = null; }; document.head.append(s); }
+    lq.push([host, run]);
   }
 
   window.LocalAIFeedback = { mark };

@@ -66,10 +66,12 @@ test('chat puts the block only in what this PC\'s model is sent, never in what a
 // voice turns) reads them, through the shared-notes reader it already has, and only the run card reads their line.
 test('only app/server/chat.js (and the run card, for its line) use the owner facts in a turn', () => {
   const loaders = SERVER_FILES.filter(f => /require\(['"](?:\.\.?\/)+owner-facts['"]\)/.test(read(f))).sort();
-  assert.deepEqual(loaders, ['run-cards.js', path.join('server', 'chat.js'), path.join('server', 'projects.js')].sort());
+  assert.deepEqual(loaders, ['fact-suggestions.js', 'run-cards.js', path.join('server', 'chat.js'), path.join('server', 'projects.js')].sort());
   assert.match(read('run-cards.js'), /const \{ cardLine: factsLine \} = require\('\.\/owner-facts'\);/);
   // The memory routes use only the list's rules, never the turn's reader.
   assert.doesNotMatch(read(path.join('server', 'projects.js')), /forTurn|runMeta|cardLine/);
+  // So do suggestions (owner facts PR 2): Save is held to the same cap, length and duplicate check as Add.
+  assert.doesNotMatch(read('fact-suggestions.js'), /forTurn|runMeta|cardLine/);
 });
 
 test('missions, agents, GridCraft and change planning never get the owner facts', () => {

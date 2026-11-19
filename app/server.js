@@ -432,7 +432,11 @@ const { apiConfig, redirectFor, serveStatic } = require('./server/web').createWe
 const { apiPowerShellApprove, apiPowerShellCancel, apiPowerShellCreate, apiPowerShellHostNext, apiPowerShellHostResult, apiPowerShellJobs, apiPowerShellRequestRun } = require('./server/powershell').createPowerShell({ LOCAL_UI_PORT, POWERSHELL_BRIDGE_TOKEN, POWERSHELL_UI_TOKEN, journalWriter, json, listenPort, makeId, nowIso, objectStore, readBody, recordActivity, requireFeature, saveStore, storageError });
 const { apiAutomationCreate, apiAutomationRun, apiAutomationUpdate, apiAutomations, apiMonitorCreate, apiMonitorRun, apiMonitors, apiMorningBrief, automationSchedulerTick, monitorSchedulerTick } = require('./server/automations').createAutomations({ AUTOMATIONS_STORE, AUTOMATION_RUNS_STORE, MONITORS_STORE, activityStore, addNotification, automationRunStore, automationStore, featureAtLeast, getStatusAndRecordTransition, inFlight, json, makeId, normalizeTitle, notificationStore, nowIso, objectStore, readBody, recordActivity, requireFeature, runLocalModel, saveStore, searxSearch, storageError });
 const { apiRunCancel, apiRunRetry, apiRunUpdate, apiRuns, createChatExecution, needsThreads, streetRuns } = require('./server/runs').createRuns({ AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, answerFeedback, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, gridcraftRuns, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind });
-const { apiChat, apiChatStream, apiRoute, chatOnce } = require('./server/chat').createChat({ ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, projectNotes: projectId => storage.list(MEMORY_STORE, { projectId }), projectStore, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone: (...a) => voiceTimeZone(...a) });
+// Owner-fact suggestions (app/fact-suggestions.js): after a chat answered on this PC, a quick local job may propose one
+// fact; it is saved only when the owner says so. Its daily limit counts the appliance's local day (voiceTimeZone, the
+// zone voice answers the time in). LOCALAI_FACT_SUGGESTIONS=off switches the job off (test servers).
+const factSuggestions = require('./fact-suggestions').createFactSuggestions({ storage, coordinator, runLocalModel, busyNow, makeId, recordActivity, json, readBody, now: clockNow, timeZone: () => voiceTimeZone(), enabled: process.env.LOCALAI_FACT_SUGGESTIONS !== 'off' });
+const { apiChat, apiChatStream, apiRoute, chatOnce } = require('./server/chat').createChat({ ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, factSuggestions, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, projectNotes: projectId => storage.list(MEMORY_STORE, { projectId }), projectStore, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone: (...a) => voiceTimeZone(...a) });
 const { apiAttention, apiDisplayAiCards, apiDisplayAlerts, apiDisplayApprovalDecide, apiDisplayApprovals, apiDisplayAsk, apiDisplayEvents, apiDisplayFeed, apiDisplayHeartbeat, apiDisplayNotify, apiDisplayPair, apiGlance, apiGlanceAsk, apiVoiceHome, apiWatchHeartbeat, voiceTimeZone } = require('./server/voice').createVoice({ APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized: req => displayKey.authorized(req), hubAuthorized: req => hubKey.authorized(req), displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, journalWriter, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, startPastWork, storage, storageError, text, voice, voiceFacts, watchdog, weather });
 const { setFramePolicy } = require('./server/framing');
 const server = http.createServer(async (req, res) => {
@@ -443,7 +447,9 @@ const server = http.createServer(async (req, res) => {
   try {
     if (!hostAllowed(req.headers.host, ALLOWED_HOSTS)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 421, { error: 'Unknown host name. Open Local AI by its own address.' }); }
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
-    if (signIn.blocks(signIn.check(req, p), p, req.method)) { req.resume(); return json(res, 401, { error: 'Sign in on this device first: pair it under Build › Claude Code.', signIn: true }); }
+    // What sign-in made of this request; the chat routes pass it on, so owner-only follow-up work can tell.
+    const access = signIn.check(req, p);
+    if (signIn.blocks(access, p, req.method)) { req.resume(); return json(res, 401, { error: 'Sign in on this device first: pair it under Improve › Claude Code.', signIn: true }); }
     if (req.method === 'GET' && p === '/api/signin/report') return signIn.apiReport(req, res, json);
     if (req.method === 'POST' && p === '/api/signin/report/clear') { signIn.clear(); return json(res, 200, { ok: true }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 }, addresses: accessAddresses() });
@@ -489,8 +495,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/library/keep') return await apiLibraryKeep(req, res);
     if (req.method === 'GET' && p === '/api/workspace') return await apiWorkspace(req, res);
     if (req.method === 'POST' && p === '/api/route') return await apiRoute(req, res);
-    if (req.method === 'POST' && p === '/api/chat') return await apiChat(req, res);
-    if (req.method === 'POST' && p === '/api/chat/stream') return await apiChatStream(req, res);
+    if (req.method === 'POST' && p === '/api/chat') return await apiChat(req, res, access);
+    if (req.method === 'POST' && p === '/api/chat/stream') return await apiChatStream(req, res, access);
     if (p.startsWith('/api/atlas/')) return await apiAtlas(req, res, p);
     if (req.method === 'GET' && p === '/api/images/models') return await apiImageModels(req, res);
     if (req.method === 'GET' && p === '/api/images/checkpoints') return await apiCheckpoints(req, res);
@@ -554,6 +560,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/notifications/update') return await apiNotificationUpdate(req,res);
     if (req.method === 'POST' && p === '/api/notifications/seed') return await apiNotificationSeed(req,res);
     if (req.method === 'POST' && p === '/api/notifications/system') return await apiNotificationSystem(req,res);
+    if (req.method === 'GET' && p === '/api/facts/suggestions') return await factSuggestions.apiPending(req,res);
+    if (req.method === 'POST' && p === '/api/facts/suggestions/decide') return await factSuggestions.apiDecide(req,res);
     if (req.method === 'GET' && p === '/api/memory') return await apiMemory(req,res,urlObj);
     if (req.method === 'POST' && p === '/api/memory/add') return await apiMemoryAdd(req,res);
     if (req.method === 'POST' && p === '/api/memory/update') return await apiMemoryUpdate(req,res);
