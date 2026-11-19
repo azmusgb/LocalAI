@@ -365,6 +365,21 @@ await check('folded and full: the reason Add is off shows without unfolding', as
   await close(page);
 });
 
+await check('390px, 7 facts, folded: "Make this a fact" lands on an Edit that the tab bar and toast do not cover', async () => {
+  const page = await open(phone, { items: [...FULL.slice(0, 7), note('mem-s1', 'Prefers matte finishes.', '', 40)], folded: true });
+  await page.locator('#memoryList [data-mem-fact="mem-s1"]').scrollIntoViewIfNeeded();
+  await page.locator('#memoryList [data-mem-fact="mem-s1"]').focus();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.activeElement?.matches('[data-fact-id="mem-s1"] [data-fact-edit]'), null, T);
+  await page.waitForTimeout(300);
+  const hit = await page.evaluate(() => {
+    const a = document.activeElement, r = a.getBoundingClientRect(), top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { edit: !!top && a.contains(top), by: top && !a.contains(top) ? (top.closest('[id]')?.id || top.tagName) : '' };
+  });
+  assert.deepEqual(hit, { edit: true, by: '' });
+  await close(page);
+});
+
 await check('folded: "Make this a fact" unfolds the group and lands on the new fact\'s Edit', async () => {
   const page = await open(phone, { items: [fact('a', 'Answers in metric.', 1), note('mem-s1', 'Prefers matte finishes.', '', 2)], folded: true });
   await page.locator('#memoryList [data-mem-fact="mem-s1"]').click();

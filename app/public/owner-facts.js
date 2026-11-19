@@ -109,6 +109,17 @@
     if (t) { t.setAttribute('aria-expanded', String(on)); t.textContent = toggleWords(s.facts.length); }
   }
 
+  // The lowest point of the window nothing fixed covers: the top of the phone's tab bar, or of a toast that is showing.
+  function bottomEdge() {
+    let b = innerHeight;
+    for (const el of [$('uxMobileNav'), $('toast')]) {
+      if (!el || (el.id === 'toast' && !el.classList.contains('show')) || getComputedStyle(el).position !== 'fixed') continue;
+      const r = el.getBoundingClientRect();
+      if (r.height > 0 && r.top > 0 && r.top < b) b = r.top;
+    }
+    return b;
+  }
+
   const failIn = (form, text) => { const p = form.querySelector('.owner-facts__error'); p.textContent = text; p.hidden = false; };
   const busy = (btn, on, words) => { if (on) { btn.dataset.words = btn.textContent; btn.textContent = words; } else if (btn.dataset.words) { btn.textContent = btn.dataset.words; delete btn.dataset.words; } btn.disabled = on; };
   // Focus a fact's control after a redraw; a row past the first SHOWN opens the list first. The fallback is the element
@@ -223,11 +234,16 @@
       else if (b.matches('[data-fact-delete]')) remove(li, b);
     });
     // A focused control brings its whole row into view (on a phone the fact's text sits above its buttons, and the
-    // browser and refocus scroll only the control); the row's scroll margin keeps it clear of the sticky head.
+    // browser and refocus scroll only the control): clear of the sticky head (the row's scroll margin) and above what is
+    // fixed at the bottom, the phone's tab bar and a showing toast. The kit has no token for the tab bar's height, so it
+    // is measured, as ui.js does for Agent World.
     sec.addEventListener('focusin', e => {
       const li = e.target.closest('.owner-fact'); if (!li) return;
-      const r = li.getBoundingClientRect(), head = parseFloat(getComputedStyle(li).scrollMarginTop) || 0;
-      if (r.top < head || r.bottom > innerHeight) li.scrollIntoView({ block: r.height + head > innerHeight ? 'start' : 'nearest' });
+      const cs = getComputedStyle(li), r = li.getBoundingClientRect(), head = parseFloat(cs.scrollMarginTop) || 0;
+      const gap = (parseFloat(cs.getPropertyValue('--ui-s-3')) || 0) * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16);
+      const foot = bottomEdge() - gap;
+      if (r.top < head || r.height > foot - head) li.scrollIntoView({ block: 'start' });
+      else if (r.bottom > foot) window.scrollBy({ top: r.bottom - foot, behavior: 'instant' });
     });
     sec.addEventListener('keydown', e => {
       if (e.key === 'Escape' && e.target.id === 'ownerFactEdit') { e.preventDefault(); sec.querySelector('[data-fact-cancel]').click(); }
