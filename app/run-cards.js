@@ -60,7 +60,7 @@ function readableTitle(run) {
   if (!title || /^you are\b/i.test(title)) return KIND_NAMES[kind];
   return firstWords(title);
 }
-function runCard(run, { approvalFor, changeFor } = {}) {
+function runCard(run, { approvalFor, changeFor, feedbackFor } = {}) {
   run = run || {};
   const type = LEGACY_TYPES[run.type] || run.type; // older mission and specialist runs are agent runs
   const kind = Object.prototype.hasOwnProperty.call(KINDS, type) ? type : 'other';
@@ -86,6 +86,13 @@ function runCard(run, { approvalFor, changeFor } = {}) {
   if (!used && kind === 'engineering' && meta.changeId && changeFor) used = changeFor(meta.changeId)?.route;
   const text = used && typeof used === 'object' ? routeLabel(used) : '';
   const route = text ? { text, why: typeof used.why === 'string' ? used.why.slice(0, 160) : '' } : null;
-  return { kind, icon, title: readableTitle(run), summary, badge: outcomeBadge(run, kind, summary) || badge(run.status), preview, action, approval, view, route };
+  // The owner's verdict on an answer (app/answer-feedback.js): {verdict, note} or null, or {unread: true} when it couldn't
+  // be read. Only answers carry one; without a lookup the card says nothing about it.
+  const rated = {};
+  if (feedbackFor && (kind === 'chat' || kind === 'research' || kind === 'prompt')) {
+    const f = feedbackFor(run);
+    rated.feedback = f && f.unread ? { unread: true } : f && f.verdict ? { verdict: f.verdict, note: f.note || '' } : null;
+  }
+  return { kind, icon, title: readableTitle(run), summary, badge: outcomeBadge(run, kind, summary) || badge(run.status), preview, action, approval, view, route, ...rated };
 }
 module.exports = { runCard, readableTitle, STATUS, workKind, WORK_CHIPS };

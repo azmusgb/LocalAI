@@ -73,7 +73,8 @@ async function open(viewport, hash, { runs = [], library = [], answers = {}, sto
   await page.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIRouter && window.LocalAIHome && window.LocalAIChat && location.hash, null, { timeout: 8000 });
   return page;
 }
-const turns = (page, who) => page.locator(`#runDrawer .chat-turn--${who}`).allInnerTexts();
+// A turn's words, without the Good answer / Not right control under a finished answer (answer-feedback.js).
+const turns = (page, who) => page.locator(`#runDrawer .chat-turn--${who}`).evaluateAll(ns => ns.map(n => { const f = n.querySelector('.answer-feedback'); return f ? n.innerText.replace(f.innerText, '').trim() : n.innerText; }));
 const reqs = page => page.evaluate(() => window.__reqs);
 
 await check('Home Chat: Send opens #run/pending, meta resolves it to the run, and tokens appear in the run view', async () => {

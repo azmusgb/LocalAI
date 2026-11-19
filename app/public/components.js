@@ -94,7 +94,9 @@
     const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');
     clearTimeout(t._hide);t._hide=setTimeout(()=>{t.classList.remove('show');t.replaceChildren()},6000);
   }
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{refocus,announce});
+  // Good answer / Not right under a finished answer (run-bodies.js): answer-feedback.js, loaded the first time one is drawn.
+  let fq;function rateAnswer(n,r){const F=window.LocalAIFeedback;if(F)return F.mark(n,r);if(!fq){fq=[];const s=document.createElement('script');s.src='/answer-feedback.js';s.onload=()=>fq.splice(0).forEach(a=>window.LocalAIFeedback.mark(...a));s.onerror=()=>{fq=null};document.head.append(s)}fq.push([n,r])}
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{refocus,announce,rateAnswer});
   // One card for every run, whatever its kind: icon, title, summary, status badge, a bar while active, the preview, one action.
   // item is a /api/runs list item; item.card (from the server) says what to show. onOpen(item) opens the run view.
   const ACTIVE=new Set(['queued','running','streaming','awaiting_approval']);

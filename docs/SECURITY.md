@@ -164,7 +164,7 @@ the container, stage or approve changes, decide approvals, or post and clear ale
 `/api/display/approvals/decide` and `/api/display/lab/verdict` (the display's key still signs them in), `/api/display/notify`, `/api/engineering/*`,
 `/api/issues/prepare-change`, `/api/improve/handoff`, `/api/powershell/*`, `/api/notifications/system|seed|update` and
 `/api/signin/report/clear`, and `/api/workshop/portal-code` (it hands out the display's sign-in code) (`GUARDED` in `app/signin.js`); and, for any method but GET, starting agent runs
-(`/api/agents/dispatch|run|missions/start|specialist/run`), retrying, cancelling or updating runs, GridCraft workbook writes, `/api/knowledge/import|delete`, `/api/conversations/delete`, memory changes, model pulls and deletes,
+(`/api/agents/dispatch|run|missions/start|specialist/run`), retrying, cancelling, updating or rating runs (`/api/runs/feedback`), GridCraft workbook writes, `/api/knowledge/import|delete`, `/api/conversations/delete`, memory changes, model pulls and deletes,
 `/api/library/delete`, `/api/items/delete` and `/api/display/alerts` (`GUARDED_WRITES`). Pair a browser under
 Build › Claude Code to use them.
 `LOCALAI_SIGN_IN=required` in `stack.env` refuses every API route that isn't open.
