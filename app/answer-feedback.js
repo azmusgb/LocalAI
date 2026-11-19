@@ -33,9 +33,14 @@ function answerRun(run) {
   return run.type === 'prompt' && run.meta?.mode === 'history';
 }
 
-// Redact before cutting: a long secret shrinks to "[redacted]", and cutting first could leave a second secret's fragment,
-// too short to match, inside the kept text. The 20,000 cap only bounds the regex work; the kept text is far shorter.
-const oneLine = (text, max) => redact(String(text ?? '').slice(0, 20000)).replace(/\s+/g, ' ').trim().slice(0, max);
+// Collapse whitespace first (redact's quoted-value pattern stops at a newline), then redact, then cut: a long secret
+// shrinks to "[redacted]", and cutting first could leave a second secret's fragment, too short to match, in the kept
+// text. The 20,000 bound only limits the regex work; a token it cuts in half is dropped rather than kept as a fragment.
+const BOUND = 20000;
+const oneLine = (text, max) => {
+  const flat = String(text ?? '').replace(/\s+/g, ' ').trim();
+  return redact(flat.length > BOUND ? flat.slice(0, BOUND).replace(/\S*$/, '') : flat).slice(0, max);
+};
 
 function createAnswerFeedback({ db, now = Date.now }) {
   if (!db || typeof db.exec !== 'function') throw new TypeError('db is required');

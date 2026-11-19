@@ -100,6 +100,16 @@ test('the note and the question are redacted, one line, and cut to 300 and 200 c
   feedback.set(answer({ id: 'run-two', input: { prompt: `${'sk-' + 'b'.repeat(220)} ${'w'.repeat(155)} ${hex}` } }), 'bad');
   const two = storage.db.prepare("SELECT asked FROM answer_feedback WHERE run_id = 'run-two'").get();
   assert.equal(/f{8,}|b{8,}/.test(two.asked), false, two.asked);
+  // A quoted secret split by a newline is still redacted (whitespace is collapsed before redacting).
+  feedback.set(answer({ id: 'run-quoted', input: { prompt: 'password: "hunter2\nzebra" why?' } }), 'bad');
+  const quoted = storage.db.prepare("SELECT asked FROM answer_feedback WHERE run_id = 'run-quoted'").get();
+  assert.equal(/hunter2|zebra/.test(quoted.asked), false, quoted.asked);
+  // Past the 20,000-character bound, a token cut in half is dropped, not kept as an unmatched fragment.
+  // The key block is 19,960 characters and redacts to 10; the 64-character hex starts at 19,977, so the bound cuts it to 23.
+  const pem = '-----BEGIN RSA PRIVATE KEY-----' + 'k'.repeat(19900) + '-----END RSA PRIVATE KEY-----';
+  feedback.set(answer({ id: 'run-cap', input: { prompt: `${pem} ${'e'.repeat(15)} ${'c'.repeat(64)}` } }), 'bad');
+  const cap = storage.db.prepare("SELECT asked FROM answer_feedback WHERE run_id = 'run-cap'").get();
+  assert.equal(/c{4,}/.test(cap.asked), false, cap.asked);
   storage.close();
 });
 
