@@ -79,7 +79,7 @@ model, how much text; never the text itself).
 
 Beside that line, **Good answer** and **Not right** say how the answer landed (on chats, research and Past work
 answers that finished). Press the same one again to take it back. After **Not right** you can add a line about what
-was wrong (up to 300 characters), or skip it. **System › Models**, under **What runs where**, shows **How answers have
+was wrong (up to 300 characters), or skip it. **System › Models**, after the Cloud models card, shows **How answers have
 landed**: good and not right by model for the last 30 and 90 days, and the latest answers marked not right with a link
 to each (or "this run is no longer kept" once Work has let it go). Ratings stay in Local AI's database and are never
 sent to a model. Rating needs a signed-in device.
