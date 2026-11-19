@@ -170,7 +170,8 @@ const KB = 1024;
 // Folding the facts group so Memory's notes stay on a phone's first screen: 375,048 bytes measured.
 // 2026-11-19: suggested facts (owner facts PR 2) fit 367 KB with no raise: Memory's Save / Edit / No live in the
 // on-demand owner-facts.js, and the line under a chat answer in fact-suggestion-line.js, loaded by the on-demand
-// answer-feedback.js. The shell grows only by the line's styles in app.css (+82 bytes); 375,118 bytes measured.
+// answer-feedback.js. The shell grows only by app.css: the line's styles and the suggestions' block in the folded group
+// (+154 bytes over the folded group's 375,048); 375,202 bytes measured.
 const TOTAL = 367 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
