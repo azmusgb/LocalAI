@@ -75,7 +75,7 @@ const close = page => page.context().close();
 
 await check('empty: says what to add, Add saves a fact as one line, and it never shows as a shared note', async () => {
   const page = await open(desk, { items: [note('mem-s1', 'Prefers matte finishes.')] });
-  await group(page).locator('#ownerFactsEmpty', { hasText: 'No facts yet. Add one, like the printer you use or units you prefer.' }).waitFor(T);
+  await group(page).locator('#ownerFactsEmpty', { hasText: 'No facts yet, like your printer or the units you prefer. Used only in answers from this PC.' }).waitFor(T);
   assert.equal((await page.locator('#ownerFactsTitle').textContent()).trim(), 'About you and the house');
   assert.equal(await page.locator('#ownerFactsCount').count(), 0);
   // The group comes before the per-project notes.
@@ -345,6 +345,7 @@ await check('390px folded by default: a count line and Show facts (44 px); the n
 await check('folded and empty: one line and Add a fact, which unfolds into the field with focus on it', async () => {
   const page = await open(phone, { folded: true });
   assert.equal(await page.locator('#ownerFactsEmpty').isVisible(), true);
+  assert.match(await page.locator('#ownerFactsEmpty').textContent(), /Used only in answers from this PC\.$/);
   const t = page.locator('#ownerFactsToggle');
   assert.equal((await t.textContent()).trim(), 'Add a fact');
   assert.equal(await t.getAttribute('aria-expanded'), 'false');
@@ -353,15 +354,26 @@ await check('folded and empty: one line and Add a fact, which unfolds into the f
   assert.equal(await t.getAttribute('aria-expanded'), 'true');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'ownerFactText');
   assert.equal(await page.locator('#ownerFactsRule').isVisible(), true);
+  assert.equal(await t.isVisible(), false, 'an open, empty group has nothing to hide, so no Hide facts');
+  await page.locator('#ownerFactText').fill('Answers in metric.');
+  await page.locator('#ownerFactText').press('Enter');
+  await rows(page).first().waitFor(T);
+  assert.equal(await t.isVisible(), true);
+  assert.equal((await t.textContent()).trim(), 'Hide facts');
   await close(page);
 });
 
-await check('folded and full: the reason Add is off shows without unfolding', async () => {
+await check('full: folded, one line says it is full; open, the reason sits right under the disabled Add', async () => {
   const page = await open(phone, { items: FULL, folded: true });
   assert.equal(await page.locator('#ownerFactsCount').textContent(), '30 of 30');
-  assert.equal(await page.locator('#ownerFactsRule').isVisible(), true);
-  assert.match(await page.locator('#ownerFactsRule').textContent(), /^Full: 30 of 30\./);
+  assert.equal((await page.locator('.owner-facts__count').textContent()).trim(), '30 of 30 facts, the most you can keep · used only in answers from this PC');
+  assert.equal(await page.locator('#ownerFactsBody').getByText('Full: 30 of 30').isVisible(), false, 'not said twice while folded');
   assert.equal(await panelShown(page), false);
+  await page.locator('#ownerFactsToggle').click();
+  const [add, rule] = await Promise.all([page.locator('#ownerFactAddBtn').boundingBox(), page.locator('#ownerFactsRule').boundingBox()]);
+  assert.equal(await page.locator('#ownerFactAddBtn').isDisabled(), true);
+  assert.match(await page.locator('#ownerFactsRule').textContent(), /^Full: 30 of 30\. Delete or edit a fact to add another\.$/);
+  assert.ok(rule.y >= add.y + add.height && rule.y - (add.y + add.height) < 24, 'the reason is directly under Add');
   await close(page);
 });
 

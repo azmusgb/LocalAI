@@ -8,6 +8,7 @@
   // The same limits as app/owner-facts.js (tests/owner-facts.test.cjs keeps them equal).
   const MAX_FACTS = 30, MAX_LENGTH = 200, CATEGORY = 'owner';
   const FULL = `Full: ${MAX_FACTS} of ${MAX_FACTS}. Delete or edit a fact to add another.`;
+  const USED = 'Used only in answers from this PC.';
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const one = t => String(t ?? '').replace(/\s+/g, ' ').trim();
@@ -78,12 +79,12 @@
     const addWas = $('ownerFactText'), keep = addWas ? { v: addWas.value, f: document.activeElement === addWas } : null;
     // A redraw while a fact is being edited (Show all / Show the first 5) keeps what was typed there.
     const ed = $('ownerFactEdit'), draft = ed && ed.closest('[data-fact-id]')?.dataset.factId === s.editing ? { v: ed.value, f: document.activeElement === ed } : null;
-    // Folded: the count line (and, when full, why Add is off) with one button. Unfolded: the list, Show all and Add.
+    // Folded: one line (how many, that a full list is full, where they are used) and one button. Unfolded: the list,
+    // Show all and Add, with the rule, or why Add is off, under it. With no facts the open group needs no Hide button.
     body.innerHTML = `<div class="owner-facts__head">${n
-        ? `<p class="owner-facts__count"><span id="ownerFactsCount">${n} of ${MAX_FACTS}</span> facts · used only in answers from this PC</p>`
-        : '<p class="owner-facts__count" id="ownerFactsEmpty">No facts yet. Add one, like the printer you use or units you prefer.</p>'}
-        <button type="button" class="ui-btn" id="ownerFactsToggle" aria-controls="ownerFactsPanel" aria-expanded="${s.expanded}">${toggleWords(n)}</button></div>
-      ${full ? rule : ''}
+        ? `<p class="owner-facts__count"><span id="ownerFactsCount">${n} of ${MAX_FACTS}</span> facts${full ? ', the most you can keep' : ''} · used only in answers from this PC</p>`
+        : `<p class="owner-facts__count" id="ownerFactsEmpty">No facts yet, like your printer or the units you prefer. ${USED}</p>`}
+        <button type="button" class="ui-btn owner-facts__toggle" id="ownerFactsToggle" aria-controls="ownerFactsPanel" aria-expanded="${s.expanded}"${!n && s.expanded ? ' hidden' : ''}>${toggleWords(n)}</button></div>
       <div class="owner-facts__panel" id="ownerFactsPanel"${s.expanded ? '' : ' hidden'}>
       ${n ? `<ul class="ui-rows" id="ownerFactsList">${s.facts.map(row).join('')}</ul>` : ''}
       ${more ? `<button type="button" class="ui-btn ui-btn--ghost" id="ownerFactsMore" aria-controls="ownerFactsList" aria-expanded="${s.open}">${s.open ? `Show the first ${SHOWN}` : `Show all ${n} facts`}</button>` : ''}
@@ -91,7 +92,7 @@
         <label class="owner-facts__label" for="ownerFactText">Add a fact</label>
         <input id="ownerFactText" class="ui-field" maxlength="${MAX_LENGTH}" autocomplete="off" aria-describedby="ownerFactsRule"${full ? ' disabled' : ''}>
         <button type="submit" class="ui-btn" id="ownerFactAddBtn" aria-describedby="ownerFactsRule"${full ? ' disabled' : ''}>Add fact</button>
-        ${full ? '' : rule}
+        ${rule}
         <p class="ui-notice ui-notice--bad owner-facts__error" id="ownerFactsAddError" role="alert" hidden></p>
       </form></div>`;
     if (keep && keep.v && !full) { const t = $('ownerFactText'); t.value = keep.v; if (keep.f) t.focus(); }
@@ -106,7 +107,7 @@
     try { sessionStorage.setItem(EXPANDED_KEY, on ? '1' : '0'); } catch { /* storage off: this page view only */ }
     const panel = $('ownerFactsPanel'), t = $('ownerFactsToggle');
     if (panel) panel.hidden = !on;
-    if (t) { t.setAttribute('aria-expanded', String(on)); t.textContent = toggleWords(s.facts.length); }
+    if (t) { t.setAttribute('aria-expanded', String(on)); t.textContent = toggleWords(s.facts.length); t.hidden = on && !s.facts.length; }
   }
 
   // The lowest point of the window nothing fixed covers: the top of the phone's tab bar, or of a toast that is showing.
