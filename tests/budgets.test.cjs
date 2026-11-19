@@ -136,8 +136,9 @@ const KB = 1024;
 // 2026-11-15: 358 → 359 KB again (back to where main was) for the Show on map buttons on the Platform map table (atlas-platform.js
 // +0.9 KB gzipped: the button, its reason line and the compact styles); 358.2 KB measured, 184 bytes over 358.
 // 2026-11-19: 359 → 361 KB and app.js 37.5 → 39 KB for Past work in ⌘K (Pi Hub A28, item 3): the debounced journal
-// search, its stale-answer and failed-search states and the hit rows (app.js +1.2 KB, app.css +0.1 KB; main had app.js
-// 37.45 KB, 50 bytes under its limit); 360.0 KB measured.
+// search, its hit rows, its searching and failed states with Try again, and the palette's states moved out of the listbox
+// (app.js +1.45 KB, app.css +0.23 KB, ui.js and index.html +0.1 KB; main had app.js 37.45 KB, 50 bytes under its
+// limit). 358.6 KB on main, 360.4 KB measured; app.js 38.9 KB.
 const TOTAL = 361 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
