@@ -45,11 +45,12 @@
       b.append(el('span', '', WORDS[v]));
       buttons[v] = b; pick.appendChild(b);
     }
-    const state = el('span', 'answer-feedback__state');
+    // Saving… is said in a live region as well as shown; saved and failed are said by the toast and the alert.
+    const state = el('span', 'answer-feedback__state'); state.setAttribute('role', 'status');
     const form = el('form', 'answer-feedback__note'); form.noValidate = true; form.hidden = true;
     const label = el('label', '', 'What was wrong? (optional)'); label.htmlFor = id;
     const input = el('input', 'ui-field'); input.id = id; input.maxLength = NOTE_MAX; input.autocomplete = 'off';
-    const save = el('button', 'ui-btn', 'Save note'); save.type = 'submit';
+    const save = el('button', 'ui-btn ui-btn--ghost', 'Save note'); save.type = 'submit';
     form.append(label, input, save);
     const fail = el('p', 'ui-notice ui-notice--bad answer-feedback__fail'); fail.setAttribute('role', 'alert'); fail.hidden = true;
     const unread = el('p', 'answer-feedback__state', "Couldn't read whether you rated this answer."); unread.hidden = true;
