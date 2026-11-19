@@ -148,11 +148,13 @@ const KB = 1024;
 // Delete / Try again said in a kit bad notice beside them, not muted text (run-bodies.js 10.9 KB; 370,701 bytes measured).
 // 2026-11-19: 363 → 364 KB when Past work met Past work in ⌘K on main: each fit its own raise, together 372,521 bytes
 // (363.8 KB) measured; app.js 38.9 KB, run-bodies.js 10.9 KB.
-// 2026-11-19: 364 → 365 KB, app.js 39 → 39.5 KB and run-bodies.js 11 → 11.2 KB for project Memory in chat: the line under
-// a chat answer ("Used 3 notes from …" / couldn't read them) and the Memory tab's "Use these notes in chat" switch with its
-// saving and failed states (run-bodies.js +294 bytes, app.js +593, index.html +90, app.css +110). main had 372,521 bytes
-// with app.js 39,836 (100 bytes under its limit); 373,608 bytes measured, app.js 40,429, run-bodies.js 11,406.
-const TOTAL = 365 * KB;
+// 2026-11-19: 364 → 366 KB, app.js 39 → 40 KB and run-bodies.js 11 → 11.2 KB for project Memory in chat (owner approved
+// raises up to about 367 KB for the batch): the line under a chat answer ("Used 3 notes from …" / couldn't read them, a
+// 44 px link), the Memory tab's "Use these notes in chat" switch with its saving and failed states, Shared staying chosen,
+// and the notice for a link to a deleted project (run-bodies.js +297 bytes, app.js +871, index.html and app.css about
+// +0.2 KB). main had 372,521 bytes with app.js 39,836 (100 bytes under its limit); 373,940 bytes measured, app.js 40,707,
+// run-bodies.js 11,409.
+const TOTAL = 366 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -189,7 +191,7 @@ const TOTAL = 365 * KB;
 // app.css +0.1 KB, its Atlas section rewritten in one pass without the layered overrides; 321.8 KB measured).
 // 2026-11-02: index.html 16 → 17 KB for the navigation update: the Settings and Tools pages, the Spreadsheets chip and
 // mode, and Home's On Pi Hub line (16.1 KB measured).
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 39.5 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.2 * KB };
+const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11 * KB, 'app.css': 51 * KB, 'app.js': 40 * KB, 'index.html': 17 * KB, 'home.js': 14 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.2 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

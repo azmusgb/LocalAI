@@ -57,6 +57,7 @@ async function open(viewport, hash, { runs = [], update = 'ok', scheme = 'dark' 
   await page.route(u => u.pathname === '/api/projects', r => json(r, { items: db.projects, total: db.projects.length }));
   await page.route(u => u.pathname === '/api/projects/intelligence', r => json(r, { project: db.projects[0], memory: NOTES, summary: { knowledge: 0, conversations: 1, pinnedMemory: 1 } }));
   await page.route(u => u.pathname === '/api/memory', r => { const p = new URL(r.request().url()).searchParams.get('projectId') || ''; db.memoryQueries.push(p); json(r, { items: NOTES.filter(n => n.projectId === p) }); });
+  await page.route(u => u.pathname === '/api/memory/add', r => { const b = JSON.parse(r.request().postData()); db.adds = [...(db.adds || []), b]; json(r, { item: { id: 'mem_new', ...b, pinned: false, createdAt: new Date().toISOString() } }, 201); });
   await page.route(u => u.pathname === '/api/projects/update', async r => {
     const b = JSON.parse(r.request().postData()); db.posts.push(b);
     if (db.update === 'fail') return json(r, { error: 'Storage is busy' }, 500);
@@ -100,6 +101,7 @@ for (const [viewport, scheme] of [[desk, 'dark'], [phone, 'light'], [phone, 'dar
     const link = answer.locator('.run-memory a');
     assert.equal((await link.innerText()).trim(), 'Used 2 notes from RIFT tiles');
     assert.equal(await link.getAttribute('href'), '#memory?p=prj_rift');
+    assert.ok((await link.boundingBox()).height >= 44, 'the link is a 44 px target');
     assert.deepEqual(await axe(page, '#runDrawer'), []);
     await shot(page, `chat-used-${viewport.width}-${scheme}`);
     // Keyboard: the link is reachable and opens Memory filtered to the project.
@@ -196,6 +198,12 @@ await check('a failed save puts the switch back, says why beside it, and keeps s
   assert.match(await page.locator('#memoryChatHint').innerText(), /with its pinned and newest notes/);
   assert.deepEqual(await axe(page, '#memory'), []);
   await shot(page, 'memory-switch-failed-390-light');
+  // It stays with that project's switch until a save works: away to another project and back.
+  await page.locator('#memoryProject').selectOption('prj_long');
+  await err.waitFor({ state: 'hidden', ...T });
+  await page.locator('#memoryProject').selectOption('prj_rift');
+  await err.waitFor({ state: 'visible', ...T });
+  assert.match(await err.innerText(), /^Couldn't save the switch: Storage is busy\./);
   page.db.update = 'ok';
   await page.locator('#memoryChatSwitch').click();
   await err.waitFor({ state: 'hidden', ...T });
@@ -209,12 +217,47 @@ await check('a project whose switch is off shows it off; Shared (no project) has
   assert.equal(await page.locator('#memoryChatSwitch').isChecked(), false);
   assert.match(await page.locator('#memoryChatHint').innerText(), /without these notes/);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'no horizontal overflow');
+  const before = page.db.memoryQueries.length;
   await page.locator('#memoryProject').selectOption('');
-  await page.waitForFunction(() => document.getElementById('memoryChat').hidden, null, T);
+  for (let i = 0; i < 60 && !page.db.memoryQueries.slice(before).includes(''); i++) await page.waitForTimeout(50);
+  assert.ok(page.db.memoryQueries.slice(before).includes(''), 'the Shared list is read');
+  await page.waitForTimeout(200);
+  assert.equal(await page.locator('#memoryProject').inputValue(), '', 'Shared stays chosen (it does not snap back to the linked project)');
+  assert.equal(await page.locator('#memoryChat').isVisible(), false, 'no switch for Shared notes');
   assert.match(page.url(), /#memory$/, 'the address follows the picker');
+  await page.locator('#memoryForm .phone-fold__toggle').click().catch(() => {});
+  await page.locator('#memoryText').fill('A shared note');
+  await page.locator('#memoryAddBtn').click();
+  for (let i = 0; i < 60 && !page.db.adds; i++) await page.waitForTimeout(50);
+  assert.equal(page.db.adds?.[0]?.projectId, '', 'Save memory files it as Shared');
+  assert.equal(await page.locator('#memoryProject').inputValue(), '', 'still Shared after saving');
+  assert.deepEqual(page.db.posts, [], 'the switch was never sent for a project');
   await page.locator('#memoryProject').selectOption('prj_rift');
   await page.waitForFunction(() => !document.getElementById('memoryChat').hidden, null, T);
   assert.match(page.url(), /#memory\?p=prj_rift$/);
+  await page.context().close();
+});
+
+await check('a link to a deleted project says it no longer exists, and does not pretend to be Shared', async () => {
+  const runs = [run(1, 'What layer height?', 'It is 0.2 mm.', { ...USED, projectId: 'prj_gone' })];
+  const page = await open(phone, '#home', { runs, scheme: 'light' });
+  await openRun(page, runs[0].id);
+  await page.locator('#runDrawer .run-memory a').click();
+  await page.locator('#memory.active').waitFor(T);
+  const gone = page.locator('#memoryGone');
+  await gone.waitFor(T);
+  assert.match(await gone.getAttribute('class'), /ui-notice--warn/);
+  assert.match(await gone.innerText(), /no longer exists/);
+  assert.equal((await page.locator('#memoryProject option:checked').innerText()).trim(), 'Project no longer exists');
+  assert.ok(!page.db.memoryQueries.includes(''), 'Shared notes are not shown in its place');
+  assert.equal(await page.locator('#memoryList .memory-card').count(), 0);
+  assert.equal(await page.locator('#memoryChat').isVisible(), false);
+  assert.deepEqual(await axe(page, '#memory'), []);
+  await shot(page, 'memory-gone-390-light');
+  // Choosing a project goes on as normal.
+  await page.locator('#memoryProject').selectOption('prj_rift');
+  await page.locator('#memoryList .memory-card', { hasText: 'Layer height is 0.2 mm' }).waitFor(T);
+  assert.equal(await gone.count(), 0);
   await page.context().close();
 });
 

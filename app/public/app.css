@@ -1575,7 +1575,8 @@ body.run-view-open{overflow:hidden}
 .chat-turn__sources li{min-height:24px}
 .run-route,.run-memory{margin:6px 0 0;font-size:var(--ui-fs-2);color:var(--ui-muted);white-space:normal}
 /* A chat in a project: "Used 3 notes from …" links to Projects › Memory; a failed read is a warning (project Memory in chat). */
-.run-memory a{display:inline-flex;align-items:center;min-height:var(--ui-s-5);color:var(--ui-accent-text);text-decoration:underline}
+/* A 44 px target from kit steps (3rem less 0.25rem): the kit has no target-size token. */
+.run-memory a{display:inline-flex;align-items:center;min-height:calc(var(--ui-s-7) - var(--ui-s-1));color:var(--ui-accent-text);text-decoration:underline}
 .run-memory.ui-notice{padding:var(--ui-s-2) var(--ui-s-3);color:var(--ui-text)}
 .chat-turn__sources a{color:var(--ui-accent);text-decoration:underline}
 .chat-body__error{margin:0 0 8px;padding:10px 12px;border:1px solid var(--ui-bad);border-radius:var(--ui-r-3);background:var(--ui-surface-2);color:var(--ui-bad);font-size:var(--ui-fs-4);overflow-wrap:anywhere}
