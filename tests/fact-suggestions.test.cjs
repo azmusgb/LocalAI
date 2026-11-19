@@ -18,7 +18,7 @@ const LOCAL = { provider: 'ollama', model: 'qwen3:4b', class: 'private', why: 'A
 const QUESTION = 'I print mostly PLA on my Bambu X2D. What nozzle temperature should I use?';
 const ANSWER = 'For PLA on the X2D, 210-220 °C is a good start.';
 const FACT = 'You print mostly PLA on a Bambu X2D.';
-const turn = (over = {}) => ({ used: LOCAL, body: { messages: [{ role: 'user', content: QUESTION }] }, question: QUESTION, answer: ANSWER, runId: 'run-1', ...over });
+const turn = (over = {}) => ({ caller: 'signed-in', used: LOCAL, body: { messages: [{ role: 'user', content: QUESTION }] }, question: QUESTION, answer: ANSWER, runId: 'run-1', ...over });
 
 function setup(t, { reply = FACT, fail = null, busy = { busy: false }, cloud = true, now = Date.parse('2026-11-19T15:00:00Z') } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fact-suggestions-'));
@@ -97,18 +97,26 @@ test('filters: duplicate (normalised), secret, personal, current state, and not 
   assert.equal(dropReason('You use a hardened steel nozzle.', { question: 'What temperature for PETG?' }), 'not-from-question');
 });
 
+test('turnSkip: only the owner (the host, or a signed-in device) may cause a suggestion; unknown is not the owner', () => {
+  assert.equal(turnSkip({ caller: 'host', used: LOCAL, body: {} }), '');
+  assert.equal(turnSkip({ caller: 'signed-in', used: LOCAL, body: {} }), '');
+  // A route key (Pi Hub's, the display's), an open route, a caller sign-in only reported, or nothing at all.
+  for (const caller of ['route-key', 'open', 'refused', undefined, null, '', 'Signed-in', { kind: 'host' }])
+    assert.equal(turnSkip({ caller, used: LOCAL, body: {} }), 'not-owner', JSON.stringify(caller));
+});
+
 test('turnSkip: cloud-answered, research, voice and private-for-a-reason turns give no suggestion', () => {
-  assert.equal(turnSkip({ used: LOCAL, body: {} }), '');
-  assert.equal(turnSkip({ used: { ...LOCAL, why: 'You picked this model' }, body: {} }), '');
-  assert.equal(turnSkip({ used: { provider: 'ollama', class: 'shareable', why: 'Cloud models are switched off' }, body: { bigger: true } }), '');
-  assert.equal(turnSkip({ used: { provider: 'groq', model: 'openai/gpt-oss-120b', class: 'shareable', why: 'Not private' }, body: { bigger: true } }), 'cloud');
-  assert.equal(turnSkip({ used: null, body: {} }), 'cloud');
-  assert.equal(turnSkip({ used: LOCAL, body: { webSearch: true } }), 'research');
-  assert.equal(turnSkip({ used: LOCAL, body: { voice: true } }), 'voice');
-  assert.equal(turnSkip({ used: LOCAL, body: { keepLocal: true } }), 'private');
-  assert.equal(turnSkip({ used: LOCAL, body: { images: ['x'] } }), 'private');
+  assert.equal(turnSkip({ caller: 'signed-in', used: LOCAL, body: {} }), '');
+  assert.equal(turnSkip({ caller: 'signed-in', used: { ...LOCAL, why: 'You picked this model' }, body: {} }), '');
+  assert.equal(turnSkip({ caller: 'signed-in', used: { provider: 'ollama', class: 'shareable', why: 'Cloud models are switched off' }, body: { bigger: true } }), '');
+  assert.equal(turnSkip({ caller: 'signed-in', used: { provider: 'groq', model: 'openai/gpt-oss-120b', class: 'shareable', why: 'Not private' }, body: { bigger: true } }), 'cloud');
+  assert.equal(turnSkip({ caller: 'signed-in', used: null, body: {} }), 'cloud');
+  assert.equal(turnSkip({ caller: 'signed-in', used: LOCAL, body: { webSearch: true } }), 'research');
+  assert.equal(turnSkip({ caller: 'signed-in', used: LOCAL, body: { voice: true } }), 'voice');
+  assert.equal(turnSkip({ caller: 'signed-in', used: LOCAL, body: { keepLocal: true } }), 'private');
+  assert.equal(turnSkip({ caller: 'signed-in', used: LOCAL, body: { images: ['x'] } }), 'private');
   for (const why of ['You asked to keep it on this PC', 'Files and photos stay on this PC', 'It looks personal (health, money or identity)', 'Voice and Siri stay on this PC', 'House questions stay on this PC', 'Your past work stays on this PC', 'This conversation was kept on this PC', 'Keys, passwords and setup stay on this PC', 'Requests with their own instructions stay on this PC', 'This kind of work stays on this PC', 'Something new'])
-    assert.equal(turnSkip({ used: { ...LOCAL, why }, body: {} }), 'private', why);
+    assert.equal(turnSkip({ caller: 'signed-in', used: { ...LOCAL, why }, body: {} }), 'private', why);
 });
 
 test('the prompt holds the turn inside the marked block, its own markers defused', () => {
@@ -137,6 +145,19 @@ test('a local chat turn becomes one pending suggestion; the job is `quick` on th
   const r = modelRouter.route({ kind: 'quick', text: 'x', cloud: true, keys: { groq: true }, localModel: 'm' });
   assert.equal(r.class, 'private');
   assert.deepEqual(r.order, [{ provider: 'ollama', model: 'm' }]);
+});
+
+test('who asked: the host and a signed-in device are recorded on the suggestion; anyone else never reaches the model', async t => {
+  const a = setup(t);
+  const host = await a.s.consider(turn({ caller: 'host' }));
+  assert.equal(host.suggested.caller, 'host');
+  assert.equal(a.storage.readSetting(SETTING).items[0].caller, 'host');
+  const b = setup(t);
+  assert.equal((await b.s.consider(turn())).suggested.caller, 'signed-in');
+  const c = setup(t);
+  for (const caller of ['refused', 'route-key', 'open', undefined]) assert.deepEqual(await c.s.consider(turn({ caller })), { skipped: 'not-owner' });
+  assert.equal(c.calls.length, 0);
+  assert.deepEqual(c.s.pending(), []);
 });
 
 test('skipped turns never reach the model: cloud, research, private reasons', async t => {

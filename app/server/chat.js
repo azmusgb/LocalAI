@@ -153,19 +153,20 @@ function createChat(ctx) {
 
   // After a chat turn is answered and sent: the owner-fact suggestion job (app/fact-suggestions.js), scheduled and left
   // to run on its own. Only the chat routes call this, never voice, missions, agents or Past work; the job itself skips
-  // cloud-answered, research and private turns. It can never delay or fail the answer.
-  function suggestFact(body, out) {
+  // cloud-answered, research and private turns, and any turn not sent by the owner. access: what sign-in made of the
+  // request (app/signin.js check()); only 'host' and 'signed-in' count as the owner. It can never delay or fail the answer.
+  function suggestFact(body, out, access) {
     try {
       const asked = [...sanitizeMessages(body?.messages)].reverse().find(m => m.role === 'user');
-      factSuggestions.afterChat({ used: out.route, body, question: asked?.content || '', answer: out.content, runId: out.runId });
+      factSuggestions.afterChat({ caller: access, used: out.route, body, question: asked?.content || '', answer: out.content, runId: out.runId });
     } catch { /* a suggestion is never worth a failed answer */ }
   }
 
-  async function apiChat(req, res) {
+  async function apiChat(req, res, access) {
     let body, out;
     try { body = await readBody(req); out = await chatOnce(body); json(res, 200, out); }
     catch (e) { return storageError(res,e,500); }
-    suggestFact(body, { route: out.route, content: out.message.content, runId: out.runId });
+    suggestFact(body, { route: out.route, content: out.message.content, runId: out.runId }, access);
   }
 
   // One non-streaming chat turn as a run; shared by /api/chat and /api/glance/ask.
@@ -237,7 +238,7 @@ function createChat(ctx) {
     }
   }
 
-  async function apiChatStream(req, res) {
+  async function apiChatStream(req, res, access) {
     let execution = null;
     let controller = null;
     // Ollama can stall while loading a model or mid-stream; abort when no output arrives for CHAT_MODEL_TIMEOUT_MS.
@@ -365,7 +366,7 @@ function createChat(ctx) {
 
       send('done', { elapsedMs, model: used.model, route: used, sources: prep.sources, runId: execution.id });
       res.end();
-      suggestFact(body, { route: used, content: full, runId: execution.id });
+      suggestFact(body, { route: used, content: full, runId: execution.id }, access);
     } catch (e) {
       const current = execution ? runLedger.get(execution.id) : null;
       const cancelled = !stalled && (current?.status === 'cancelled' || (controller?.signal.aborted && current?.status !== 'failed'));

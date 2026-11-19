@@ -65,3 +65,25 @@ test('the routes are owner-only: refused without a signed-in device, reads inclu
   assert.match(server, /'GET' && p === '\/api\/facts\/suggestions'\)/);
   assert.match(server, /'POST' && p === '\/api\/facts\/suggestions\/decide'\)/);
 });
+
+test("sign-in's own decision says who asked: a route key is not a signed-in device, and still passes its path", () => {
+  const { createSignIn } = require('../app/signin');
+  const storage = { readSetting: () => null, writeSetting: () => {} };
+  const away = (extra = {}) => ({ headers: { 'x-forwarded-for': '10.0.0.37', 'user-agent': 'curl/8', ...extra }, socket: { remoteAddress: '172.18.0.1' }, method: 'POST' });
+  const hub = req => req.headers['x-localai-hub-key'] === 'hub';
+  for (const required of [false, true]) {
+    const s = createSignIn({ storage, signedIn: req => req.headers.cookie === 'device', routeKeys: { '/api/chat': hub }, required, hosts: new Set(['127.0.0.1']) });
+    assert.equal(s.check(away({ cookie: 'device' }), '/api/chat'), 'signed-in');
+    assert.equal(s.check(away({ 'x-localai-hub-key': 'hub' }), '/api/chat'), 'route-key');
+    assert.equal(s.blocks('route-key', '/api/chat', 'POST'), false, 'a route key still opens its path');
+    assert.equal(s.check(away(), '/api/chat'), 'refused');
+    assert.equal(s.blocks('refused', '/api/chat', 'POST'), required, 'report mode lets an unknown caller chat');
+    assert.equal(s.check({ headers: {}, socket: { remoteAddress: '127.0.0.1' }, method: 'POST' }, '/api/chat'), 'host');
+  }
+  // The chat routes are handed that decision, not the request.
+  const server = read('server.js');
+  assert.match(server, /const access = signIn\.check\(req, p\);/);
+  assert.match(server, /apiChat\(req, res, access\)/);
+  assert.match(server, /apiChatStream\(req, res, access\)/);
+  assert.match(read(path.join('server', 'chat.js')), /afterChat\(\{ caller: access,/);
+});

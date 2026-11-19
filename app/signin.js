@@ -89,13 +89,16 @@ function createSignIn({ storage, signedIn, routeKeys = {}, required = process.en
     dirty = false; lastSave = now();
   }
 
-  // 'host' | 'open' | 'signed-in' | 'refused': what the request is, under sign-in. A refused one is recorded; blocks()
-  // says whether to turn it away.
+  // 'host' | 'open' | 'signed-in' | 'route-key' | 'refused': what the request is, under sign-in. 'signed-in' is a paired
+  // device or the Mac key; 'route-key' is a key that signs a caller in for that one path only (the display's, Pi Hub's).
+  // A refused one is recorded; blocks() says whether to turn it away. Callers may read the result too: owner-only work
+  // (owner-fact suggestions after a chat) takes only 'host' and 'signed-in'.
   function check(req, p) {
     if (!p.startsWith('/api/') && p !== '/healthz') return 'open';
     if (!req.headers['x-forwarded-for'] && hosts.has(plain(req.socket?.remoteAddress))) return 'host';
     if (OPEN.has(p)) return 'open';
-    if (signedIn(req) || routeKeys[p]?.(req)) return 'signed-in';
+    if (signedIn(req)) return 'signed-in';
+    if (routeKeys[p]?.(req)) return 'route-key';
     const ip = callerIp(req) || 'unknown', kind = kindOf(req.headers['user-agent']), key = `${ip}|${kind}`, t = now();
     const c = report.callers.get(key) || { ip, kind, count: 0, firstAt: t };
     report.callers.set(key, { ...c, count: c.count + 1, lastAt: t, lastPath: p.slice(0, 120), lastMethod: req.method });

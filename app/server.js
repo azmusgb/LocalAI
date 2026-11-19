@@ -446,7 +446,9 @@ const server = http.createServer(async (req, res) => {
   try {
     if (!hostAllowed(req.headers.host, ALLOWED_HOSTS)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 421, { error: 'Unknown host name. Open Local AI by its own address.' }); }
     if (crossSiteRequest(req)) { req.resume(); res.setHeader('Connection', 'close'); return json(res, 403, { error: 'Cross-site request blocked' }); }
-    if (signIn.blocks(signIn.check(req, p), p, req.method)) { req.resume(); return json(res, 401, { error: 'Sign in on this device first: pair it under Build › Claude Code.', signIn: true }); }
+    // What sign-in made of this request; the chat routes pass it on, so owner-only follow-up work can tell.
+    const access = signIn.check(req, p);
+    if (signIn.blocks(access, p, req.method)) { req.resume(); return json(res, 401, { error: 'Sign in on this device first: pair it under Build › Claude Code.', signIn: true }); }
     if (req.method === 'GET' && p === '/api/signin/report') return signIn.apiReport(req, res, json);
     if (req.method === 'POST' && p === '/api/signin/report/clear') { signIn.clear(); return json(res, 200, { ok: true }); }
     if (req.method === 'GET' && p === '/healthz') return json(res, 200, { status: 'ok', appliance: 'Local AI', version: APP_VERSION, releaseCommit: release?.commit || null, storage: { engine: 'sqlite', schemaVersion: 1 }, addresses: accessAddresses() });
@@ -492,8 +494,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/library/keep') return await apiLibraryKeep(req, res);
     if (req.method === 'GET' && p === '/api/workspace') return await apiWorkspace(req, res);
     if (req.method === 'POST' && p === '/api/route') return await apiRoute(req, res);
-    if (req.method === 'POST' && p === '/api/chat') return await apiChat(req, res);
-    if (req.method === 'POST' && p === '/api/chat/stream') return await apiChatStream(req, res);
+    if (req.method === 'POST' && p === '/api/chat') return await apiChat(req, res, access);
+    if (req.method === 'POST' && p === '/api/chat/stream') return await apiChatStream(req, res, access);
     if (p.startsWith('/api/atlas/')) return await apiAtlas(req, res, p);
     if (req.method === 'GET' && p === '/api/images/models') return await apiImageModels(req, res);
     if (req.method === 'GET' && p === '/api/images/checkpoints') return await apiCheckpoints(req, res);

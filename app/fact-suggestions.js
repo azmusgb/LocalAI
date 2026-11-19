@@ -107,9 +107,17 @@ function dropReason(candidate, { facts = [], pending = [], declined = [], questi
   return '';
 }
 
-// Why a finished chat turn gives no suggestion, or '' when it may. used: the answer's route ({provider, why, ...}).
-function turnSkip({ used, body } = {}) {
+// Who may cause a suggestion: the host itself or a signed-in device (app/signin.js check()). A route key (Pi Hub's, the
+// display's), an open route, or a caller sign-in only reported ('refused' in report mode) is not the owner, and
+// anything else, including nothing, is unknown: no suggestion. Otherwise anyone who can reach /api/chat could plant a
+// "fact" in the owner's list.
+const OWNER_CALLERS = new Set(['host', 'signed-in']);
+
+// Why a finished chat turn gives no suggestion, or '' when it may. caller: sign-in's result for the request; used: the
+// answer's route ({provider, why, ...}).
+function turnSkip({ caller, used, body } = {}) {
   const b = body && typeof body === 'object' ? body : {};
+  if (!OWNER_CALLERS.has(caller)) return 'not-owner';
   if (!used || used.provider !== 'ollama') return 'cloud';
   if (b.webSearch === true || (Array.isArray(b.presetSources) && b.presetSources.length)) return 'research';
   if (b.voice === true || b.voiceRun === true || b.brief === true) return 'voice';
@@ -170,7 +178,7 @@ function readFacts(storage) {
   if (!Array.isArray(items)) throw new FactsUnreadable();
   return items.filter(m => m && m.projectId === '' && m.category === 'owner' && typeof m.text === 'string');
 }
-const publicItem = i => ({ id: i.id, text: i.text, createdAt: i.createdAt, runId: i.runId || null });
+const publicItem = i => ({ id: i.id, text: i.text, createdAt: i.createdAt, runId: i.runId || null, caller: i.caller || null });
 
 // deps: storage; coordinator (route); runLocalModel(prompt, system, timeoutMs, model); busyNow() → {busy};
 // makeId(prefix); recordActivity; json; readBody; now(); timeZone; delayMs; enabled; log(line).
@@ -181,8 +189,8 @@ function createFactSuggestions({ storage, coordinator, runLocalModel, busyNow, m
   const stamp = () => new Date(now()).toISOString();
 
   // One finished turn → at most one pending suggestion. Resolves {suggested} or {skipped: reason}; never rejects.
-  async function consider({ used, body, question, answer, runId } = {}) {
-    const skip = turnSkip({ used, body });
+  async function consider({ caller, used, body, question, answer, runId } = {}) {
+    const skip = turnSkip({ caller, used, body });
     if (skip) return { skipped: skip };
     const q = typeof question === 'string' ? question.trim() : '', a = typeof answer === 'string' ? answer.trim() : '';
     if (!q || !a) return { skipped: 'empty' };
@@ -215,7 +223,7 @@ function createFactSuggestions({ storage, coordinator, runLocalModel, busyNow, m
       if (store.items.filter(i => i.day === today).length >= DAILY_MAX) return { skipped: 'daily-limit' };
       const reason = dropReason(candidate, { facts: facts.map(f => f.text), pending: store.items.filter(i => i.state === 'pending').map(i => i.text), declined: store.declined, question: q });
       if (reason) return { skipped: reason };
-      const item = { id: makeId('fs'), text: candidate, hash: factHash(candidate), state: 'pending', createdAt: stamp(), day: today, runId: typeof runId === 'string' ? runId.slice(0, 120) : null };
+      const item = { id: makeId('fs'), text: candidate, hash: factHash(candidate), state: 'pending', createdAt: stamp(), day: today, caller, runId: typeof runId === 'string' ? runId.slice(0, 120) : null };
       try { storage.writeSetting(SETTING, trimStore({ items: [item, ...store.items], declined: store.declined })); }
       catch (e) { failed(`couldn't save the suggestion (${e.message})`); return { skipped: 'store' }; }
       return { suggested: publicItem(item) };
@@ -302,5 +310,5 @@ function createFactSuggestions({ storage, coordinator, runLocalModel, busyNow, m
 
 module.exports = {
   createFactSuggestions, parseCandidate, dropReason, turnSkip, buildPrompt, normalise, factHash, isState, dayOf,
-  SETTING, FACT_MAX, DAILY_MAX, PENDING_MAX, FACTS_CAP, OPEN, CLOSE, SUGGESTIBLE_WHY, QUICK_TIMEOUT_MS,
+  SETTING, FACT_MAX, DAILY_MAX, PENDING_MAX, FACTS_CAP, OPEN, CLOSE, SUGGESTIBLE_WHY, OWNER_CALLERS, QUICK_TIMEOUT_MS,
 };
