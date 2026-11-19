@@ -1573,11 +1573,13 @@ body.run-view-open{overflow:hidden}
 .chat-turn--error{border-color:var(--ui-bad);color:var(--ui-bad)}
 .chat-turn__sources{list-style:none;margin:8px 0 0;padding:8px 0 0;border-top:1px solid var(--ui-line-2);display:grid;gap:2px;font-size:var(--ui-fs-4);white-space:normal}
 .chat-turn__sources li{min-height:24px}
-.run-route,.run-memory{margin:6px 0 0;font-size:var(--ui-fs-2);color:var(--ui-muted);white-space:normal}
+.run-route,.run-memory,.fact-line{margin:6px 0 0;font-size:var(--ui-fs-2);color:var(--ui-muted);white-space:normal}
 /* A chat in a project: "Used 3 notes from …" links to Projects › Memory; a failed read is a warning (project Memory in chat). */
 /* A 44 px target from kit steps (3rem less 0.25rem): the kit has no target-size token. */
-.run-memory a{display:inline-flex;align-items:center;min-height:calc(var(--ui-s-7) - var(--ui-s-1));color:var(--ui-accent-text);text-decoration:underline}
-.run-memory.ui-notice{padding:var(--ui-s-2) var(--ui-s-3);color:var(--ui-text)}
+.run-memory a,.fact-line a{display:inline-flex;align-items:center;min-height:calc(var(--ui-s-7) - var(--ui-s-1));color:var(--ui-accent-text);text-decoration:underline}
+:is(.run-memory,.fact-line).ui-notice{padding:var(--ui-s-2) var(--ui-s-3);color:var(--ui-text)}
+/* A suggested fact under a chat answer (fact-suggestion-line.js): the words wrap as text, the 44 px link beside or under them. */
+.fact-line{display:flex;flex-wrap:wrap;align-items:center;column-gap:var(--ui-s-2)}
 /* Good answer / Not right (answer-feedback.js): on the line of where the answer came from; the note under it. */
 .answer-feedback{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-s-2) var(--ui-s-3);margin-top:var(--ui-s-2);white-space:normal}.answer-feedback .run-route{margin:0;flex:1 1 14rem}.answer-feedback .icon{width:var(--ui-s-4);height:var(--ui-s-4)}.answer-feedback [hidden]{display:none}
 .answer-feedback__state,.answer-feedback__note label{font-size:var(--ui-fs-2);color:var(--ui-muted)}.answer-feedback__note{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-s-2)}.answer-feedback__note,.answer-feedback__note label,.answer-feedback__fail{flex-basis:100%;margin:0}.answer-feedback__note .ui-field{flex:1 1 12rem;width:auto}

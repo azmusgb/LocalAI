@@ -177,6 +177,12 @@ The Projects tab opens on your projects. Its tabs:
   characters, the newest left out first) and says **Used 2 of your saved facts**. They never leave this computer: an
   answer from a cloud model is written without them and says so, and they never make a chat stay on this computer. If
   they can't be read, the answer says so and is written without them.
+  After a chat answered on this computer (from this PC or a paired device), Local AI may suggest one fact it heard you
+  state about yourself, your equipment or your preferences, at most 3 a day. It appears under **Suggested by Local AI**
+  in that group, with **Save**, **Edit** and **No**, and as one line under the answer, **Local AI suggests remembering:
+  …**, with a link here. Nothing is saved until you choose Save; No means it isn't suggested again. When your list is
+  full, Save waits until you delete a fact. Chats with files, personal subjects, **Keep on this PC**, web research or a
+  cloud model suggest nothing.
 - **Library**: what you kept. Chats and research arrive only when you tap **☆ Keep** on them (in the open chat or
   on their row in Work); images you make arrive by themselves (a Best quick preview only when you keep it). Conversations and research are a list, newest first,
   and images are pictures after them. Filter by kind, or show only what you **pinned**. ☆ pins an item. × takes a

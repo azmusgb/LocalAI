@@ -114,6 +114,15 @@
     const rt = host.querySelector(':scope > .run-route');
     if (rt) row.prepend(rt);
     sync(row, run);
+    if (run.type === 'chat') suggestLine(host, run);
+  }
+
+  // "Local AI suggests remembering: …" under a chat answer: fact-suggestion-line.js, loaded the first time one is marked.
+  let lq;
+  function suggestLine(host, run) {
+    const L = window.LocalAIFactLine; if (L) return L.mark(host, run);
+    if (!lq) { lq = []; const s = document.createElement('script'); s.src = '/fact-suggestion-line.js'; s.onload = () => lq.splice(0).forEach(a => window.LocalAIFactLine.mark(...a)); s.onerror = () => { lq = null; }; document.head.append(s); }
+    lq.push([host, run]);
   }
 
   window.LocalAIFeedback = { mark };
