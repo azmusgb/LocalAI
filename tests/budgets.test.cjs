@@ -165,7 +165,9 @@ const KB = 1024;
 // (owner-facts.js, 4.3 KB, loads when Memory first opens) and app.js keeping facts out of the shared notes. run-bodies.js
 // 11.2 → 11.3 KB for the facts line under a chat answer (used / left out for a cloud model / couldn't be read; +105
 // bytes to 11,514).
-const TOTAL = 366 * KB;
+// 2026-11-19: 366 → 367 KB once owner facts met answer feedback and project Memory in chat on main: each fit 366 alone,
+// together 375,036 bytes (366.25 KB) measured. Within the owner's approved raise to about 367 KB for this batch.
+const TOTAL = 367 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
