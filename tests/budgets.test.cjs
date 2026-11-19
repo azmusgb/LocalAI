@@ -164,9 +164,10 @@ const KB = 1024;
 // "About you and the house" section in index.html, its styles, ui.js's page-script loader taking /owner-facts.js too
 // (owner-facts.js, 4.3 KB, loads when Memory first opens) and app.js keeping facts out of the shared notes. run-bodies.js
 // 11.2 → 11.3 KB for the facts line under a chat answer (used / left out for a cloud model / couldn't be read; +105
-// bytes to 11,514).
+// bytes; 11,545 measured with answer feedback's hook, of an 11,571 limit).
 // 2026-11-19: 366 → 367 KB once owner facts met answer feedback and project Memory in chat on main: each fit 366 alone,
 // together 375,036 bytes (366.25 KB) measured. Within the owner's approved raise to about 367 KB for this batch.
+// Folding the facts group so Memory's notes stay on a phone's first screen: 375,048 bytes measured.
 const TOTAL = 367 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
