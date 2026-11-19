@@ -25,6 +25,7 @@ exposes `close()`.
 | Quality events and scans, issues | `quality_events`, `quality_scans`, `issues` |
 | Engineering and PowerShell runs | `engineering_runs`, `powershell_jobs` |
 | Deployment records (provisioned, unused) | `deployments` |
+| Answer feedback: Good answer / Not right, one row per rated answer (`app/answer-feedback.js`; created if missing, no schema bump) | `answer_feedback` |
 | Key-value rows (see below) | `settings` |
 | Schema and legacy import audit | `schema_migrations`, `legacy_imports` |
 
