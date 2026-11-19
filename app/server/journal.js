@@ -68,7 +68,7 @@ function createJournalRoutes(ctx) {
         runLedger.update(run.id, { output: runOutput({ answer: '', citations: [], entries, from: e?.from || from }) });
         return runLedger.fail(run.id, e?.code === 'history_unreadable' ? UNREADABLE : e);
       }
-    })();
+    })().catch(e => { console.warn(`Past work: the run could not be saved: ${e?.message || e}`); return null; }); // nobody awaits it on the HTTP path
     return { run, done };
   }
 
