@@ -61,8 +61,9 @@ without it the call is listed on Health as one that would be refused). Mutating 
 - **Element ids, routes and some function names are contracts** checked by `deploy/Test-LocalAI-Candidate.ps1`
   and the Playwright tests. Renaming one breaks CI and the deploy; update the test in the same PR.
 - **`app/public/ui.js` is a hand-edited bundle**: sections start `// ==== name.js ====`, each its own scope.
-  Edit in place; there is no source to rebuild from. `app/public/app.css` is one file in cascade order; the
-  design-system section maps old tokens onto `--ds-*`. Use `--ds-*` tokens.
+  Edit in place; there is no source to rebuild from. `app/public/app.css` is one file in cascade order. New and
+  changed rules use the kit's `--ui-*` values (the literals check below). Its design-system section still defines the
+  older `--ds-*` names, which a few rules read: don't add a `--ds-*` name (the check counts it) or a new use of one.
 - **Read the Home Platform design contract before any UI work**: appliance-ui `DESIGN.md`
   (https://github.com/azmusgb/appliance-ui/blob/main/DESIGN.md). Read it at the start of the task, not from memory or
   from this summary. Pi Hub's baseline and its approved amendments (A4, A6, A7 and later) win where they differ. If you
