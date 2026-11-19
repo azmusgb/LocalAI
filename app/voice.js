@@ -13,6 +13,10 @@ const NEEDS = /\b(?:need(?:s)?\s+me|need(?:s)?\s+my\s+attention|waiting\s+for\s+
 const HEALTH = /\b(?:local\s?ai|appliance)\b.*\b(?:ok|okay|up|down|healthy|running|working|fine|status)\b|\b(?:health|status)\s+check\b/;
 const TIME = /\bwhat(?:'s|s|\s+is)\s+(?:the\s+)?(?:current\s+)?(?:time|date|day)\b|\btell\s+me\s+(?:the\s+)?(?:time|date|day)\b|\bwhat\s+time\s+is\s+it\b|\bwhat\s+day\s+is\s+(?:it|today)\b|\btoday's\s+date\b/;
 const WEATHER = /\b(?:weather|forecast|temperature|rain(?:ing)?|snow(?:ing)?|how\s+(?:hot|cold|warm))\b/;
+// First-person past ("what did I…", "when did I last…", "did my print finish", "how long did my print take", "my last
+// print"): Past work, answered from the journal or Pi Hub (app/journal-ask.js). Checked before CURRENT, whose
+// "yesterday" and "last week" would otherwise send it to a web search.
+const HISTORY = /\b(?:what|when|where|which|how\s+many|how\s+often)\s+(?:did|have)\s+(?:i|we)\b|\bdid\s+(?:i|we)\s+(?:ever\s+|already\s+)?(?:ask|print|make|watch|start|finish|approve|search|research|say|mention)\b|\bdid\s+(?:my|the|our)\s+(?:last\s+|latest\s+)?print\b|\bhow\s+long\s+did\s+(?:my|our|i|it|that|the\s+(?:last\s+)?print)\b|\b(?:my|our)\s+(?:last|latest|previous)\s+print\b|\bwhen\s+was\s+(?:my|our)\s+last\b/;
 const CURRENT = /\b(?:latest|news|current(?:ly)?|recent(?:ly)?|right\s+now|who\s+won|score\s+of|stock\s+price|price\s+of|last\s+(?:year|week|night)|this\s+(?:year|week)|yesterday|tonight)\b/;
 
 function classify(input) {
@@ -32,6 +36,7 @@ function classify(input) {
   if (HEALTH.test(t)) return { intent: 'health' };
   if (TIME.test(t) && !/\bin\s+[a-z]/.test(t)) return { intent: 'time' };
   if (WEATHER.test(t)) return { intent: 'weather' };
+  if (HISTORY.test(t)) return { intent: 'history' };
   if (CURRENT.test(t)) return { intent: 'current' };
   return { intent: 'chat' };
 }

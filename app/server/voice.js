@@ -4,8 +4,10 @@
 // and the Workshop display's feed, ask buttons, approvals, pairing and alerts (/api/display/*).
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
+const { withoutMarkers, UNREADABLE } = require('../journal-ask');
+
 function createVoice(ctx) {
-  const { APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized, hubAuthorized, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, storage, storageError, text, voice, voiceFacts, watchdog, weather } = ctx;
+  const { APPROVALS_STORE, APP_VERSION, approvalStore, chatOnce, claudeChat, clockNow, displayAuthorized, hubAuthorized, displayMessages, displayPairing, featureAtLeast, fetchWithTimeout, getCapabilitiesSnapshot, glance, json, listenPort, materialsClient, needsThreads, needsYou, notifier, nowIso, piHub, printLab, readBody, recordActivity, runLedger, saveStore, searxSearch, startMissionRun, startPastWork, storage, storageError, text, voice, voiceFacts, watchdog, weather } = ctx;
 
   // What Home lists under Needs you (app/public/home.js, loadNeeds and paintNeeds), for Siri and the Watch to say the
   // same: the runs app/public/needs-you.js picks (a waiting approval; a failure that is unseen, under a day old, not
@@ -390,6 +392,16 @@ function createVoice(ctx) {
             // The model is asked to cite; make sure the spoken answer names the site either way.
             if (said && host && !said.toLowerCase().includes(host.toLowerCase())) said = `According to ${host}, ${/^[A-Z][a-z]/.test(said) ? said[0].toLowerCase() + said.slice(1) : said}`;
             return voice.speakable(said) || "I didn't catch that.";
+          });
+        }
+        // "What did I…": a Past work run (app/server/journal.js), on this PC with no tools; the [n] marks are not spoken.
+        if (route.intent === 'history') {
+          return turn(async () => {
+            const { run, done } = startPastWork({ question, voice: true });
+            runId = run.id;
+            const finished = await done;
+            if (finished?.status !== 'completed') return finished?.error === UNREADABLE ? UNREADABLE : "I couldn't answer that from your past work right now.";
+            return voice.speakable(withoutMarkers(finished.output?.text)) || "I didn't catch that.";
           });
         }
         // Approving, applying, deploying, deleting and PowerShell never happen by voice; nothing is called.

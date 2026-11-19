@@ -663,3 +663,24 @@ test('every example in the Apple Watch doc classifies to its listed intent', () 
   for (const i of ['needs', 'health', 'time', 'weather', 'current', 'action', 'refuse', 'chat']) assert.ok(intents.has(i), `the table covers ${i}`);
   assert.ok(examples >= 16, `${examples} examples`);
 });
+
+// Past work by voice: "what did I…" is a history run on this PC, spoken in two sentences without the [n] marks; nothing
+// in the journal is the fixed answer, with no model call.
+test('"what did I ask about…" is answered from the journal, spoken without citation marks', { timeout: 30000 }, async t => {
+  const { post, chats, base } = await startServer(t, { reply: 'You asked which filament suits a bracket [1]. PETG was the answer [1]. A third sentence.', env: { LOCALAI_PI_HUB_URL: 'off' } });
+  assert.equal((await fetch(`${base}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: 'Which filament for a shelf bracket?' }] }) })).status, 200);
+  const before = chats.length;
+  const r = await post('what did I ask about the bracket');
+  assert.equal(r.status, 200);
+  assert.equal(r.body, 'You asked which filament suits a bracket. PETG was the answer.');
+  assert.equal(chats.length, before + 1);
+  assert.match(chats.at(-1).messages[0].content, /Answer only from the numbered entries/);
+  assert.equal(chats.at(-1).tools, undefined);
+  const none = await post('when did I buy a zeppelin');
+  assert.equal(none.body, "I don't have anything about that.");
+  assert.equal(chats.length, before + 1, 'nothing found: no model call');
+  const { items } = await (await fetch(`${base}/api/runs?limit=50`)).json();
+  const history = items.filter(i => i.meta?.mode === 'history');
+  assert.equal(history.length, 2);
+  assert.ok(history.every(i => i.type === 'prompt' && i.meta.voice === true));
+});
