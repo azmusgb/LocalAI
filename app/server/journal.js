@@ -29,7 +29,7 @@ function createJournalRoutes(ctx) {
       if (q.has('ids') && journal.disabled) return json(res, 503, { error: "Couldn't read your past work." }); // unreadable is not deleted
       if (q.has('ids')) return json(res, 200, { items: [...new Set(String(q.get('ids')).split(',').map(s => s.trim()).filter(Boolean))].slice(0, 50).map(id => journal.get(id)).filter(Boolean) });
       const sources = String(q.get('source') || '').split(',').map(s => s.trim()).filter(Boolean);
-      return json(res, 200, journal.search({ q: q.get('q') || '', from: q.get('from'), to: q.get('to'), sources, limit: q.get('limit') || 50, before: q.get('before') }));
+      return json(res, 200, journal.search({ q: q.get('q') || '', from: q.get('from'), to: q.get('to'), sources, limit: q.get('limit') || 50, before: q.get('before'), linked: q.get('linked') === '1' }));
     } catch (e) { storageError(res, e, 400); }
   }
   async function apiJournalDelete(req, res) {
