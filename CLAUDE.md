@@ -39,8 +39,8 @@ PowerShell 5.1; the old alias `windows-ai` is gone). The PC reaches this Mac as 
 
 ## Report to the Claude board
 
-Base `https://10.0.0.81` (the owner's appliance; port 3080 answers on the Windows host only). JSON bodies. Send the Mac key as `X-LocalAI-Mac-Key: $(cat ~/.claude/localai-chat/mac.key)` (sign-in, report-only for now:
-without it the call is listed on Health as one that would be refused). Mutating requests that carry a foreign `Origin` or
+Base `https://10.0.0.81` (the owner's appliance; port 3080 answers on the Windows host only). JSON bodies. Send the Mac key as `X-LocalAI-Mac-Key: $(cat ~/.claude/localai-chat/mac.key)` (required: posting findings,
+events, decisions and votes without it gets 401; other calls without it are listed on Health as ones that would be refused). Mutating requests that carry a foreign `Origin` or
 `Sec-Fetch-Site: cross-site` get 403; curl and scripts send neither, so they are unaffected.
 
 - Before choosing work: `GET /api/claude/priorities?limit=20` (open findings in the owner's rank order, with decisions).
