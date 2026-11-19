@@ -134,3 +134,15 @@ test('needs sentence: several failures of one kind are counted, not repeated', (
   assert.deepEqual(items, [{ kind: 'failed', title: '3 chat questions', generic: true }, { kind: 'failed', title: 'an image', generic: true }]);
   assert.equal(needsYouSentence(items), 'Two things need you: 3 chat questions failed and an image failed.');
 });
+
+// Past work (memory-core spec §4, A28): first-person past questions go to history, checked before CURRENT.
+test('history: first-person past questions are Past work; news and weather keep their own routes', () => {
+  const rows = [
+    ['what did I print yesterday', 'history'], ['when did I last watch Severance', 'history'],
+    ['What did I ask about PETG last week?', 'history'], ['did my print finish', 'history'], ['did my last print finish', 'history'],
+    ['how long did my last print take', 'history'], ['my last print', 'history'], ['when was my last print', 'history'], ['did I ask about hinges', 'history'],
+    ['latest news', 'current'], ['who won the world series last year', 'current'], ['what happened yesterday', 'current'],
+    ["what's the weather yesterday", 'weather'], ['how long did the Roman empire last', 'chat'], ['what is a print bed', 'chat']
+  ];
+  for (const [text, intent] of rows) assert.equal(classify(text).intent, intent, text);
+});

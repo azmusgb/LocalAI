@@ -3,10 +3,10 @@
 // STATUS mirrors LocalAIKit.statusBadge in public/ui.js: keep the two tables identical.
 const { label: routeLabel } = require('./model-router');
 const STATUS = Object.freeze({awaiting_approval:['Ready to review','accent'],ready:['Ready to review','accent'],needs_attention:['Needs a look','attention'],applied:['Done','good'],completed:['Done','good'],answered:['Done','good'],running:['Running','accent'],failed:['Failed','bad'],error:['Failed','bad'],validation_failed:['Needs a look','bad'],patch_failed:['Needs a look','bad'],rejected:['Rejected','neutral'],cancelled:['Cancelled','neutral'],queued:['Queued','neutral'],down:['Down','bad'],healthy:['Healthy','good'],optional_offline:['Offline','neutral']});
-const KINDS = Object.freeze({chat:['compose','ask'],research:['globe','ask'],image:['image','create'],agent:['automate','agents'],automation:['refresh','automationStudio'],engineering:['build','changes'],spreadsheet:['file','spreadsheets']});
+const KINDS = Object.freeze({chat:['compose','ask'],prompt:['history','ask'],research:['globe','ask'],image:['image','create'],agent:['automate','agents'],automation:['refresh','automationStudio'],engineering:['build','changes'],spreadsheet:['file','spreadsheets']});
 const LEGACY_TYPES = Object.freeze({mission:'agent',specialist:'agent'});
 // Work's filter chips: which chip a run belongs to. GET /api/runs?kind= filters by it; anything not listed (automation too) is "other".
-const WORK_KINDS = Object.freeze({chat:'chats',research:'chats',image:'images',agent:'missions',spreadsheet:'sheets',engineering:'changes'});
+const WORK_KINDS = Object.freeze({chat:'chats',research:'chats',prompt:'chats',image:'images',agent:'missions',spreadsheet:'sheets',engineering:'changes'});
 const WORK_CHIPS = Object.freeze(['chats','images','missions','sheets','changes','other']);
 const workKind = run => { const t = LEGACY_TYPES[run?.type] || run?.type; return Object.prototype.hasOwnProperty.call(WORK_KINDS, t) ? WORK_KINDS[t] : 'other'; };
 function badge(status) {
@@ -39,7 +39,7 @@ function fileStats(change) {
 // else its first words cut at a word with "…" (titleFromText keeps 69 characters of a long first message and adds "…").
 // A title that is an instruction ("You are …", e.g. the hub's House questions from before they carried a label) shows
 // the kind's name instead. run.title itself is unchanged, so Needs you still groups repeats by it.
-const KIND_NAMES = Object.freeze({ chat: 'Chat', research: 'Research', image: 'Image', agent: 'Mission', spreadsheet: 'Spreadsheet', engineering: 'Change', automation: 'Automation', other: 'Run' });
+const KIND_NAMES = Object.freeze({ chat: 'Chat', research: 'Research', prompt: 'Past work', image: 'Image', agent: 'Mission', spreadsheet: 'Spreadsheet', engineering: 'Change', automation: 'Automation', other: 'Run' });
 const TITLE_MAX = 72;
 function firstWords(title) {
   const lines = title.split(/[\r\n]+/), first = lines[0].replace(/\s+/g, ' ').trim();
@@ -69,7 +69,7 @@ function runCard(run, { approvalFor, changeFor } = {}) {
   // A mission that finished without some optional follow-ups says so first: "2 follow-ups ran out of time · <answer>".
   const note = kind === 'agent' && typeof out.note === 'string' ? out.note.trim() : '', summary = (note ? note + ' · ' : '') + String(run.summary ?? '');
   let preview = null;
-  if (kind === 'chat' || kind === 'research') preview = { type: 'text', text: String(out.text || summary).slice(0, 240) };
+  if (kind === 'chat' || kind === 'research' || kind === 'prompt') preview = { type: 'text', text: String(out.text || summary).slice(0, 240) };
   else if (kind === 'image') { const imgs = Array.isArray(out.images) ? out.images : []; preview = { type: 'image', src: imgs[0]?.imageUrl || '', count: imgs.length } }
   else if (kind === 'agent') preview = { type: 'mission', text: summary };
   else if (kind === 'spreadsheet') preview = { type: 'text', text: String(out.text || summary).slice(0, 240) };

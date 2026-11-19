@@ -221,7 +221,7 @@ function createRuns(ctx) {
       const id = String(b.id || '');
       const replay = retryRequestForRunId(id);
       if (!replay) return json(res, 409, { error: 'This run does not support retry' });
-      const allowed = new Set(['/api/chat','/api/images/generate','/api/agents/run','/api/automations/run']);
+      const allowed = new Set(['/api/chat','/api/images/generate','/api/agents/run','/api/automations/run','/api/journal/ask']);
       if (!allowed.has(replay.path)) return json(res, 409, { error: 'Retry target is not allowed' });
 
       const parent = unifiedRunItems(500).find(x => x.id === id) || runLedger.get(id);

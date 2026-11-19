@@ -19,12 +19,15 @@ const withContext=(text,ctx,intent)=>ctx&&usesContext(intent)?`${text}\n\n---\nC
 // Local AI was opened by. The same address is written down once for a page that runs before the registry has loaded.
 const FALLBACK_HUB='https://hub.rahe-home.duckdns.org/';
 const homeUrl=()=>root.ApplianceTools?.toolUrl('hub')||FALLBACK_HUB;
+// hub:<path> (a page on Pi Hub: a Needs-you row, a Past work print) → that page's address. Framed by Pi Hub (A4), the hub
+// is the page around this one, so its address is the frame's parent. Any other link is returned as it is.
+const hubHref=l=>{if(!/^hub:/.test(String(l??'')))return l;const F=root.LocalAIFramed,base=F?.active?.()&&F.origin()?F.origin()+'/':homeUrl();return base+String(l).slice(4).replace(/^\/+/,'')};
 // An old Print lab address (#printLab, #/printLab?e=E-025) is Pi Hub's /lab, keeping only p, e and do.
 const labUrl=(host,hash)=>{
  const raw=String(hash||''),i=raw.indexOf('?'),from=new URLSearchParams(i<0?'':raw.slice(i+1)),to=new URLSearchParams();
  for(const k of ['p','e','do'])if(from.get(k))to.set(k,from.get(k));
  return homeUrl(host)+'lab'+(to.toString()?'?'+to:'');
 };
-const api={clean,withContext,usesContext,informative,homeUrl,labUrl,MAX};
+const api={clean,withContext,usesContext,informative,homeUrl,hubHref,labUrl,MAX};
 if(typeof module==='object'&&module.exports)module.exports=api;else root.LocalAIAskContext=api;
 })(typeof window!=='undefined'?window:globalThis);

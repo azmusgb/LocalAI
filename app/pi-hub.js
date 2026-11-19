@@ -85,6 +85,25 @@ function printerRecord(body, now = Date.now()) {
   };
 }
 
+// Bambuddy's print log as Pi Hub's Workshop page serves it (GET /api/workshop: prints, newest first, at most 20, and
+// prints_available: false when Bambuddy didn't answer the hub) → {ok: true, prints} or {ok: false, source}: which source
+// could not be read. Untrusted text: only these fields leave, cut to size; times become ISO strings. Past work (A28 D3)
+// reads prints at ask time through this shape. Not fetched yet: Local AI reaches the hub over plain http, where only
+// the machine paths (/api/now, /api/needs, /api/records, /api/systems) answer, and A28 approves no new route, key or
+// gate change, so how /api/workshop is read is the owner's decision.
+const PRINTS_MAX = 20;
+const isoOf = s => (Number.isFinite(s) && s > 0 && s < 8.64e12 ? new Date(s * 1000).toISOString() : null);
+function printLog(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return { ok: false, source: 'pi-hub' };
+  if (body.prints_available === false) return { ok: false, source: 'bambuddy' };
+  if (body.prints_available !== true || !Array.isArray(body.prints)) return { ok: false, source: 'pi-hub' };
+  const num = v => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
+  const prints = body.prints.filter(p => p && typeof p === 'object' && (Number.isSafeInteger(p.id) || (typeof p.id === 'string' && /^[\w-]{1,40}$/.test(p.id)))).slice(0, PRINTS_MAX)
+    .map(p => ({ id: String(p.id), name: str(p.name, 80) || 'Untitled', status: str(p.status, 20).toLowerCase() || null, word: str(p.word, 24) || null,
+      started: isoOf(p.started), ended: isoOf(p.ended), seconds: num(p.seconds), grams: num(p.grams), error: str(p.error, 200) || null }));
+  return { ok: true, prints };
+}
+
 function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80', fetchImpl = fetch, now = Date.now } = {}) {
   const off = !url || url === 'off';
   let cache = { at: -Infinity, value: null };
@@ -150,4 +169,4 @@ function createPiHub({ url = process.env.LOCALAI_PI_HUB_URL || 'http://10.0.0.80
   return { read, needs, poster, printer };
 }
 
-module.exports = { createPiHub, summarize, playingItem, needsList, printerRecord };
+module.exports = { createPiHub, summarize, playingItem, needsList, printerRecord, printLog };

@@ -3392,9 +3392,9 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
   'use strict';
 
   const state = { inerted: [], opener: null, runs: [], selectedId: null, timer: 0, loading: false, drawerSig: '', projects: null, viewError: '', fetched: null, gap: '', pending: null, inApp: false, closing: false };
-  const KINDS = { chat: ['Chat', 'compose'], research: ['Research', 'globe'], image: ['Image', 'image'], agent: ['Mission', 'automate'], automation: ['Automation', 'refresh'], engineering: ['Change', 'build'] };
+  const KINDS = { chat: ['Chat', 'compose'], prompt: ['Past work', 'history'], research: ['Research', 'globe'], image: ['Image', 'image'], agent: ['Mission', 'automate'], automation: ['Automation', 'refresh'], engineering: ['Change', 'build'] };
   // Home starts a run by mode name; a run not yet reported is labelled by the kind that mode becomes.
-  const MODE_KINDS = { ask: 'chat', create: 'image', mission: 'agent' };
+  const MODE_KINDS = { ask: 'chat', create: 'image', mission: 'agent', history: 'prompt' };
   const kindOf = (kind) => MODE_KINDS[kind] || kind;
   const kindLabel = (kind) => (KINDS[kindOf(kind)] || ['Run'])[0];
   const lookup = (id) => state.runs.find((item) => item.id === id) || (state.fetched?.id === id ? state.fetched : null);

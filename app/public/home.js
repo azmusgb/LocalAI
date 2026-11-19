@@ -3,7 +3,7 @@
 (function(root){'use strict';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const MODES=[['auto','Auto','Picks for you'],['ask','Chat','Ask a question'],['research','Research','Search the web first'],['create','Image','Make pictures'],['spreadsheet','Spreadsheet','Ask about the open workbook'],['mission','Mission','Give the team a goal'],['automate','Automate','Set up a task'],['engineering','Change the assistant','Always asks you first']];
+const MODES=[['auto','Auto','Picks for you'],['ask','Chat','Ask a question'],['research','Research','Search the web first'],['history','Past work','Answers from what you did here'],['create','Image','Make pictures'],['spreadsheet','Spreadsheet','Ask about the open workbook'],['mission','Mission','Give the team a goal'],['automate','Automate','Set up a task'],['engineering','Change the assistant','Always asks you first']];
 const LABEL=Object.fromEntries(MODES.map(m=>[m[0],m[1]]));
 const MODE_KEY='localai.home.mode',OPT_KEY='localai.home.options';
 const store={get:k=>{try{return localStorage.getItem(k)}catch{return null}},set:(k,v)=>{try{localStorage.setItem(k,v)}catch{}}};
@@ -82,7 +82,9 @@ function paintModes(){
  const box=sheet().querySelector('.home-modes');
  box.innerHTML=(order||ordered()).map(([id,label,hint])=>{
   const gate=document.querySelector(`.mode[data-mode="${id}"]`),off=!!gate?.disabled,why=off?String(gate.title||'').replace(/^Unavailable:\s*/,''):'';
-  return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===cur()}" tabindex="${id===cur()?0:-1}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:hint)}</span></button>`}).join('');
+  // Past work stays on with Intelligence down: some answers need no model.
+  const note=id==='history'&&document.querySelector('.mode[data-mode="ask"]')?.disabled?'Answers need Intelligence running; it can still say what it couldn\'t find':'';
+  return `<button type="button" role="radio" class="home-mode" data-home-mode="${id}" aria-checked="${id===cur()}" tabindex="${id===cur()?0:-1}"${off?' disabled':''}><b>${esc(label)}</b><span>${esc(off&&why?'Not available: '+why:note||hint)}</span></button>`}).join('');
 }
 function openSheet(){const d=sheet();if(d.open){paintModes();paintOptions();return}
  root.LocalAIUI.showSheet(d,reopened=>{order=null;if(reopened)return;const c=$('homeModeChip');if(c&&c.isConnected)c.focus()});
@@ -107,9 +109,8 @@ const hubRow=h=>{
 };
 // The kit keeps a link only if it is on this origin or was made here: hub:<path> becomes Pi Hub's address (a path on that host
 // whatever the item says), and anything else the kit decides on its own.
-// Framed by Pi Hub (A4), the hub is the page around this one: its address is the frame's parent.
-const hubBase=()=>{const F=root.LocalAIFramed;return F?.active()&&F.origin()?F.origin()+'/':root.LocalAIAskContext?.homeUrl(location.hostname)||'https://hub.rahe-home.duckdns.org/'};
-const resolve=l=>/^hub:/.test(l)?hubBase()+l.slice(4).replace(/^\/+/,''):l;
+// (ask-context.js hubHref: framed by Pi Hub, the hub is the page around this one.)
+const resolve=l=>root.LocalAIAskContext?root.LocalAIAskContext.hubHref(l):l;
 // Inside Pi Hub's shell a Pi Hub page is a page in the shell (A7 P2): it opens in the whole window, without ↗.
 function inShell(ul){
  const F=root.LocalAIFramed;if(!F?.active()||!F.origin())return;
@@ -290,6 +291,17 @@ async function viaStarter(name,intent,text,extra,question=text){
  clearInput();
  try{await S.start(text,{...extra,pending,...(question!==text?{title:titleOf(question)}:{})})}catch(e){pending.fail(e.message);throw e}
 }
+// Past work (A28 D4): /api/journal/ask answers from the journal on this PC; the run view opens and follows the run.
+async function pastWork(question){
+ const pending=root.LocalAIRuns.openPending({kind:'history',title:titleOf(question),retry:()=>send(question,'history')});
+ clearInput();
+ try{
+  const j=await root.LocalAIUI.fetchJson('/api/journal/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question})});
+  if(!j.runId)throw new Error('Past work did not start. Try again.');
+  pending.resolve(j.runId);
+  root.LocalAIRuns.refresh?.(); // a running run in the list: the run view polls it
+ }catch(e){pending.fail(e.message);throw e}
+}
 async function dispatch(intent,text,route,question=text){
  gateCheck(intent);
  const L=root.LocalAILegacy;
@@ -304,6 +316,7 @@ async function dispatch(intent,text,route,question=text){
   if(!data.run?.id)throw new Error('The change did not start. Try again.');
   openRun({id:'legacy-engineering:'+data.run.id});clearInput();
  }else if(intent==='ask'||intent==='research')await viaStarter('LocalAIChat',intent,text,{research:intent==='research',model:options.model,bigger:flag('homeBigger'),keepLocal:flag('homeKeepLocal')},question);
+ else if(intent==='history')await pastWork(question);
  else if(intent==='create')await viaStarter('LocalAIImages','create',text,{engine:options.engine,aspect:options.aspect,style:options.style},question);
  // Spreadsheet (a Work kind, 2 Nov): the request runs on the Spreadsheets page, where the workbook and Keep / Discard are.
  else if(intent==='spreadsheet'){if(!root.LocalAISheets)throw new Error('Spreadsheets is not available right now.');root.LocalAIRouter.open('spreadsheets');root.LocalAISheets.ask(text);clearInput()}

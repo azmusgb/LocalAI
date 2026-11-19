@@ -2717,3 +2717,17 @@ html.is-framed body.ux-v3 .ux-page-strip{top:0}
 .ui-page__tool:has(>.pin-toggle){display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;justify-content:flex-end}
 .pin-note{margin:8px 0 0;color:var(--ui-muted);font-size:var(--ui-fs-4)}
 /* kit-clean:end */
+/* Past work (a prompt run's body, run-bodies.js): the answer as written, its citations, then the entries it read. */
+.past-work{display:grid;gap:var(--ui-s-2);min-width:0}
+.past-work h3{margin:var(--ui-s-3) 0 0}
+.past-work__answer{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--ui-fs-4);line-height:1.55}
+.past-work__cites{overflow-wrap:anywhere}
+.past-work__cites a,.past-work__entry a{color:var(--ui-accent-text);text-decoration:underline}
+.past-work__n{font-variant-numeric:tabular-nums;color:var(--ui-muted)}
+.past-work__status{margin:0}
+.past-work__source,.past-work__again{margin:0}
+.past-work__again{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-s-3)}
+/* Row-sized link targets; Delete above. */
+.past-work__entry,.past-work__cites li{position:relative}
+.past-work__entry a.ui-row__title::after,.past-work__cites a::after{content:'';position:absolute;inset:0}
+.past-work__delete{flex:none;position:relative;z-index:1}
