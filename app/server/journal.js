@@ -5,6 +5,15 @@
 // (app/journal-ask.js). ctx holds what this code uses from the rest of the server.
 const { askHistory, runOutput, cleanQuestion, UNREADABLE, QUESTION_MAX } = require('../journal-ask');
 
+// A model failure in words the owner can act on; the technical detail goes to the server's log (app/model-http.js codes).
+function plainModelError(e) {
+  if (e?.code === 'MODEL_UNREACHABLE' || e?.code === 'MODEL_CONNECTION_ERROR') return "The local model isn't answering, so there is no answer yet. Check Intelligence on Assistant status, then try again.";
+  if (e?.code === 'MODEL_TIMEOUT') return 'The local model took too long to answer. Try again when the PC is less busy.';
+  if (/^Intelligence service HTTP /.test(String(e?.message))) return 'The local model reported an error instead of an answer. Try again.';
+  if (/^The model gave no answer|^The local model (sent|did not)/.test(String(e?.message))) return "The local model's reply was empty or could not be read. Try again.";
+  return "Couldn't get an answer from the local model. Try again.";
+}
+
 // What a Past work request may carry: the question, and "Use a bigger model" (which changes nothing: it stays here).
 const ASK_BODY_MAX = 4 * 1024;
 
@@ -13,6 +22,10 @@ function createJournalRoutes(ctx) {
   async function apiJournal(req, res, urlObj) {
     try {
       const q = urlObj.searchParams;
+      // ?ids=a,b (at most 50): which of these entries still exist, so a list drawn from a stored answer (Past work) shows
+      // what was deleted since as deleted.
+      if (q.has('ids') && journal.disabled) return json(res, 503, { error: "Couldn't read your past work." }); // unreadable is not deleted
+      if (q.has('ids')) return json(res, 200, { items: [...new Set(String(q.get('ids')).split(',').map(s => s.trim()).filter(Boolean))].slice(0, 50).map(id => journal.get(id)).filter(Boolean) });
       const sources = String(q.get('source') || '').split(',').map(s => s.trim()).filter(Boolean);
       return json(res, 200, journal.search({ q: q.get('q') || '', from: q.get('from'), to: q.get('to'), sources, limit: q.get('limit') || 50, before: q.get('before') }));
     } catch (e) { storageError(res, e, 400); }
@@ -52,6 +65,8 @@ function createJournalRoutes(ctx) {
     const used = { provider: 'ollama', model: local.model, class: route.class, why: route.why };
     const run = runLedger.create({
       type: 'prompt', title: q, input: { prompt: q }, eventDetail: 'Past work asked',
+      // Retry (app/server/runs.js) asks the same question again through this route: a new run under the same rules.
+      retryRequest: { path: '/api/journal/ask', body: { question: q } },
       meta: { mode: 'history', privacy: { class: route.class, why: route.why }, ...(voice === true ? { voice: true } : {}) }
     });
     const done = (async () => {
@@ -66,7 +81,8 @@ function createJournalRoutes(ctx) {
         // A journal that can't be read is said plainly; the reason stays in the server's log, not in the run.
         if (e?.code === 'history_unreadable') console.warn(`Past work: the journal could not be read: ${e.cause?.message || 'it is switched off'}`);
         runLedger.update(run.id, { output: runOutput({ answer: '', citations: [], entries, from: e?.from || from }) });
-        return runLedger.fail(run.id, e?.code === 'history_unreadable' ? UNREADABLE : e);
+        if (e?.code !== 'history_unreadable') console.warn(`Past work: the local model failed: ${e?.message || e}`);
+        return runLedger.fail(run.id, e?.code === 'history_unreadable' ? UNREADABLE : plainModelError(e));
       }
     })().catch(e => { console.warn(`Past work: the run could not be saved: ${e?.message || e}`); return null; }); // nobody awaits it on the HTTP path
     return { run, done };

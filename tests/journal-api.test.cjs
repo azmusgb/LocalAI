@@ -126,6 +126,22 @@ test('POST /api/journal/ask: 400 for no question, one run that answers with cita
   mode = 'fail';
   const failed = await finished((await (await ask({ question: 'what did I ask about the bracket' })).json()).runId);
   assert.equal(failed.status, 'failed');
-  assert.match(failed.error, /HTTP 500/);
+  assert.equal(failed.error, 'The local model reported an error instead of an answer. Try again.', 'plain words, not the model server\'s text');
   assert.equal(failed.output.entries.length, 1, 'the entries it read are still shown');
+  assert.equal(failed.retryable, true);
+
+  // Retry asks the same question again: a new Past work run under the same rules.
+  mode = 'chat';
+  const again = await fetch(`${base}/api/runs/retry`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: failed.id }) });
+  assert.equal(again.status, 200);
+  const retried = await finished((await again.json()).runId);
+  assert.equal(retried.type, 'prompt'); assert.equal(retried.meta.mode, 'history'); assert.equal(retried.retryOf, failed.id);
+  assert.equal(retried.status, 'completed'); assert.equal(retried.meta.route.provider, 'ollama');
+  assert.equal(asked.at(-1).tools, undefined);
+
+  // ?ids= says which entries still exist, so a stored answer can show what was deleted since.
+  const id = run.output.entries[0].id;
+  assert.deepEqual((await (await fetch(`${base}/api/journal?ids=${id},j-nope`)).json()).items.map(x => x.id), [id]);
+  assert.equal((await fetch(`${base}/api/journal/delete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })).status, 200);
+  assert.deepEqual((await (await fetch(`${base}/api/journal?ids=${id}`)).json()).items, []);
 });

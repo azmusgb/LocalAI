@@ -74,12 +74,20 @@ test('nothing found: the run completes with the fixed answer and no model call',
 });
 
 test('the model failing, timing out or answering garbage fails the run with the entries kept', async t => {
-  for (const over of [{ fail: Object.assign(new Error('The model took longer than 180 s (request timed out)'), { code: 'MODEL_TIMEOUT' }) }, { status: 500, raw: 'boom' }, { raw: '<html>' }, { reply: { message: {} } }]) {
+  const cases = [
+    [{ fail: Object.assign(new Error('The model took longer than 180 s (request timed out)'), { code: 'MODEL_TIMEOUT' }) }, 'The local model took too long to answer. Try again when the PC is less busy.'],
+    [{ fail: Object.assign(new Error('Ollama wasn’t answering at 127.0.0.1:9 (ECONNREFUSED)'), { code: 'MODEL_UNREACHABLE' }) }, "The local model isn't answering, so there is no answer yet. Check Intelligence on Assistant status, then try again."],
+    [{ status: 500, raw: 'boom' }, 'The local model reported an error instead of an answer. Try again.'],
+    [{ raw: '<html>' }, "The local model's reply was empty or could not be read. Try again."],
+    [{ reply: { message: {} } }, "The local model's reply was empty or could not be read. Try again."]
+  ];
+  for (const [over, words] of cases) {
     const { journal, routes } = setup(t, over);
     seed(journal);
     const finished = await routes.startPastWork({ question: 'what did I ask about PETG' }).done;
     assert.equal(finished.status, 'failed', JSON.stringify(over));
-    assert.ok(finished.error);
+    assert.equal(finished.error, words, 'plain words; the detail is in the server log');
+    assert.equal(finished.retryable, true, 'Retry asks again');
     assert.equal(finished.output.entries.length, 1, 'what was read is still shown');
     assert.equal(finished.output.entries[0].title, 'Which filament for a PETG bracket?');
   }
