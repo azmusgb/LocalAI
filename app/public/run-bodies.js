@@ -295,7 +295,7 @@
       const live = ['queued', 'running', 'streaming'].includes(run.status);
       const answer = typeof o.text === 'string' ? o.text.trim() : '';
       slot.appendChild(h('h3', '', 'Answer'));
-      if (live) { const w = h('p', 'muted past-work__wait', 'Reading your past work…'); w.setAttribute('role', 'status'); slot.appendChild(w); }
+      if (live) { const w = h('p', 'muted', 'Reading your past work…'); w.setAttribute('role', 'status'); slot.appendChild(w); }
       else if (answer) slot.appendChild(h('p', 'past-work__answer', answer));
       else if (run.status === 'failed') slot.appendChild(h('p', 'muted', 'No answer: it stopped before one was written (the reason is above).'));
       else if (run.output?.truncated) slot.appendChild(h('p', 'muted', 'This answer was too long to keep here.'));
@@ -308,8 +308,8 @@
       }
       if (live) return;
       slot.appendChild(h('h3', '', entries.length === 1 ? 'The entry it read' : 'What it read'));
-      if (!entries.length) { slot.appendChild(h('div', 'ui-empty past-work__empty', run.status === 'failed' ? 'Nothing was read before it stopped.' : 'Nothing in your past work matched this question.')); return; }
-      const ul = h('ul', 'ui-rows past-work__entries');
+      if (!entries.length) { slot.appendChild(h('div', 'ui-empty', run.status === 'failed' ? 'Nothing was read before it stopped.' : 'Nothing in your past work matched this question.')); return; }
+      const ul = h('ul', 'ui-rows');
       entries.forEach(e => ul.appendChild(entryRow(e)));
       slot.appendChild(ul);
     });

@@ -2710,6 +2710,8 @@ html.is-framed body.ux-v3 .ux-page-strip{top:0}
 .pin-note{margin:8px 0 0;color:var(--ui-muted);font-size:var(--ui-fs-4)}
 /* kit-clean:end */
 /* Past work (a prompt run's body, run-bodies.js): the answer as written, its citations, then the entries it read. */
+.past-work{display:grid;gap:var(--ui-s-2);min-width:0}
+.past-work h3{margin:var(--ui-s-3) 0 0}
 .past-work__answer{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--ui-fs-4);line-height:1.55}
 .past-work__cites{margin:0;padding:0;list-style:none;display:grid;gap:var(--ui-s-1);overflow-wrap:anywhere}
 .past-work__cites a,.past-work__entry a{color:var(--ui-accent-text);text-decoration:underline}

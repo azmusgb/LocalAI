@@ -80,7 +80,7 @@ await check('Past work: send posts the question, opens the run, waits, then show
   await page.waitForFunction(() => location.hash === '#run/run-past-new', null, T);
   assert.deepEqual(page.db.asks, [{ question: 'what did I ask about the bracket' }]);
   assert.equal(await page.locator('#commandInput').inputValue(), '', 'the composer is cleared once the run started');
-  await body(page).locator('.past-work__wait[role="status"]', { hasText: 'Reading your past work' }).waitFor(T);
+  await body(page).locator('p[role="status"]', { hasText: 'Reading your past work' }).waitFor(T);
   assert.match(await page.locator('#runDrawer').innerText(), /Past work/, 'the run view names the kind');
   // The server finishes the run; the run view follows it.
   Object.assign(page.db.runs[0], pastRun('run-past-new'), { title: 'what did I ask about the bracket' });
@@ -148,7 +148,7 @@ await check('a failed run shows the reason and still lists what it read; nothing
   assert.match(await page.locator('#runDrawer').innerText(), /request timed out/);
   assert.equal(await body(page).locator('.past-work__entry').count(), 1);
   await page.evaluate(() => window.LocalAIRouter.go('#run/run-past-e'));
-  await body(page).locator('.past-work__empty', { hasText: 'Nothing in your past work matched this question.' }).waitFor(T);
+  await body(page).locator('.ui-empty', { hasText: 'Nothing in your past work matched this question.' }).waitFor(T);
   assert.equal(await body(page).locator('.past-work__answer').textContent(), "I don't have anything about that.");
   assert.equal(await body(page).locator('.past-work__cites').count(), 0);
   await page.context().close();

@@ -290,8 +290,7 @@ async function viaStarter(name,intent,text,extra,question=text){
  clearInput();
  try{await S.start(text,{...extra,pending,...(question!==text?{title:titleOf(question)}:{})})}catch(e){pending.fail(e.message);throw e}
 }
-// Past work (memory-core, A28 D4): the question goes to /api/journal/ask, which answers from the journal on this PC; the
-// run view opens at once and follows the run. Pi Hub's page context is never added (stored and quoted text stay apart).
+// Past work (A28 D4): /api/journal/ask answers from the journal on this PC; the run view opens and follows the run.
 async function pastWork(question){
  const pending=root.LocalAIRuns.openPending({kind:'history',title:titleOf(question),retry:()=>send(question,'history')});
  clearInput();
@@ -299,7 +298,7 @@ async function pastWork(question){
   const j=await root.LocalAIUI.fetchJson('/api/journal/ask',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question})});
   if(!j.runId)throw new Error('Past work did not start. Try again.');
   pending.resolve(j.runId);
-  root.LocalAIRuns.refresh?.(); // the run list now holds a running run, so the run view follows it every few seconds
+  root.LocalAIRuns.refresh?.(); // a running run in the list: the run view polls it
  }catch(e){pending.fail(e.message);throw e}
 }
 async function dispatch(intent,text,route,question=text){
