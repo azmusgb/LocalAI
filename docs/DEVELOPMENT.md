@@ -111,8 +111,10 @@ real requests. Port 9 on loopback refuses at once, so the Workshop card just rea
 themselves (`spawnAppServer()`, `tests/run-browser.mjs`, `npm run ci`) already default to it unless you set one.
 
 Use a fresh `DATA_DIR`: the scripts write data (for example Claude board findings and paired chat devices). `tests/claude-chat-ui.mjs`
-ignores `LOCALAI_URL` and starts its own server. Run some suites with `node tests/run-browser.mjs images claude` (names are matched as substrings), or one
-with `node tests/<name>-ui.mjs`.
+ignores `LOCALAI_URL` and starts its own server. Run some suites with `node tests/run-browser.mjs images claude` (names are matched as substrings;
+a full name such as `home-ui.mjs` matches only that suite), or one with `node tests/<name>-ui.mjs`. `--shard 2/4` runs
+the second of four shares (for workers side by side, each against its own server), `--solo` runs the timing-sensitive
+suites that belong in no shard (`perf-ui.mjs`, `visual-ui.mjs`), and `--list` prints what would run without running it.
 
 ### Screenshots and budgets
 
@@ -141,7 +143,7 @@ New `tests/*.test.cjs` and `tests/*-ui.mjs` files are picked up automatically by
 ## CI
 
 **There are no GitHub Actions workflows; PRs are checked locally:** `npm run ci -- <PR number>`
-(`scripts/local-ci.mjs`) runs the steps below on the PR merged with `main`, in a throwaway worktree, against a fresh server on a free port, and posts a `local-ci` commit status (pending,
+(`scripts/local-ci.mjs`) runs the steps below on the PR merged with `main`, in a throwaway worktree, against fresh servers, and posts a `local-ci` commit status (pending,
 then success or failure) to the PR. `--no-post` skips posting; with no PR number it tests the current checkout and
 never posts. `npm run ship -- <PR number>` (`--merge`) does the same and then, only on green, merges with
 `gh pr merge --match-head-commit <tested sha>`, so a commit pushed after the run started can't land untested. Runs queue one at a time per machine (a lock in the temp folder; a dead owner's lock is taken over), and
@@ -155,7 +157,26 @@ keeps the run green but the status reads "All passed, 1 suite on retry: <suite>"
 are never retried. With a PR number, a title over 70 characters or containing ";" or " — " gets one advisory
 "Release note:" comment, never a failure. The decisions live in `scripts/local-ci-lib.mjs` (tested by
 `tests/local-ci.test.cjs`); `LOCALAI_CI_DRY=1` runs the script without the CI slot, the real steps or posting
-(`LOCALAI_CI_FAIL_UNIT`, `LOCALAI_CI_FAIL_SUITE` inject a failure; see the file header).
+(`LOCALAI_CI_FAIL_UNIT`, `LOCALAI_CI_FAIL_SUITE` inject a failure; see the file header); `--dry` does the same.
+
+**A green result is reused for the identical tree.** After a run where every step is green (a suite green on retry
+counts), local CI records the tree it tested in `localai-ci/green.json` inside the repository's git folder (local,
+never committed, shared by every worktree; the newest 50 are kept). A later `npm run ci` or `npm run ship` that would
+test exactly the same thing (same tree, so the PR merged with the same `main`; same Node version; same installed
+dependencies; PowerShell steps run or skipped alike) skips the steps, prints "Reusing the green result from <time> for
+tree <hash> (PR #n)" and posts the same `local-ci` success, marked "(reused)". So `npm run ci -- 581` and then
+`npm run ship -- 581` tests once. Ship then goes on as after a full run: if `main` moved since, it still merges the
+newer `main` and re-checks before merging. A failed, stopped or dry run is never recorded, and a run without a PR number
+reuses or records only from a clean checkout (no uncommitted or untracked files). `--fresh` always runs everything.
+
+**The browser suites run in several workers at once.** Local CI starts one fresh server per worker (its own port,
+picked by the system, and its own data folder) and runs `tests/run-browser.mjs --shard k/n` against each side by side,
+then `perf-ui.mjs` and `visual-ui.mjs` alone on the first worker's server, since frame times and screenshots are the
+checks other work on the machine can upset. It adds the results into the usual "X of Y browser suites passed; failed:
+…" line. The default is one worker per three CPU cores, at most four; `LOCALAI_CI_SHARDS=1` runs every suite in one
+worker as before, and any other number sets the count. Suites are shared out longest first, by each suite's last
+passing time (kept in `localai-ci/durations.json` next to the green results), or alphabetically before any are known.
+A suite that fails is still run once more on its own, against the server of the worker that ran it.
 
 **Ship re-checks against the newest `main`.** A run tests the PR with `main` as it was when the run started; a PR
 merged during those ~15 minutes isn't in it, and two PRs green on their own can be red together (on 17–18 Oct this
@@ -173,7 +194,7 @@ between ship's last fetch and its own merge, or one made without ship; GitHub ca
 
 Local CI steps, in order: `node --check` on every `app/*.js`, `app/public/*.js`, `tests/*.mjs`, `tests/*.cjs`;
 `npm test`; Python syntax; with `pwsh`, PowerShell syntax and `Test-LocalAI-Candidate.ps1 -LocalNode`; no private keys
-under `app/`; then a fresh server on a free port and `npm run test:browser`. Nothing runs after a merge, because the
+under `app/`; the kit checks; then the browser suites, in workers each with a fresh server (above). Nothing runs after a merge, because the
 auto-deploy certifies `main` itself before promoting it.
 
 Not covered by local CI: Windows PowerShell 5.1 and Windows-only Node runs. For a change to `deploy/**` or host
