@@ -47,6 +47,7 @@ The first question after the model has been idle can take a few seconds longer w
 | `health` | "Is Local AI OK?", "Health check" | The Health page's summary sentence. No model. |
 | `time` | "What time is it?", "What's the date?" | The appliance's clock, in its time zone. No model. |
 | `weather` | "What's the weather?", "Will it rain tomorrow?", "How cold is it tonight?" | Open-Meteo, for where your phone is (or your home location). |
+| `history` | "What did I ask about PETG yesterday?", "When did I last make a poster?", "Did my last print finish?" | Past work: your own record in Local AI (the journal), answered by the local model on this PC with no tools; the citation numbers are not spoken. Nothing found is "I don't have anything about that", with no model. Prints: Pi Hub's print list can't be read from here yet, and the answer says so. Films: no record is kept. The run is in Work as Past work. |
 | `current` | "Who won the game last night?", "Latest news on SpaceX" | A web search (SearXNG, at most 3 seconds); the model answers from the top three results and names the site. |
 | `action` `image` | "Make an image of a red fox", "Draw a picture of a lighthouse at dusk" | Starts the image and says so; a notification follows when it's ready. |
 | `action` `mission` | "Start a mission to compare NAS drives" | Starts the mission and says so; it appears in Work, and its own notification arrives when it finishes. |
