@@ -1,5 +1,6 @@
 // Layout fixes from the UX review: the phone run view header and output, Work without a page list on desktop, the System
 // tab strip on phones, and the Missions placeholder weight.
+import './browser-target-guard.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 

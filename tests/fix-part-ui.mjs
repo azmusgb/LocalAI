@@ -2,6 +2,7 @@
 // two versions beside the original and keep one. First against a mocked image API (request shape, mask, chips, Keep,
 // the iPhone layout), then end to end through a real server and a stand-in ComfyUI, as tests/image-preview.test.cjs does.
 // SHOTS=<dir> saves screenshots there.
+import './browser-target-guard.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
