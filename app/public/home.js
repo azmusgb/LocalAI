@@ -134,7 +134,7 @@ async function decideHere(a){
  const sec=$('homeNeedsYou'),first=sec&&!sec.hidden?$('homeNeedsList')?.querySelector('a[href]'):null;
  root.LocalAIUI.refocus(a.id,{within:'#homeNeedsList',key:'approvalId',next,prev,fallback:first||$('homeRecentTitle')});
 }
-let needs=[],approvals=[],newSignals=0,hubItems=null,needsKitMissing=false,impAt=null,apprAt=null,impBad=false,apprBad=false;
+let needs=[],approvals=[],newSignals=0,hubItems=null,needsKitMissing=false,impAt=null,apprAt=null,impBad=false,apprBad=false,needsNote='';
 // Another device on plain HTTP can't use voice, notifications or Add to Home Screen; point it at the setup until it opts out there.
 const onPlainHttp=()=>location.protocol==='http:'&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 const secureNudge=()=>{if(!onPlainHttp())return false;try{return localStorage.getItem('localai.secureNudge.off')!=='1'}catch{return true}};
@@ -174,7 +174,7 @@ function bindNeeds(box){
 }
 function paintNeeds(){
  const box=$('homeNeedsList'),sec=$('homeNeedsYou');if(!box||!sec)return;
- stale=false;const unk=needsFailed||impBad||apprBad; // a failed read: the count is unknown
+ stale=false;
  // While Get started is on the page its step 1 already covers stopped services; the same news is not repeated as "Fix" rows.
  // They still count: the faceplate and the bell must not say "Nothing" while a core service is down. Other critical
  // items (a watchdog finding, Status unavailable) are not Get started's and keep their rows.
@@ -189,16 +189,17 @@ function paintNeeds(){
  const entries=[...act,...failed.map(failedRow)],shown=act.length+room;
  bindNeeds(box);
  // The bell shows this on every page; no number until Local AI's runs are read.
- root.dispatchEvent(new CustomEvent('localai:needs-count',{detail:unk?{state:'unavailable'}:needsRead?{n:n+covered}:{state:'checking'}}));
- if(unk)plateNeeds(null);else if(needsRead)plateNeeds(n+covered);
- if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
+ root.dispatchEvent(new CustomEvent('localai:needs-count',{detail:needsFailed?{state:'unavailable'}:needsRead?{n:n+covered}:{state:'checking'}}));
+ if(needsFailed)plateNeeds(null);else if(needsRead)plateNeeds(n+covered);
+ const note=$('homeNeedsNote');if(note){if(note.textContent!==needsNote)note.textContent=needsNote;note.hidden=!needsNote}
+ if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=!needsNote;return}
  if(!root.ApplianceNeeds){if(!needsKitMissing){needsKitMissing=true;console.warn('Needs you: /ui/needs.js did not load; the section stays hidden')}box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  // Dense on the Assistant's Home (A7 P2): one line a row, the same rows as Pi Hub's.
  const ul=root.ApplianceNeeds.renderList(entries.map(e=>e.item),{resolve,here:new URL(location.href),self:'Local AI',max:shown,dense:true,more:{href:'#work?kind=needs',label:`See all ${n}`}});
  inShell(ul);
  [...ul.querySelectorAll('.ui-need')].forEach((li,i)=>{const e=entries[i];Object.assign(li.dataset,e.data);if(e.go)rowGo.set(li,e.go);const d=li.querySelector('.ui-need__detail');if(d&&e.item.detail)d.title=e.item.detail}); // the clamped detail keeps its full text on hover and long-press
  box.replaceChildren(ul);
- $('homeNeedsCount').textContent=n+covered&&!unk?'· '+(n+covered):''; // the bell's and the readout's number; none when unread
+ $('homeNeedsCount').textContent=n+covered&&!needsFailed?'· '+(n+covered):''; // the bell's and the readout's number; none when unread
  sec.hidden=!n;
 }
 // Home's faceplate readout (A7 P1): how many things need you; its lamp and caption are Local AI's status (app.js).
@@ -239,7 +240,7 @@ async function loadNeeds(){
  hubItems=hub.status==='fulfilled'?hub.value.items:null;  // Pi Hub not answering: only Local AI's own rows
  src('homeSrcHub',"Pi Hub's Needs you",!hubItems);
  impBad=imp.status!=='fulfilled';apprBad=p.status!=='fulfilled';
- if(impBad)newSignals=0;else{const day=Date.now()-864e5;newSignals=(imp.value.items||[]).filter(i=>i.source==='signal'&&i.status==='proposed'&&i.stage==='backlog'&&Date.parse(i.createdAt)>day).length;impAt=new Date()} // an old count is not current
+ if(impBad)newSignals=0;else{const day=Date.now()-864e5;newSignals=(imp.value.items||[]).filter(i=>i.source==='signal'&&i.status==='proposed'&&i.stage==='backlog'&&Date.parse(i.createdAt)>day).length;impAt=new Date()}
  const runs=d.status==='fulfilled'?d.value.items||[]:null;
  if(runs){needs=root.LocalAINeedsYou.pick(runs);needsRead=new Date()}
  needsFailed=!runs; // the rows stay, said to be stale (A28)
@@ -251,13 +252,14 @@ async function loadNeeds(){
   apprAt=new Date();
  } // else the last ones stay, said to be from then
  src('homeSrcImprove','Improve',impBad,impAt);src('homeSrcApprovals','Approvals',apprBad,apprAt);
- // Runs unread: their notice says it
- root.LocalAIUI?.staleNotice?.('homeNeedsNotice',{name:[impBad&&'Improve',apprBad&&'Approvals'].filter(Boolean).join(' or '),what:'approvals',missing:'Needs you',since:needsFailed||!(impBad||apprBad)?null:apprBad&&!impBad&&apprAt||true});
+ // The count stays; a note says what it may miss (the runs' notice covers them)
+ const off=[impBad&&'Improve',apprBad&&'Approvals'].filter(Boolean);
+ needsNote=needsFailed||!off.length?'':(off[1]?off.join(' and ')+" aren't answering":(root.ApplianceNeeds?.PHRASES?.source_down||"{name} isn't answering").replace('{name}',off[0]))+(apprBad&&approvals.length?'. Showing approvals from '+hm(apprAt)+'.':', so this list may be incomplete.');
  paintNeeds();
  if(lastRecent?.box.isConnected&&!lastRecent.box.querySelector(':scope > .state-loading,:scope > .state-error'))paintRecent(lastRecent.box,lastRecent.data); // Recent may have painted before Needs you knew its rows
 }
 // One notice and sources part for Local AI's runs (Needs you and Recent; A28). A Recent never loaded shows its own error.
-const src=(id,name,bad,at)=>root.LocalAIUI?.sources?.(id,name,bad?'bad':'ok',at?(bad?'last read ':'read ')+at.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'');
+const hm=d=>d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),src=(id,name,bad,at)=>root.LocalAIUI?.sources?.(id,name,bad?'bad':'ok',at?(bad?'last read ':'read ')+hm(at):'');
 function paintRuns(){
  const U=root.LocalAIUI,bad=needsFailed||recentFailed&&recentReadAt,at=[needsFailed&&needsRead,recentFailed&&recentReadAt].filter(Boolean),since=at.length?new Date(Math.min(...at)):null,last=bad?since:new Date(Math.max(needsRead,recentReadAt));
  U?.staleNotice?.('homeRunsNotice',{since:bad?needsFailed&&!needsRead||since||true:null,missing:'Needs you'});
