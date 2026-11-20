@@ -6,18 +6,21 @@ const { createFetcher } = require('../app/research/fetcher');
 
 const PUBLIC = async () => [{ address: '93.184.216.34', family: 4 }];
 function fake(script) { // script: array of { status, headers, chunks, hang } consumed one per request
-  const calls = [];
+  const calls = [], reqs = [];
   const transport = (options, onResponse) => {
     calls.push(options);
     const step = script[calls.length - 1];
     const req = new EventEmitter();
+    reqs.push(req);
     req.setTimeout = () => req; req.destroy = err => { req.destroyed = true; if (err) setImmediate(() => req.emit('error', err)); };
     req.end = () => { if (step.hang) return; setImmediate(() => {
       const res = new EventEmitter(); res.statusCode = step.status; res.headers = step.headers || {}; res.destroy = () => {}; res.resume = () => {};
-      onResponse(res); for (const c of step.chunks || []) res.emit('data', Buffer.from(c)); res.emit('end'); }); };
+      onResponse(res); for (const c of step.chunks || []) res.emit('data', Buffer.from(c));
+      if (step.resError) return res.emit('error', new Error('socket reset'));
+      if (!step.noEnd) res.emit('end'); }); };
     return req;
   };
-  return { transport, calls };
+  return { transport, calls, reqs };
 }
 const xml = { 'content-type': 'application/atom+xml; charset=utf-8' };
 const opts = { allowHosts: ['example.com'] };
@@ -73,4 +76,47 @@ test('oversize, wrong type, error status and timeout are each their own failure'
   const s = await mk({ status: 503, headers: xml, chunks: [] }).fetchText('https://example.com/feed', opts);
   assert.equal(s.code, 'http_status'); assert.match(s.reason, /503/);
   assert.equal((await mk({ hang: true }).fetchText('https://example.com/feed', { ...opts, timeoutMs: 30 })).code, 'timeout');
+});
+
+test('a redirect hop is closed, whether the next hop succeeds or fails', async () => {
+  const ok = fake([{ status: 302, headers: { location: '/b' } }, { status: 200, headers: xml, chunks: ['<feed/>'] }]);
+  assert.equal((await createFetcher({ lookup: PUBLIC, transport: ok.transport }).fetchText('https://example.com/a', opts)).ok, true);
+  assert.equal(ok.reqs[0].destroyed, true);
+  const bad = fake([{ status: 302, headers: { location: '/b' } }, { status: 503, headers: xml }]);
+  assert.equal((await createFetcher({ lookup: PUBLIC, transport: bad.transport }).fetchText('https://example.com/a', opts)).code, 'http_status');
+  assert.equal(bad.reqs[0].destroyed, true);
+  const slow = fake([{ status: 302, headers: { location: '/b' } }, { hang: true }]);
+  assert.equal((await createFetcher({ lookup: PUBLIC, transport: slow.transport }).fetchText('https://example.com/a', { ...opts, timeoutMs: 30 })).code, 'timeout');
+  assert.equal(slow.reqs[0].destroyed, true);
+});
+test('maxBytes and maxRedirects are validated', async () => {
+  const big = fake([{ status: 200, headers: xml, chunks: ['x'.repeat(3 * 1024 * 1024)] }]);
+  assert.equal((await createFetcher({ lookup: PUBLIC, transport: big.transport }).fetchText('https://example.com/feed', { ...opts, maxBytes: NaN })).code, 'too_large');
+  const f = fake(Array.from({ length: 10 }, () => ({ status: 302, headers: { location: '/again' } })));
+  assert.equal((await createFetcher({ lookup: PUBLIC, transport: f.transport }).fetchText('https://example.com/feed', { ...opts, maxRedirects: Infinity })).code, 'too_many_redirects');
+  assert.equal(f.calls.length, 4);
+});
+test('a content-encoding other than identity is refused', async () => {
+  const mk = h => createFetcher({ lookup: PUBLIC, transport: fake([{ status: 200, headers: { ...xml, ...h }, chunks: ['<feed/>'] }]).transport });
+  const r = await mk({ 'content-encoding': 'gzip' }).fetchText('https://example.com/feed', opts);
+  assert.equal(r.ok, false); assert.equal(r.code, 'bad_content_type'); assert.equal(r.reason, 'unexpected content-encoding: gzip');
+  assert.equal((await mk({ 'content-encoding': 'identity' }).fetchText('https://example.com/feed', opts)).ok, true);
+});
+test('content type is matched on the media type exactly', async () => {
+  const mk = type => createFetcher({ lookup: PUBLIC, transport: fake([{ status: 200, headers: { 'content-type': type }, chunks: ['<feed/>'] }]).transport });
+  assert.equal((await mk('application/xmlfoo').fetchText('https://example.com/feed', opts)).code, 'bad_content_type');
+  assert.equal((await mk('Application/Atom+XML; charset=utf-8').fetchText('https://example.com/feed', opts)).ok, true);
+});
+test('validators are sent on the first hop only', async () => {
+  const f = fake([{ status: 302, headers: { location: '/b' } }, { status: 200, headers: xml, chunks: ['<feed/>'] }]);
+  await createFetcher({ lookup: PUBLIC, transport: f.transport }).fetchText('https://example.com/a', { ...opts, etag: '"a1"', lastModified: 'x' });
+  assert.equal(f.calls[0].headers['If-None-Match'], '"a1"');
+  assert.equal(f.calls[1].headers['If-None-Match'], undefined);
+  assert.equal(f.calls[1].headers['If-Modified-Since'], undefined);
+});
+test('a response error mid-body, a redirect with no Location, and a stalled body are each their own failure', async () => {
+  const mk = step => createFetcher({ lookup: PUBLIC, transport: fake([step]).transport });
+  assert.equal((await mk({ status: 200, headers: xml, chunks: ['<fe'], resError: true }).fetchText('https://example.com/feed', opts)).code, 'network');
+  assert.equal((await mk({ status: 302, headers: {} }).fetchText('https://example.com/feed', opts)).code, 'bad_url');
+  assert.equal((await mk({ status: 200, headers: xml, chunks: ['<fe'], noEnd: true }).fetchText('https://example.com/feed', { ...opts, timeoutMs: 30 })).code, 'timeout');
 });

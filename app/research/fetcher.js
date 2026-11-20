@@ -42,14 +42,18 @@ function createFetcher({ lookup, transport = https.request } = {}) {
       const req = transport(options, res => {
         const status = res.statusCode;
         res.on('error', reject);
-        if (REDIRECTS.has(status) && header(res, 'location')) {
-          res.resume();
+        if (REDIRECTS.has(status)) {
+          // Close this connection now: a redirect body is never read, and a drained socket would outlive the call.
+          req.destroy();
+          if (!header(res, 'location')) return reject(new GuardError('bad_url', 'redirect without a Location'));
           return resolve({ redirect: header(res, 'location') });
         }
-        if (status === 304) { res.resume(); return resolve({ notModified: true }); }
+        if (status === 304) { req.destroy(); return resolve({ notModified: true }); }
         if (status !== 200) { req.destroy(); return reject(new FetchError('http_status', `server answered ${status}`)); }
-        const type = header(res, 'content-type').trim().toLowerCase();
-        if (!TYPES.some(t => type.startsWith(t))) { req.destroy(); return reject(new FetchError('bad_content_type', 'not an Atom or RSS content type')); }
+        const encoding = header(res, 'content-encoding').trim().toLowerCase();
+        if (encoding && encoding !== 'identity') { req.destroy(); return reject(new FetchError('bad_content_type', `unexpected content-encoding: ${encoding}`)); }
+        const type = header(res, 'content-type').split(';')[0].trim().toLowerCase();
+        if (!TYPES.includes(type)) { req.destroy(); return reject(new FetchError('bad_content_type', 'not an Atom or RSS content type')); }
         const declared = Number(header(res, 'content-length'));
         if (Number.isFinite(declared) && declared > maxBytes) { req.destroy(); return reject(new FetchError('too_large', 'response is larger than the limit')); }
         const chunks = [];
@@ -70,15 +74,17 @@ function createFetcher({ lookup, transport = https.request } = {}) {
   }
 
   async function run(startUrl, o, state) {
-    const { allowHosts, etag, lastModified, maxBytes = 2097152, maxRedirects = 3 } = o;
+    const { allowHosts, etag, lastModified } = o;
+    const maxBytes = Number.isFinite(o.maxBytes) && o.maxBytes > 0 ? o.maxBytes : 2097152;
+    const maxRedirects = Number.isFinite(o.maxRedirects) || o.maxRedirects === Infinity ? Math.min(3, Math.max(0, Math.trunc(o.maxRedirects))) : 3;
     let target = startUrl;
     for (let hop = 0; hop <= maxRedirects; hop++) {
       const url = checkUrl(target, { allowHosts });
       const vetted = await vetHost(url.hostname, vetOptions);
       if (state.finished) return null;
       const headers = { 'Accept-Encoding': 'identity', 'User-Agent': USER_AGENT, Accept: 'application/atom+xml, application/rss+xml, application/xml, text/xml' };
-      if (etag) headers['If-None-Match'] = etag;
-      if (lastModified) headers['If-Modified-Since'] = lastModified;
+      if (hop === 0 && etag) headers['If-None-Match'] = etag;
+      if (hop === 0 && lastModified) headers['If-Modified-Since'] = lastModified;
       const r = await request(url, vetted[0], headers, maxBytes, req => { state.req = req; });
       if (r.notModified) return { ok: true, status: 304, notModified: true, finalUrl: url.href };
       if (r.redirect === undefined) {
