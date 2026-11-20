@@ -41,6 +41,15 @@ test('the connection is pinned to the vetted address, in both lookup forms', asy
   const all = await new Promise(res => f.calls[0].lookup('example.com', { all: true }, (e, list) => res([e, list])));
   assert.deepEqual(all, [null, [{ address: '93.184.216.34', family: 4 }]]);
 });
+test('the all form offers every vetted address and the single form the first', async () => {
+  const two = async () => [{ address: '93.184.216.34', family: 4 }, { address: '2606:2800:220:1::1', family: 6 }];
+  const f = fake([{ status: 200, headers: xml, chunks: ['<feed/>'] }]);
+  await createFetcher({ lookup: two, transport: f.transport }).fetchText('https://example.com/feed', opts);
+  const all = await new Promise(res => f.calls[0].lookup('example.com', { all: true }, (e, list) => res([e, list])));
+  assert.deepEqual(all, [null, [{ address: '93.184.216.34', family: 4 }, { address: '2606:2800:220:1::1', family: 6 }]]);
+  const one = await new Promise(res => f.calls[0].lookup('example.com', {}, (e, address, family) => res([e, address, family])));
+  assert.deepEqual(one, [null, '93.184.216.34', 4]);
+});
 test('validators are sent and 304 is not a failure', async () => {
   const f = fake([{ status: 304, headers: {} }]);
   const r = await createFetcher({ lookup: PUBLIC, transport: f.transport }).fetchText('https://example.com/feed', { ...opts, etag: '"a1"', lastModified: 'x' });

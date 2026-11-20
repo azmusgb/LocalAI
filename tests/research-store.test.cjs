@@ -213,7 +213,7 @@ test('leaving quarantine through paused still resets failures and the due time',
   assert.equal(store.updateSource(q.id, { status: 'retired' }).failures, 5);
 });
 
-test('listDocuments pages with a cursor and an unknown cursor gives nothing', () => {
+test('listDocuments pages with a cursor and an unknown cursor is a 410', () => {
   const { store } = open();
   const s = src(store);
   store.saveEntries(s.id, Array.from({ length: 5 }, (_, i) => e('p' + i)));
@@ -221,7 +221,7 @@ test('listDocuments pages with a cursor and an unknown cursor gives nothing', ()
   const two = store.listDocuments({ sourceId: s.id, limit: 3, before: one[2].id });
   assert.deepEqual(one.map(d => d.ref.split(':')[1]), ['p4', 'p3', 'p2']);
   assert.deepEqual(two.map(d => d.ref.split(':')[1]), ['p1', 'p0']);
-  assert.deepEqual(store.listDocuments({ sourceId: s.id, before: 'doc-000000000000' }), []);
+  assert.throws(() => store.listDocuments({ sourceId: s.id, before: 'doc-000000000000' }), err => err.status === 410 && err.message === 'cursor expired');
 });
 
 test('search does not match a superseded revision', () => {
@@ -279,4 +279,36 @@ test('fetch code and document published are clamped to 40 characters', () => {
   assert.equal(store.listFetches(s.id)[0].code.length, 40);
   store.saveEntries(s.id, [{ ...e('a'), published: 'p'.repeat(100) }]);
   assert.equal(store.listDocuments({ sourceId: s.id })[0].published.length, 40);
+});
+
+test('saveEntries and recordFetch given a url that is no longer the source url store nothing but the fetch row', () => {
+  const { store, storage } = open();
+  const s = src(store);
+  const old = s.url;
+  store.updateSource(s.id, { url: 'https://new.example.org/feed' });
+  assert.deepEqual(store.saveEntries(s.id, [e('a')], { url: old }), { added: 0, revised: 0 });
+  assert.equal(count(storage, 'research_documents'), 0);
+  store.recordFetch(s.id, { ok: true, status: 200, etag: '"old"', lastModified: 'LM', url: old });
+  const after = store.getSource(s.id);
+  assert.equal(count(storage, 'research_fetches'), 1);
+  assert.equal(store.fetchesToday(), 1);
+  assert.equal(after.etag, ''); assert.equal(after.lastModified, ''); assert.equal(after.lastOkAt, ''); assert.equal(after.nextDueAt, ''); assert.equal(after.failures, 0);
+  store.recordFetch(s.id, { ok: false, reason: 'boom', code: 'x', url: old });
+  assert.equal(store.getSource(s.id).failures, 0); assert.equal(store.getSource(s.id).lastError, '');
+  // The current url behaves as before.
+  assert.equal(store.saveEntries(s.id, [e('a')], { url: after.url }).added, 1);
+  store.recordFetch(s.id, { ok: true, status: 200, etag: '"new"', url: after.url });
+  assert.equal(store.getSource(s.id).etag, '"new"');
+});
+
+test('an entry id longer than 512 characters is stored as a hash in ref', () => {
+  const { store, storage } = open();
+  const s = src(store);
+  const a = e('x'.repeat(5000)), b = e('x'.repeat(4999) + 'y');
+  assert.deepEqual(store.saveEntries(s.id, [a, b]), { added: 2, revised: 0 });
+  const list = store.listDocuments({ sourceId: s.id });
+  assert.equal(list.length, 2);
+  for (const d of list) { assert.ok(d.ref.length < 120, d.ref.length); assert.match(d.ref, /^src-[0-9a-f]{12}:sha256:[0-9a-f]{64}$/); }
+  assert.deepEqual(store.saveEntries(s.id, [a, b]), { added: 0, revised: 0 });
+  assert.equal(count(storage, 'research_documents'), 2);
 });

@@ -253,6 +253,16 @@ test('sibling routes are guarded too: the display sign-in code, run control, del
   }
 });
 
+// The research routes are guarded by app/signin.js itself, so a narrowed pattern fails here before the end-to-end test.
+test('research intake routes are guarded for every method and path; a neighbouring path is not', () => {
+  const { guarded } = require('../app/signin');
+  for (const [method, p] of [['GET', '/api/research/state'], ['POST', '/api/research/pause'], ['GET', '/api/research/sources'],
+    ['POST', '/api/research/sources'], ['POST', '/api/research/sources/update'], ['POST', '/api/research/sources/fetch'],
+    ['GET', '/api/research/documents']]) assert.equal(guarded(p, method), true, `${method} ${p}`);
+  assert.equal(guarded('/api/research-notes', 'GET'), false, 'a neighbouring path is not guarded');
+  assert.equal(guarded('/api/health', 'GET'), false);
+});
+
 // The pairing hint names where pairing is: Claude Code is in the Improve area (view-registry.js), not "Build".
 test('every pairing hint names Improve › Claude Code, the area the page list puts it in', () => {
   const reg = fs.readFileSync(path.join(__dirname, '..', 'app', 'public', 'view-registry.js'), 'utf8');

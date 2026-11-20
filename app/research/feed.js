@@ -258,13 +258,13 @@ function parseFeed(xml, { baseUrl, maxEntries = DEFAULT_MAX_ENTRIES } = {}) {
     if (firstEntry < 0) firstEntry = open;
     const gt = tagEnd(xml, open + 1 + tag.length);
     if (gt < 0) break;
+    if (xml[gt - 1] === '/') { from = gt + 1; continue; } // a self-closing entry has no body: read on after it
     let close = xml.indexOf(entryClose, gt + 1);
     while (close >= 0 && !isBoundary(xml[close + entryClose.length])) close = xml.indexOf(entryClose, close + 1);
     if (close < 0) break; // a truncated last entry is dropped
     complete++;
     from = close + entryClose.length;
     if (entries.length >= limit) break;
-    if (xml[gt - 1] === '/') continue;
     const entry = readEntry(xml.slice(gt + 1, close), kind, baseUrl);
     if (entry) entries.push(entry);
   }

@@ -11,7 +11,7 @@ const { checkUrl } = require('./net-guard');
 const NAME_MAX = 120, TITLE_MAX = 300, TEXT_MAX = 20000, LIMIT_MAX = 200;
 const SCHEDULE_MIN = 60, SCHEDULE_MAX = 10080, SCHEDULE_DEFAULT = 360;
 const KEEP_DOCUMENTS = 2000, KEEP_FETCHES = 50, QUARANTINE_AFTER = 5, BACKOFF_CAP_MIN = 24 * 60;
-const CODE_MAX = 40, PUBLISHED_MAX = 40;
+const ID_MAX = 512, CODE_MAX = 40, PUBLISHED_MAX = 40;
 const TOPICS_MAX = 20, TOPIC_MAX = 60;
 const TRUST = ['official', 'primary', 'secondary', 'unrated'];
 const SETTABLE_STATUS = ['active', 'paused', 'retired'];
@@ -163,14 +163,18 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
   const listSources = () => st.listSources.all().map(hydrate);
   const dueSources = limit => st.dueSources.all(nowIso(), Math.max(0, Math.min(1000, Number.parseInt(limit, 10) || 0))).map(hydrate);
 
-  function recordFetch(sourceId, { ok, status = 0, reason = '', code = '', bytes = 0, added = 0, revised = 0, etag, lastModified, ms = 0 } = {}) {
+  // url: the URL that was fetched. If the source's URL has changed since, the attempt still counts toward the day (its row
+  // is written) but says nothing about the source's new URL, so its validators, due time and failures are left alone.
+  function recordFetch(sourceId, { ok, status = 0, reason = '', code = '', bytes = 0, added = 0, revised = 0, etag, lastModified, ms = 0, url } = {}) {
     const cur = getSource(sourceId);
     if (!cur) throw fail(404, 'unknown source');
+    const stale = typeof url === 'string' && url !== cur.url;
     const at = nowIso(), num = v => (Number.isFinite(v) ? Math.trunc(v) : 0);
     return tx(() => {
       const day = localDay(now(), timeZone);
       st.insertFetch.run(cur.id, at, day, ok ? 1 : 0, num(status), String(code).slice(0, CODE_MAX), redact(reason, 300), num(bytes), num(added), num(revised), num(ms));
       st.trimFetches.run(cur.id, day, cur.id, KEEP_FETCHES);
+      if (stale) return cur;
       if (ok) {
         const sets = ['failures = 0', 'last_error = ?', 'last_ok_at = ?', 'last_fetch_at = ?', 'next_due_at = ?'];
         const args = ['', at, at, new Date(now() + cur.scheduleMinutes * 60000).toISOString()];
@@ -188,9 +192,11 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     });
   }
 
-  function saveEntries(sourceId, entries) {
+  // { url }: the URL the entries were fetched from; if the source has moved to another URL since, nothing is stored.
+  function saveEntries(sourceId, entries, { url } = {}) {
     const cur = getSource(sourceId);
     if (!cur) throw fail(404, 'unknown source');
+    if (typeof url === 'string' && url !== cur.url) return { added: 0, revised: 0 };
     const list = Array.isArray(entries) ? entries : [];
     const at = nowIso();
     return tx(() => {
@@ -198,7 +204,7 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
       for (const entry of list) {
         const eid = String(entry && entry.id ? entry.id : '');
         if (!eid) continue;
-        const ref = `${cur.id}:${eid}`;
+        const ref = `${cur.id}:${eid.length > ID_MAX ? 'sha256:' + sha256(eid) : eid}`; // a long id is stored as its hash
         const title = redact(entry.title, TITLE_MAX * 2).slice(0, TITLE_MAX), text = redact(entry.text, TEXT_MAX * 2).slice(0, TEXT_MAX);
         const hash = sha256(`${title}\n${text}`);
         const newest = st.newest.get(ref);
@@ -211,7 +217,7 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     });
   }
 
-  // before: a document id; returns documents saved earlier than it (the next page). An id that is gone gives [].
+  // before: a document id; returns documents saved earlier than it (the next page). An id that is gone is a 410 (the cursor expired).
   function listDocuments({ sourceId, q, limit = 50, before } = {}) {
     const asked = Number.parseInt(limit, 10);
     const n = Math.max(1, Math.min(LIMIT_MAX, Number.isFinite(asked) ? asked : 50));
@@ -226,7 +232,7 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     if (sourceId) { where.push('d.source_id = ?'); args.push(String(sourceId)); }
     if (before) {
       const row = st.docSeq.get(String(before));
-      if (!row) return [];
+      if (!row) throw fail(410, 'cursor expired');
       where.push('d.seq < ?'); args.push(row.seq);
     }
     return db.prepare(`SELECT d.* FROM ${from} WHERE ${where.join(' AND ')} ORDER BY d.seq DESC LIMIT ?`).all(...args, n).map(hydrateDoc);

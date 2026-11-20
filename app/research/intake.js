@@ -17,6 +17,7 @@ function createIntake({ store, fetcher, enabled = false, log = () => {}, perTick
   const UNREAD = 'research state could not be read', UNRECORDED = 'the last fetch could not be recorded', HOLD_MS = 15 * 60000;
   let running = false;
   let lastTickAt = '';
+  let lastTickSkipped = ''; // why the last tick stopped early: '' | off | paused | busy | daily_cap | error
   let holdUntil = 0; // after a fetch that could not be recorded, nothing is fetched until this time
   let unrecorded = { day: '', n: 0 }; // network calls made that have no research_fetches row, for the current day
   const isEnabled = () => (typeof enabled === 'function' ? !!enabled() : !!enabled);
@@ -65,26 +66,26 @@ function createIntake({ store, fetcher, enabled = false, log = () => {}, perTick
       if (!result || typeof result !== 'object') throw new Error('fetcher returned no result');
       if (!result.ok) {
         const reason = String(result.reason || 'fetch failed'), code = String(result.code || 'fetch_failed');
-        if (!record(source, { ok: false, status: result.status, reason, code, ms: ms() })) return unrecordedResult();
+        if (!record(source, { ok: false, status: result.status, reason, code, ms: ms(), url: source.url })) return unrecordedResult();
         return failure(reason, code);
       }
       if (result.status === 304 || result.notModified) {
-        if (!record(source, { ok: true, status: 304, bytes: 0, added: 0, revised: 0, ms: ms() })) return unrecordedResult();
+        if (!record(source, { ok: true, status: 304, bytes: 0, added: 0, revised: 0, ms: ms(), url: source.url })) return unrecordedResult();
         return { ok: true, added: 0, revised: 0, notModified: true };
       }
       let feed;
       try { feed = parseFeed(String(result.body ?? ''), { baseUrl: result.finalUrl || source.url }); }
       catch (error) {
         if (!(error instanceof FeedError)) throw error;
-        if (!record(source, { ok: false, status: result.status, reason: 'not a feed', code: 'not_a_feed', bytes: result.bytes, ms: ms() })) return unrecordedResult();
+        if (!record(source, { ok: false, status: result.status, reason: 'not a feed', code: 'not_a_feed', bytes: result.bytes, ms: ms(), url: source.url })) return unrecordedResult();
         return failure('not a feed', 'not_a_feed');
       }
-      const { added, revised } = store.saveEntries(source.id, feed.entries);
-      if (!record(source, { ok: true, status: result.status, bytes: result.bytes, added, revised, etag: result.etag, lastModified: result.lastModified, ms: ms() })) return unrecordedResult();
+      const { added, revised } = store.saveEntries(source.id, feed.entries, { url: source.url });
+      if (!record(source, { ok: true, status: result.status, bytes: result.bytes, added, revised, etag: result.etag, lastModified: result.lastModified, ms: ms(), url: source.url })) return unrecordedResult();
       return { ok: true, added, revised, notModified: false };
     } catch (error) {
       safeLog('research intake: source failed', source.id, error && error.message);
-      if (!record(source, { ok: false, reason: 'internal error', code: 'internal', ms: ms() })) return unrecordedResult();
+      if (!record(source, { ok: false, reason: 'internal error', code: 'internal', ms: ms(), url: source.url })) return unrecordedResult();
       return failure('internal error', 'internal');
     }
   }
@@ -107,7 +108,7 @@ function createIntake({ store, fetcher, enabled = false, log = () => {}, perTick
   }
 
   async function tick() {
-    if (running) return { ran: 0, skipped: 'busy' };
+    if (running) { lastTickSkipped = 'busy'; return { ran: 0, skipped: 'busy' }; }
     running = true;
     let ran = 0, skipped = '';
     try {
@@ -129,6 +130,7 @@ function createIntake({ store, fetcher, enabled = false, log = () => {}, perTick
       skipped = 'error';
     } finally {
       running = false;
+      lastTickSkipped = skipped;
       try { lastTickAt = new Date(now()).toISOString(); } catch { /* keep the previous value */ }
     }
     return { ran, skipped };
@@ -139,12 +141,12 @@ function createIntake({ store, fetcher, enabled = false, log = () => {}, perTick
     try {
       for (const s of store.listSources()) if (s.status in sources) sources[s.status]++;
       return {
-        enabled: isEnabled(), paused: isPaused(), running, fetchesToday: callsToday(), dailyFetches, lastTickAt, sources,
-        error: now() < holdUntil ? UNRECORDED : '',
+        enabled: isEnabled(), paused: isPaused(), running, fetchesToday: callsToday(), dailyFetches, lastTickAt, lastTickSkipped, sources,
+        error: now() < holdUntil ? UNRECORDED : '', unreadable: false,
       };
     } catch (error) {
       safeLog('research intake: state unreadable', error && error.message);
-      return { enabled: false, paused: true, running, fetchesToday: 0, dailyFetches, lastTickAt, sources: { active: 0, paused: 0, quarantined: 0, retired: 0 }, error: UNREAD };
+      return { enabled: false, paused: true, running, fetchesToday: 0, dailyFetches, lastTickAt, lastTickSkipped, sources: { active: 0, paused: 0, quarantined: 0, retired: 0 }, error: UNREAD, unreadable: true };
     }
   }
 

@@ -29,13 +29,13 @@ const header = (res, name) => {
 function createFetcher({ lookup, transport = https.request } = {}) {
   const vetOptions = lookup ? { lookup } : undefined;
 
-  // One request pinned to `pinned`; resolves { redirect } or a final result, rejects with FetchError or a network error.
+  // One request pinned to the vetted addresses `pinned` (a non-empty list); resolves { redirect } or a final result, rejects with FetchError or a network error.
   function request(url, pinned, headers, maxBytes, track) {
     return new Promise((resolve, reject) => {
       const pin = (_host, options, cb) => {
         if (typeof options === 'function') { cb = options; options = {}; }
-        if (options && options.all) return cb(null, [{ address: pinned.address, family: pinned.family }]);
-        return cb(null, pinned.address, pinned.family);
+        if (options && options.all) return cb(null, pinned.map(({ address, family }) => ({ address, family })));
+        return cb(null, pinned[0].address, pinned[0].family);
       };
       const options = { method: 'GET', host: url.hostname, servername: url.hostname, port: 443, path: url.pathname + url.search,
         lookup: pin, agent: false, headers };
@@ -85,7 +85,7 @@ function createFetcher({ lookup, transport = https.request } = {}) {
       const headers = { 'Accept-Encoding': 'identity', 'User-Agent': USER_AGENT, Accept: 'application/atom+xml, application/rss+xml, application/xml, text/xml' };
       if (hop === 0 && etag) headers['If-None-Match'] = etag;
       if (hop === 0 && lastModified) headers['If-Modified-Since'] = lastModified;
-      const r = await request(url, vetted[0], headers, maxBytes, req => { state.req = req; });
+      const r = await request(url, vetted, headers, maxBytes, req => { state.req = req; });
       if (r.notModified) return { ok: true, status: 304, notModified: true, finalUrl: url.href };
       if (r.redirect === undefined) {
         return { ok: true, status: 200, body: r.body, etag: r.etag, lastModified: r.lastModified, finalUrl: url.href, bytes: r.bytes };

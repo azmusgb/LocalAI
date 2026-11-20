@@ -9,6 +9,9 @@ const { createIntake } = require('../app/research/intake');
 const { createResearchRoutes } = require('../app/server/research');
 const { json, readBody, storageError } = require('../app/server/http');
 
+const dirs = [];
+test.after(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); });
+
 // The seven routes (each is guarded in app/signin.js): GET /api/research/state, POST /api/research/pause,
 // GET /api/research/sources, POST /api/research/sources, POST /api/research/sources/update,
 // POST /api/research/sources/fetch, GET /api/research/documents.
@@ -17,7 +20,9 @@ const ATOM = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><ti
 const T = Date.parse('2026-11-19T15:00:00Z');
 
 function setup({ enabled = true, script } = {}) {
-  const storage = new Storage({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'research-routes-')) });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'research-routes-'));
+  dirs.push(dir);
+  const storage = new Storage({ dataDir: dir });
   const store = createResearchStore({ db: storage.db, now: () => T, timeZone: 'UTC' });
   const calls = [];
   const fetcher = { fetchText: async url => { calls.push(url); return script ? script(url) : { ok: true, status: 200, body: ATOM, finalUrl: url, bytes: ATOM.length }; } };
@@ -25,7 +30,7 @@ function setup({ enabled = true, script } = {}) {
   const routes = createResearchRoutes({ intake, json, readBody, store, storageError });
   return { store, intake, routes, calls };
 }
-const reqOf = body => Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]), { method: 'POST', headers: {} });
+const reqOf = body => Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))]), { method: 'POST', headers: {} });
 function call(handler, body, url = 'http://x/') {
   return new Promise((resolve, reject) => {
     const res = { writeHead(status) { this.status = status; }, end(text) { resolve({ status: this.status, body: text ? JSON.parse(text) : null }); } };
@@ -134,5 +139,59 @@ test('a store that throws is an error status, never an empty list', async () => 
   const { routes: r2, store: st2 } = setup();
   st2.listDocuments = () => { throw new Error('disk I/O error'); };
   const d = await call(r2.apiResearchDocuments, undefined, 'http://x/');
-  assert.ok(d.status >= 500); assert.equal('documents' in d.body, false);
+  assert.equal(d.status, 500); assert.equal('documents' in d.body, false);
+});
+
+const POSTS = [['apiResearchPause', { paused: true }], ['apiResearchSourceAdd', { name: 'n', url: 'https://example.org/f' }],
+  ['apiResearchSourceUpdate', { id: 'x' }], ['apiResearchSourceFetch', { id: 'x' }]];
+
+test('a body that is not valid JSON is 400 on every POST route; too large stays 413', async () => {
+  const { routes } = setup();
+  for (const [name] of POSTS) {
+    const r = await call(routes[name], '{"name": ');
+    assert.equal(r.status, 400, name); assert.ok(r.body.error, name);
+  }
+  const big = await call(routes.apiResearchPause, JSON.stringify({ paused: true, pad: 'x'.repeat(20 * 1024) }));
+  assert.equal(big.status, 413);
+});
+
+test('feature off: a malformed body on a POST is still 409 research is off', async () => {
+  const { routes, calls } = setup({ enabled: false });
+  for (const [name] of POSTS) {
+    const r = await call(routes[name], '{"name": ');
+    assert.equal(r.status, 409, name); assert.deepEqual(r.body, { error: 'research is off' }, name);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test('a document cursor that no longer exists is 410 cursor expired', async () => {
+  const { routes } = setup();
+  const r = await call(routes.apiResearchDocuments, undefined, 'http://x/?before=doc-gone');
+  assert.equal(r.status, 410); assert.deepEqual(r.body, { error: 'cursor expired' });
+});
+
+test('fetch codes error and record_failed are 503; a feed failure stays 502', async () => {
+  const { routes, store, intake } = setup();
+  const { body: { source } } = await call(routes.apiResearchSourceAdd, { name: 'Example', url: FEED });
+  // record_failed: the store refuses to write the fetch row.
+  const real = store.recordFetch;
+  store.recordFetch = () => { throw new Error('database is locked'); };
+  const rec = await call(routes.apiResearchSourceFetch, { id: source.id });
+  assert.equal(rec.status, 503); assert.equal(rec.body.code, 'record_failed');
+  store.recordFetch = real;
+  // error: the source lookup throws inside fetchSource (the intake still reads state fine).
+  const { routes: r2, store: s2 } = setup();
+  const { body: { source: src2 } } = await call(r2.apiResearchSourceAdd, { name: 'Example', url: FEED });
+  s2.getSource = () => { throw new Error('disk I/O error'); };
+  const err = await call(r2.apiResearchSourceFetch, { id: src2.id });
+  assert.equal(err.status, 503); assert.equal(err.body.code, 'error');
+  assert.equal(intake.state().unreadable, false);
+});
+
+test('an unreadable state is flagged by unreadable:true and answered 503 by the flag, not by wording', async () => {
+  const { routes, intake, store } = setup();
+  store.listSources = () => { throw new Error('boom'); };
+  assert.equal(intake.state().unreadable, true);
+  const r = await call(routes.apiResearchState);
+  assert.equal(r.status, 503);
 });

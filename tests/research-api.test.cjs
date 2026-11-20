@@ -7,8 +7,8 @@ const path = require('node:path');
 const { once } = require('node:events');
 const { spawnAppServer } = require('./spawn-server.cjs');
 
-// A spawned server, with and without LOCALAI_RESEARCH=on. No source added here is ever fetched: the tick finds
-// nothing due within the test, and fetching is never asked for. Paths: /api/research/state, /api/research/pause,
+// A spawned server, with and without LOCALAI_RESEARCH=on. The real fetcher would reach the network, so the test pauses
+// the intake before any source exists: a paused intake makes no network call, whatever the tick finds due. Paths: /api/research/state, /api/research/pause,
 // /api/research/sources, /api/research/sources/update, /api/research/sources/fetch, /api/research/documents.
 const JSONH = { 'Content-Type': 'application/json' };
 
@@ -41,6 +41,7 @@ test('with LOCALAI_RESEARCH=on a source can be added, a private address is refus
   const base = await start(t, true);
   const state = await (await fetch(`${base}/api/research/state`)).json();
   assert.equal(state.enabled, true); assert.equal(state.paused, false);
+  assert.equal((await post(base, '/api/research/pause', { paused: true })).status, 200);
   const add = await post(base, '/api/research/sources', { name: 'Example', url: 'https://example.com/feed.atom' });
   assert.equal(add.status, 200);
   const { source } = await add.json();

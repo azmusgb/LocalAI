@@ -146,3 +146,10 @@ test('published needs a four-digit year', () => {
   const f = parseFeed('<feed><entry><id>a</id><updated>1</updated></entry></feed>', base);
   assert.equal(f.entries[0].published, '');
 });
+
+test('a self-closing entry or item is skipped and the next one is read', () => {
+  const atom = parseFeed('<feed><entry/><entry><id>keep</id><title>t</title></entry></feed>');
+  assert.equal(atom.entries.length, 1); assert.equal(atom.entries[0].id, 'keep');
+  const rss = parseFeed('<rss><channel><item/><item><guid>keep</guid><title>t</title></item></channel></rss>');
+  assert.equal(rss.entries.length, 1); assert.equal(rss.entries[0].id, 'keep');
+});

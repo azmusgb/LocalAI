@@ -293,3 +293,48 @@ test('state counts sources by status', async () => {
   assert.deepEqual(ctx.intake.state().sources, { active: 1, paused: 1, quarantined: 1, retired: 1 });
   assert.equal(ctx.intake.state().error, '');
 });
+
+test('state reports why the last tick stopped, and whether the state was readable', async () => {
+  const ctx = setup();
+  assert.equal(ctx.intake.state().lastTickSkipped, ''); assert.equal(ctx.intake.state().unreadable, false);
+  const intake = withStore(ctx, { dueSources: boom });
+  await intake.tick();
+  assert.equal(intake.state().lastTickSkipped, 'error');
+  ctx.intake.setPaused(true);
+  await ctx.intake.tick();
+  assert.equal(ctx.intake.state().lastTickSkipped, 'paused');
+  const broken = withStore(ctx, { listSources: boom });
+  assert.equal(broken.state().unreadable, true);
+});
+
+test('a URL edited while its fetch is in flight: nothing is saved, the new URL stays due, no validators', async () => {
+  const ctx = setup();
+  const s = add(ctx.store);
+  ctx.ctl.script = () => { ctx.store.updateSource(s.id, { url: 'https://example.com/moved.atom' }); return { ok: true, status: 200, body: ATOM, etag: '"e1"', lastModified: 'LM1', finalUrl: 'x', bytes: ATOM.length }; };
+  await ctx.intake.tick();
+  assert.equal(docs(ctx.store, s.id).length, 0);
+  const after = ctx.store.getSource(s.id);
+  assert.equal(after.etag, ''); assert.equal(after.lastModified, ''); assert.equal(after.nextDueAt, ''); assert.equal(after.lastOkAt, '');
+  assert.equal(ctx.store.fetchesToday(), 1);
+  assert.equal(ctx.store.dueSources(5).length, 1);
+});
+
+test('after a URL moves from host A to host B, a redirect back to A is refused', async () => {
+  const { createFetcher } = require('../app/research/fetcher');
+  const ctx = setup();
+  const s = add(ctx.store);
+  const moved = ctx.store.updateSource(s.id, { url: 'https://new.example.org/feed' });
+  const seen = [];
+  const transport = (options, onResponse) => {
+    seen.push(options.host);
+    const { EventEmitter } = require('node:events');
+    const req = new EventEmitter();
+    req.destroy = () => {};
+    req.end = () => setImmediate(() => { const res = new EventEmitter(); res.statusCode = 302; res.headers = { location: 'https://example.com/feed0.atom' }; onResponse(res); });
+    return req;
+  };
+  const fetcher = createFetcher({ lookup: async () => [{ address: '93.184.216.34', family: 4 }], transport });
+  const r = await fetcher.fetchText(moved.url, { allowHosts: [moved.host] });
+  assert.equal(r.ok, false); assert.equal(r.code, 'host_not_allowed');
+  assert.deepEqual(seen, ['new.example.org']);
+});
