@@ -222,3 +222,47 @@ test('stream: a stall mid-answer keeps the text that arrived on the run, marked 
   assert.equal(card.preview.text, run.error, 'the card says it stalled');
   assert.equal(card.badge.label, runCard({ ...run, output: null }).badge.label);
 });
+
+// The browser gives up on a quiet stream after its own wait (app/public/app.js streamChat), which it names in the
+// request (stallMs: the limit it waits for, plus a tenth). A connection that closes once the server has been quiet that
+// long is that stall: the run fails with what arrived, marked stalled, as the server's own stall does. A Stop or a
+// closed tab before then stays cancelled, and so does any close from a request that named no wait.
+function quietModel() {
+  const log = { aborted: 0 };
+  log.local = opts => {
+    let ctl;
+    const body = new ReadableStream({ start(c) { ctl = c; c.enqueue(new TextEncoder().encode(JSON.stringify({ message: { content: 'A mutex ' } }) + '\n')); } });
+    opts.signal?.addEventListener('abort', () => { log.aborted++; try { ctl.error(opts.signal.reason); } catch {} }, { once: true });
+    return Promise.resolve(new Response(body, { status: 200 }));
+  };
+  return log;
+}
+const mutex = extra => ({ messages: [{ role: 'user', content: 'What is a mutex' }], ...extra });
+
+test('stream: the browser giving up after its stated wait records a stall with what arrived, not a cancel', async t => {
+  const model = quietModel();
+  const env = await setup(t, { cloud: false, cloudModels: cloudStub(hanging()), local: model.local });
+  const s = env.send('/api/chat/stream', mutex({ stallMs: 400 }));
+  assert.ok(await until(() => /A mutex/.test(s.text)), 'the first words arrived');
+  await sleep(450); // quiet past the stated wait, as the browser's own timer would be
+  s.abort();
+  const run = await until(() => ['failed', 'cancelled'].includes(env.onlyRun()?.status) && env.onlyRun());
+  assert.equal(run.status, 'failed', JSON.stringify({ status: run.status, error: run.error }));
+  assert.equal(run.error, 'No reply after 0 s');
+  assert.deepEqual(run.output, { text: 'A mutex ', stalled: true });
+  assert.equal(model.aborted, 1, "this PC's model was stopped");
+});
+
+test('stream: a Stop or closed tab before that wait, or with no wait named, stays cancelled', async t => {
+  for (const extra of [{ stallMs: 5000 }, {}, { stallMs: 1 }, { stallMs: 'soon' }]) {
+    const model = quietModel();
+    const env = await setup(t, { cloud: false, cloudModels: cloudStub(hanging()), local: model.local });
+    const s = env.send('/api/chat/stream', mutex(extra));
+    assert.ok(await until(() => /A mutex/.test(s.text)), 'the first words arrived');
+    await sleep(450);
+    s.abort();
+    const run = await until(() => ['failed', 'cancelled'].includes(env.onlyRun()?.status) && env.onlyRun());
+    assert.equal(run.status, 'cancelled', JSON.stringify(extra));
+    assert.equal(run.error, 'Client disconnected');
+  }
+});

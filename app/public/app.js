@@ -297,7 +297,7 @@ async function streamChat({messages,webSearch=false,model,threadId,title,bigger,
   const ac=new AbortController(),lim=releaseState.config?.chatTimeoutMs||18e4,ms=lim*1.1;let t,late;const arm=()=>{clearTimeout(t);t=setTimeout(()=>{late=1;ac.abort()},ms)};
   signal?.aborted?ac.abort():signal?.addEventListener('abort',()=>ac.abort());arm();
   try{
-  const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,webSearch,model,threadId,title,bigger,keepLocal}),signal:ac.signal});
+  const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,webSearch,model,threadId,title,bigger,keepLocal,stallMs:lim}),signal:ac.signal});
   if(!r.ok){const j=await r.json().catch(()=>({}));throw Object.assign(new Error(j.error||`HTTP ${r.status}`),{stalled:j.stalled,runId:j.runId});}
   onOpen?.();
   const reader=r.body.getReader(),decoder=new TextDecoder();

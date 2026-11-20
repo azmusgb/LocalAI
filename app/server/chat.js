@@ -264,6 +264,7 @@ function createChat(ctx) {
     // reply stalled (app/public/app.js streamChat), so the server's own error arrives first while it is alive.
     let idleTimer = null;
     let stalled = false;
+    let lastOut = Date.now(); // when the browser was last sent anything: the start, the headers, each event
     const armIdle = () => {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
@@ -278,11 +279,19 @@ function createChat(ctx) {
       controller = new AbortController();
       activeRunControllers.set(execution.id, controller);
       armIdle();
+      // The browser names the wait after which it gives up on a quiet stream (stallMs, app/public/app.js streamChat). A
+      // close after the server has been quiet that long is that stall: recorded as one (failed, with what arrived), as
+      // the server's own stall is. A Stop or a closed tab sooner, or from a caller that named no wait, is cancelled.
+      const wait = Number(body.stallMs);
       res.on('close', () => {
-        if (!res.writableEnded) {
-          runLedger.cancel(execution.id, 'Client disconnected');
-          if (!controller.signal.aborted) controller.abort(new Error('Client disconnected'));
+        if (res.writableEnded || controller.signal.aborted) return;
+        if (wait >= 100 && wait <= 36e5 && Date.now() - lastOut >= wait) {
+          stalled = true;
+          controller.abort(new Error(`No reply after ${Math.round(wait / 1000)} s`));
+          return;
         }
+        runLedger.cancel(execution.id, 'Client disconnected');
+        controller.abort(new Error('Client disconnected'));
       });
 
       const prep = await prepareChat(body, controller.signal);
@@ -293,6 +302,7 @@ function createChat(ctx) {
       }
       const started = Date.now();
 
+      lastOut = Date.now();
       res.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
@@ -301,6 +311,7 @@ function createChat(ctx) {
       });
 
       const send = (event, data) => {
+        lastOut = Date.now();
         res.write(`event: ${event}\n`);
         res.write(`data: ${JSON.stringify(data)}\n\n`);
       };
