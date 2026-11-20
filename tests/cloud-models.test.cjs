@@ -71,6 +71,24 @@ test('each failure carries its outcome: timeout, rate limit with and without ret
   await assert.rejects(off.chat({ provider: 'groq', model: 'm', messages: [] }), e => e.outcome === 'error' && /unreachable/.test(e.message));
 });
 
+// Stop or a caller that goes away: the request ends at once, with the caller's reason, and is no provider failure.
+test('a caller\'s abort ends the request at once and is not recorded as the provider failing', async t => {
+  let closed = 0;
+  const f = await fake(t, (req, res) => { res.on('close', () => closed++); });
+  const c = createCloudModels({ env: { LOCALAI_GROQ_API_KEY: 'gsk_secret', LOCALAI_GROQ_URL: f.url } });
+  const ac = new AbortController(), reason = new Error('Client disconnected');
+  const asked = c.chat({ provider: 'groq', model: 'm', messages: [], signal: ac.signal });
+  for (let i = 0; i < 100 && !f.calls.length; i++) await new Promise(r => setTimeout(r, 10));
+  const t0 = Date.now();
+  ac.abort(reason);
+  await assert.rejects(asked, e => e === reason);
+  assert.ok(Date.now() - t0 < 1000, `ended after ${Date.now() - t0} ms`);
+  for (let i = 0; i < 100 && !closed; i++) await new Promise(r => setTimeout(r, 10));
+  assert.equal(closed, 1, 'the provider saw the request end');
+  assert.equal(c.status().groq.lastError, null);
+  assert.equal(c.parked().groq, undefined);
+});
+
 test('no key: refused before any request', async () => {
   const c = createCloudModels({ env: {} });
   await assert.rejects(c.chat({ provider: 'groq', model: 'm', messages: [] }), /no key/i);

@@ -183,3 +183,46 @@ test('attempts: the list is capped', () => {
   const many = Array.from({ length: 9 }, () => ({ provider: 'groq', model: 'm', outcome: 'timeout', ms: 1 }));
   assert.equal(c.local(r, 'q', many).attempts.length, 5);
 });
+
+// Stop, or a caller that goes away: run() passes its signal to each cloud call, and an abort ends it there: no next
+// cloud model, no fall-through to this PC.
+test('an abort during a cloud call ends run() with the reason and tries nothing else', async () => {
+  const calls = [];
+  const cloudModels = {
+    keys: () => ({ groq: true, cerebras: true }), parked: () => ({}),
+    chat: req => { calls.push(req); return new Promise((_, reject) => req.signal?.addEventListener('abort', () => reject(req.signal.reason), { once: true })); },
+  };
+  const c = createCoordinator({ modelRouter, cloudModels, routingSetting: () => ({ cloud: true }), env: {} });
+  const ac = new AbortController(), reason = new Error('Cancelled by user');
+  const ran = c.run(c.route({ kind: 'plan', text: 'x' }), msgs, { kind: 'plan', signal: ac.signal });
+  await new Promise(r => setTimeout(r, 20));
+  ac.abort(reason);
+  const outcome = await Promise.race([ran.then(() => 'returned', e => e), new Promise(r => setTimeout(() => r('still waiting'), 500))]);
+  assert.equal(outcome, reason);
+  assert.equal(calls.length, 1, 'the next cloud model is not asked');
+  assert.ok(calls[0].signal, 'the call got the signal');
+  await assert.rejects(c.run(c.route({ kind: 'plan', text: 'x' }), msgs, { kind: 'plan', signal: ac.signal }), e => e === reason);
+  assert.equal(calls.length, 1, 'an already-aborted run asks no one');
+});
+
+// A Stop is never listed as a failed cloud try: the route a run records names only what the cloud did.
+test('attempts: a Stop during a cloud call is not recorded; the try before it still is', async () => {
+  let n = 0;
+  const cloudModels = {
+    keys: () => ({ groq: true, cerebras: true }), parked: () => ({}),
+    chat: req => (n++ === 0
+      ? Promise.reject(Object.assign(new Error('Groq: timed out'), { outcome: 'timeout' }))
+      : new Promise((_, reject) => req.signal?.addEventListener('abort', () => reject(req.signal.reason), { once: true }))),
+  };
+  const c = createCoordinator({ modelRouter, cloudModels, routingSetting: () => ({ cloud: true }), env: {} });
+  const ac = new AbortController(), tried = [];
+  const ran = c.run(c.route({ kind: 'plan', text: 'x' }), msgs, { kind: 'plan', signal: ac.signal, attempts: tried });
+  await new Promise(r => setTimeout(r, 20));
+  ac.abort(new Error('Cancelled by user'));
+  await assert.rejects(ran, /Cancelled by user/);
+  assert.deepEqual(tried.map(a => [a.provider, a.outcome]), [['groq', 'timeout']], 'only the timeout, not the Stop');
+  const before = new AbortController(); before.abort(new Error('Client disconnected'));
+  const none = [];
+  await assert.rejects(c.run(c.route({ kind: 'plan', text: 'x' }), msgs, { kind: 'plan', signal: before.signal, attempts: none }), /Client disconnected/);
+  assert.deepEqual(none, []);
+});

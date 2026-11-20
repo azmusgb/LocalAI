@@ -76,19 +76,22 @@ function createCoordinator({ modelRouter, cloudModels, routingSetting, recordAct
     return tried.length ? { ...used, why: `Cloud models didn't answer (${failed(tried)}), so this PC answered`, attempts: tried } : used;
   };
   // The cloud candidates in order; the first answer wins. null: go on to this PC. attempts (optional): an array this
-  // fills with what was tried, so a caller that goes on to this PC can pass it to local().
-  async function run(r, messages, { kind = 'plan', maxTokens, attempts = [] } = {}) {
+  // fills with what was tried, so a caller that goes on to this PC can pass it to local(). signal (optional): Stop, or a
+  // caller that went away; it ends the cloud call at once and run() throws its reason, trying nothing else and recording
+  // no attempt for it (a Stop is not a cloud model failing).
+  async function run(r, messages, { kind = 'plan', maxTokens, attempts = [], signal } = {}) {
     const candidates = (r?.order || []).filter(c => c.provider !== 'ollama');
     if (!candidates.length || r.class !== 'shareable' || routingSetting().cloud !== true) return null;
     const hidden = extra(), out = (Array.isArray(messages) ? messages : []).map(m => ({ role: m.role, content: redact(m.content, env, hidden) }));
     const chars = out.reduce((n, m) => n + m.content.length, 0);
     for (const c of candidates) {
+      signal?.throwIfAborted();
       // Logged before the send, so a timeout or a server error still shows that text went out.
       log('model', 'Sent to a cloud model', `${modelRouter.label(c).replace(/^Answered by /, '')} · ${kind} · ${chars.toLocaleString('en-US')} characters`, { provider: c.provider, model: c.model, kind, chars });
       let answer = null;
       const t0 = now(), tried = outcome => { if (attempts.length < MAX_ATTEMPTS) attempts.push({ provider: c.provider, model: c.model, outcome, ms: Math.max(0, now() - t0) }); };
-      try { answer = await cloudModels.chat({ provider: c.provider, model: c.model, messages: out, ...(maxTokens ? { maxTokens } : {}) }); }
-      catch (e) { tried(outcomeOf(e)); log('model', 'Cloud model unavailable', redact(String(e?.message || e), env, hidden).slice(0, 180), { provider: c.provider, model: c.model, kind }); continue; }
+      try { answer = await cloudModels.chat({ provider: c.provider, model: c.model, messages: out, ...(maxTokens ? { maxTokens } : {}), ...(signal ? { signal } : {}) }); }
+      catch (e) { signal?.throwIfAborted(); tried(outcomeOf(e)); log('model', 'Cloud model unavailable', redact(String(e?.message || e), env, hidden).slice(0, 180), { provider: c.provider, model: c.model, kind }); continue; }
       if (!answer?.content) { tried('error'); continue; }
       tried('answered');
       const before = attempts.slice(0, -1);
