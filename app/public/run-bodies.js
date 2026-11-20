@@ -78,6 +78,8 @@
   const previewText = p => { try { const v = JSON.parse(p); const t = typeof v === 'string' ? v : v?.text; return typeof t === 'string' ? t : ''; } catch { return ''; } };
   // A stalled reply (c.cut by run id) keeps what came and is marked cut off, with Try again.
   const stalled = (t, lv) => lv?.stall ? { ...t, answer: lv.text, kind: lv.text ? '' : 'error', cut: lv } : t;
+  // Or from the run (output.stalled), after a reload.
+  const cutOf = (c, r) => c.cut.get(r.id) || (r.status === 'failed' && r.output?.stalled ? c.cut.set(r.id, { stall: 1, text: r.output.text || '', err: r.error || 'No reply', prompt: r.input?.prompt || r.title || '' }).get(r.id) : null);
   // Every run of the thread, oldest first, as turns: {key, prompt, answer, kind}. kind: '' | 'wait' | 'error' | 'live'.
   function turnsOf(c) {
     const runs = c.runs.some(r => r.id === c.run?.id) || !c.run ? c.runs : [...c.runs, c.run];
@@ -85,7 +87,7 @@
     for (const r of sortRuns(runs)) {
       const prompt = r.input?.prompt || r.title || '';
       let answer = '', kind = '', lost = false;
-      const o = r.output, lv = live && live.runId === r.id ? live : c.cut.get(r.id);
+      const o = r.output, lv = live && live.runId === r.id ? live : cutOf(c, r);
       if (o && o.truncated) { answer = c.lib.get(r.id) || previewText(o.preview); if (!answer) { answer = 'This answer was too long to keep here.'; lost = true; } }
       else answer = typeof o === 'string' ? o : o?.text || '';
       if (!answer && lv) answer = lv.text;
@@ -177,7 +179,7 @@
   async function sendReply(c, again) {
     if (c.live?.streaming) return;
     const text = (again || c.input.value).trim(); if (!text) return;
-    const messages = [...history(c), { role: 'user', content: text }].slice(-16);
+    const messages = [...history(c), { role: 'user', content: text }].slice(-16), known = new Set(c.runs.map(r => r.id));
     const live = c.live = { prompt: text, text: '', runId: '', streaming: true, err: '', controller: new AbortController() };
     if (!again) { c.input.value = ''; grow(c); } showError(c, ''); paint(c);
     const sc = scroller(c); if (sc) sc.scrollTop = sc.scrollHeight;
@@ -190,18 +192,28 @@
     } catch (e) {
       if (e.name !== 'AbortError') {
         live.err = e.message || 'The reply could not be sent.';
-        const unsent = !live.text && !live.runId, said = e.stalled ? live.err : `The reply could not be sent: ${live.err}`;
-        // A started reply that stalled is marked on its turn. One that never started goes back to the box, unless the person has typed something new meanwhile: then Try again offers it.
-        if (e.stalled && live.runId) { live.stall = 1; c.cut.set(live.runId, live); }
-        else if (unsent && !c.input.value.trim()) { c.input.value = text; grow(c); showError(c, said); }
-        else showError(c, said, unsent ? text : '');
-        if (unsent) c.live = null;
+        live.runId ||= e.runId || ''; live.stall = e.stalled;
+        const unsent = !live.text && !live.runId, said = `The reply could not be sent: ${live.err}`;
+        // One that never started goes back to the box, unless the person has typed something new meanwhile: then Try again offers it.
+        if (!live.stall) {
+          if (unsent && !c.input.value.trim()) { c.input.value = text; grow(c); showError(c, said); }
+          else showError(c, said, unsent ? text : '');
+          if (unsent) c.live = null;
+        }
       }
     } finally {
       live.streaming = false; paint(c);
-      if (c.live === live && !live.text && !live.runId) c.live = null;
+      if (c.live === live && !live.text && !live.runId && !live.stall) c.live = null;
       await loadThread(c);
-      document.getElementById('runLiveRegion')?.replaceChildren(document.createTextNode(live.stall ? live.err : live.err ? 'The reply failed.' : 'Reply ready.'));
+      let say = live.err ? 'The reply failed.' : 'Reply ready.';
+      // A stall goes on its run's turn: the one named, else the new run with this question; with none, back to the box.
+      if (live.stall) {
+        live.runId ||= c.runs.find(r => !known.has(r.id) && r.input?.prompt === text)?.id || '';
+        if (live.runId) { c.cut.set(live.runId, live); say = live.err; }
+        else { if (c.live === live) c.live = null; const back = !c.input.value.trim(); if (back) { c.input.value = text; grow(c); } showError(c, live.err, back ? '' : text); say = live.err + (back ? '. Your question is back in the box.' : '.'); }
+        paint(c);
+      }
+      document.getElementById('runLiveRegion')?.replaceChildren(document.createTextNode(say));
     }
   }
 
@@ -250,6 +262,7 @@
         if (!resolved) throw new Error('The answer could not be started.');
       } catch (e) {
         live.streaming = false;
+        if (e.stalled) resolve(e.runId);
         if (!resolved) { threads.delete(threadId); pending?.fail(e.message || 'Something went wrong.'); throw e; }
         if (e.name !== 'AbortError') live.err = e.message;
         if (e.stalled) { live.stall = 1; c.cut.set(live.runId, live); }

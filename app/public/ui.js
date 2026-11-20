@@ -3558,7 +3558,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
       const more = iconBtn('more', 'More', 'runMoreBtn'); more.setAttribute('aria-haspopup', 'menu'); more.setAttribute('aria-expanded', 'false');
       const menu = document.createElement('div'); menu.className = 'run-menu'; menu.setAttribute('role', 'menu'); menu.hidden = true;
       const item = (label, ok, fn) => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'menuitem'); b.textContent = label; b.disabled = !ok; b.addEventListener('click', () => { closeMenu(); fn(b); }); return b; };
-      menu.append(item('Cancel run', !!run.cancellable && active(run), (b) => cancelRun(run.id, b)), item('Retry', !!run.retryable, (b) => retryRun(run.id, b)));
+      menu.append(item('Cancel run', !!run.cancellable && active(run), (b) => cancelRun(run.id, b)), item('Try again', !!run.retryable, (b) => retryRun(run.id, b)));
       more.addEventListener('click', () => { const open = menu.hidden; closeMenu(); if (open) { menu.hidden = false; more.setAttribute('aria-expanded', 'true'); menu.querySelector('button:not(:disabled)')?.focus(); } });
       head.append(info, more, menu);
     }
@@ -3993,15 +3993,15 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
   }
 
   async function retryRun(runId, button) {
-    button.disabled = true; button.textContent = 'Retrying…';
+    button.disabled = true; button.textContent = 'Trying again…';
     try {
       await post('/api/runs/retry', { id: runId });
-      el('runLiveRegion').textContent = 'Retry started.';
+      el('runLiveRegion').textContent = 'Started again.';
       closeRunView();
       await loadRuns(true);
     } catch (error) {
-      el('runLiveRegion').textContent = `Retry failed: ${error.message}`;
-      button.disabled = false; button.textContent = 'Retry';
+      el('runLiveRegion').textContent = `Try again failed: ${error.message}`;
+      button.disabled = false; button.textContent = 'Try again';
     }
   }
 

@@ -482,11 +482,11 @@ await check('history.back() closes the run view, and the back button does the sa
   await drawerOpen().getByRole('button', { name: 'Back' }).click();
   await runPage.waitForSelector('#runDrawerBackdrop:not(.show)', { state: 'attached' });
 });
-await check('the More menu holds Cancel run and Retry', async () => {
+await check('the More menu holds Cancel run and Try again', async () => {
   await openRun('run_img');
   await drawerOpen().getByRole('button', { name: 'More' }).click();
   assert.equal(await runPage.getByRole('menuitem', { name: 'Cancel run' }).count(), 1);
-  assert.equal(await runPage.getByRole('menuitem', { name: 'Retry' }).count(), 1);
+  assert.equal(await runPage.getByRole('menuitem', { name: 'Try again' }).count(), 1);
   await runPage.keyboard.press('Escape'); await closeRun();
 });
 await check('reloading on #run/<running image run> reopens it with its progress bar', async () => {

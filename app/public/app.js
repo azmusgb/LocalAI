@@ -298,7 +298,7 @@ async function streamChat({messages,webSearch=false,model,threadId,title,bigger,
   signal?.aborted?ac.abort():signal?.addEventListener('abort',()=>ac.abort());arm();
   try{
   const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,webSearch,model,threadId,title,bigger,keepLocal}),signal:ac.signal});
-  if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
+  if(!r.ok){const j=await r.json().catch(()=>({}));throw Object.assign(new Error(j.error||`HTTP ${r.status}`),{stalled:j.stalled,runId:j.runId});}
   onOpen?.();
   const reader=r.body.getReader(),decoder=new TextDecoder();
   let buf='',runId='',content='';

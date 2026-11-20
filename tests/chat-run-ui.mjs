@@ -42,6 +42,7 @@ async function open(viewport, hash, { runs = [], library = [], answers = {}, sto
       window.__reqs.push(JSON.parse(opts.body));
       if (mode === 'nometa') return Promise.resolve(new Response('event: token\ndata: {"text":"hi"}\n\nevent: done\ndata: {"elapsedMs":1}\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } }));
       if (mode === 'holdfail') return new Promise(res => { window.__failReq = () => res(new Response(JSON.stringify({ error: 'No model is loaded' }), { status: 503, headers: { 'Content-Type': 'application/json' } })); });
+      if (mode === 'stall504') return Promise.resolve(new Response(JSON.stringify({ error: 'No reply after 180 s', runId: 'run-pre-1', stalled: true }), { status: 504, headers: { 'Content-Type': 'application/json' } }));
       if (mode === 'fail') return Promise.resolve(new Response(JSON.stringify({ error: 'No model is loaded' }), { status: 503, headers: { 'Content-Type': 'application/json' } }));
       let ctl; const enc = new TextEncoder();
       const rs = new ReadableStream({ start(c) { ctl = c; } });
@@ -214,7 +215,7 @@ await check('a reply never sends the "too long to keep" placeholder to the model
   await page.context().close();
 });
 
-for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) await check(`${tag}: a failed chat run is not a dead end: the reply box works and More offers Retry`, async () => {
+for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) await check(`${tag}: a failed chat run is not a dead end: the reply box works and More offers Try again`, async () => {
   const f = run(1, 'why is the sky blue', '', { status: 'failed', output: null }); f.error = 'The model stopped answering'; f.retryable = true;
   const page = await open(vp, '#home', { runs: [f] });
   await page.evaluate(id => window.LocalAIRuns.show(id), f.id);
@@ -222,7 +223,7 @@ for (const [tag, vp] of [['390x844', phone], ['1280x860', desk]]) await check(`$
   assert.equal(await page.locator('#runReply').isVisible(), true);
   assert.equal(await page.locator('#runReply').isEnabled(), true);
   await page.locator('#runMoreBtn').click();
-  assert.equal(await page.locator('.run-menu button', { hasText: 'Retry' }).isEnabled(), true);
+  assert.equal(await page.locator('.run-menu button', { hasText: 'Try again' }).isEnabled(), true);
   await page.keyboard.press('Escape');
   await page.locator('#runReply').fill('try again please'); await page.locator('#runReply').press('Enter');
   await page.waitForFunction(() => window.__reqs.length === 1, null, T);
@@ -495,7 +496,48 @@ await check('a stream that never starts says "No reply after N s" in the pending
   await page.context().close();
 });
 
-await check('a reply that stalls before it starts goes back to the box with the stall message', async () => {
+// A stall before the stream starts. The server records the run at once, so the thread has it: the stall goes on that
+// run's turn (the question once, not back in the box, no notice below). Only when no run was recorded does the question go
+// back to the box.
+const fourth = (status, o = {}) => { const r = run(4, 'fourth question', '', { id: 'run-pre-1', status }); r.output = o.output ?? null; r.error = o.error; return r; };
+const once = async page => {
+  assert.equal(await page.locator('#runDrawer .chat-turn--user', { hasText: 'fourth question' }).count(), 1, 'the question once');
+  assert.equal(await page.locator('#runReply').inputValue(), '', 'not back in the box');
+  assert.equal(await page.locator('#runDrawer .chat-body__error').isVisible(), false, 'no notice below');
+};
+await check("the server's stall before the stream starts marks that run's turn, once", async () => {
+  const page = await open(desk, '#home', { runs: three(), stream: 'stall504' });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  page.db.runs.push(fourth('failed', { output: { text: '', stalled: true }, error: 'No reply after 180 s' }));
+  await page.locator('#runReply').fill('fourth question'); await page.locator('#runReply').press('Enter');
+  await cut(page).waitFor(T);
+  await page.waitForTimeout(300);
+  assert.equal(await cut(page).innerText(), 'No reply after 180 s Try again');
+  await once(page);
+  assert.equal(await page.locator('#runLiveRegion').textContent(), 'No reply after 180 s');
+  assert.equal(page.errors.length, 0, page.errors.join('|'));
+  await page.context().close();
+});
+
+await check('the browser giving up before the stream starts marks the run the server recorded, once', async () => {
+  const page = await open(desk, '#home', { runs: three(), chatTimeoutMs: 1000 });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  await page.locator('#runReply').fill('fourth question'); await page.locator('#runReply').press('Enter');
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  page.db.runs.push(fourth('cancelled', { error: 'Client disconnected' })); // what the server makes of the closed request
+  await cut(page).waitFor(T);
+  await page.waitForTimeout(300);
+  assert.equal(await cut(page).innerText(), 'No reply after 1 s Try again');
+  assert.equal(await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Stopped.' }).count(), 0);
+  await once(page);
+  await cut(page).getByRole('button', { name: 'Try again' }).click();
+  await page.waitForFunction(() => window.__reqs.length === 2, null, T);
+  assert.equal((await reqs(page))[1].messages.filter(m => m.content === 'fourth question').length, 1);
+  assert.equal(page.errors.length, 0, page.errors.join('|'));
+  await page.context().close();
+});
+
+await check('a stall before the stream starts with no run recorded puts the question back in the box and says so', async () => {
   const page = await open(desk, '#home', { runs: three(), chatTimeoutMs: 1000 });
   await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
   await page.locator('#runReply').fill('fourth question'); await page.locator('#runReply').press('Enter');
@@ -504,6 +546,26 @@ await check('a reply that stalls before it starts goes back to the box with the 
   assert.equal(await page.locator('#runReply').inputValue(), 'fourth question');
   assert.equal(await page.locator('#runDrawer .chat-body__error').innerText(), 'No reply after 1 s');
   assert.equal(await page.locator('#runDrawer .chat-turn--user', { hasText: 'fourth question' }).count(), 0);
+  assert.equal(await page.locator('#runLiveRegion').textContent(), 'No reply after 1 s. Your question is back in the box.');
+  assert.equal(page.errors.length, 0, page.errors.join('|'));
+  await page.context().close();
+});
+
+// A stalled run keeps its part answer on the server (output.stalled): opened later, it reads the same.
+await check('a stalled run opened later shows what arrived, the stall and Try again; Try again asks once', async () => {
+  const stalledRun = run(4, 'fourth question', '', { id: 'run-old-stall', status: 'failed' });
+  stalledRun.output = { text: 'A mutex ', stalled: true }; stalledRun.error = 'No reply after 180 s';
+  const page = await open(desk, '#home', { runs: [...three(), stalledRun] });
+  await page.evaluate(id => window.LocalAIRuns.show(id), 'run-old-stall');
+  await cut(page).waitFor(T);
+  const turn = page.locator('#runDrawer .chat-turn--assistant', { has: page.locator('.chat-turn__cut') });
+  assert.match(await turn.innerText(), /^A mutex\s+No reply after 180 s Try again$/);
+  await cut(page).getByRole('button', { name: 'Try again' }).click();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'runReply');
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  const sent = (await reqs(page))[0].messages;
+  assert.equal(sent.filter(m => m.content === 'fourth question').length, 1);
+  assert.ok(!sent.some(m => m.content.includes('A mutex')), 'no part answer');
   assert.equal(page.errors.length, 0, page.errors.join('|'));
   await page.context().close();
 });
