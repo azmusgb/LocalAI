@@ -63,6 +63,20 @@ test('wrappedQuestion finds only a question that ends a prompt after other text'
     assert.equal(wrappedQuestion(plain), null, JSON.stringify(plain));
 });
 
+test('wrappedQuestion takes linear time on long and pathological prompts', () => {
+  const { wrappedQuestion } = require('../app/prompt-title');
+  const inputs = ['\n \n'.repeat(17000), ' '.repeat(50000), `x${'\n \t\n'.repeat(12000)}question:${' '.repeat(20000)}`,
+    `${'Facts. '.repeat(8000)}\n\n${'\n'.repeat(20000)}Question:${' \t'.repeat(10000)}`, `x\n\n${'question: '.repeat(5000)}`];
+  for (const input of inputs) {
+    const t = process.hrtime.bigint();
+    wrappedQuestion(input);
+    const ms = Number(process.hrtime.bigint() - t) / 1e6;
+    assert.ok(ms < 50, `${input.length} characters took ${ms.toFixed(1)} ms`);
+  }
+  // A question still counts after a long prompt (Pi Hub's facts run to thousands of characters).
+  assert.equal(wrappedQuestion(`${INSTRUCTIONS}\n\nFacts:\n${'Movies drive: off.\n'.repeat(2000)}\nQuestion: ${QUESTION}`), QUESTION);
+});
+
 // ---- the one-time repair of stored entries ----
 const { repairPromptTitles, REPAIR_KEY } = require('../app/journal-repair');
 

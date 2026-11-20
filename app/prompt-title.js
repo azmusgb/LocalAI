@@ -11,11 +11,18 @@ function titleFromText(value, fallback = 'Untitled') {
 
 // The owner's question inside a prompt that wraps it in instructions, else null. A caller such as Pi Hub's House
 // question sends one user message: "You are … Answer …\n\nFacts:\n…\n\nQuestion: <what was asked>". Only a last
-// paragraph that starts "Question:" after other text counts, so an ordinary message is never cut.
+// paragraph of one line that starts "Question:", after other text, counts, so an ordinary message is never cut.
+// Linear time: only the prompt's tail is read, split into lines, and the one pattern is anchored to a trimmed line.
+const QUESTION_TAIL = 4000;
 function wrappedQuestion(prompt) {
   if (typeof prompt !== 'string') return null;
-  const m = prompt.replace(/\r\n?/g, '\n').match(/\S[\s\S]*?\n[ \t]*\n[ \t]*question:[ \t]*([^\n]*\S)[ \t]*\s*$/i);
-  const q = m ? m[1].trim() : '';
+  const lines = prompt.slice(-QUESTION_TAIL).replace(/\r\n?/g, '\n').split('\n').map(l => l.trim());
+  let end = lines.length - 1;
+  while (end >= 0 && !lines[end]) end--; // trailing blank lines
+  if (end < 2 || lines[end - 1]) return null; // the question line must follow a blank line
+  if (!lines.slice(0, end - 1).some(Boolean)) return null; // with other text before it
+  const m = /^question:[ \t]*(\S.*)$/is.exec(lines[end]);
+  const q = m ? m[1] : '';
   return q && !/^question:/i.test(q) ? q : null;
 }
 
