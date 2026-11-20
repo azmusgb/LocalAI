@@ -921,7 +921,7 @@ function commandPalette(){
     const seq=journal.seq;
     journal.timer=setTimeout(async()=>{
       const ctrl=new AbortController();journal.ctrl=ctrl;let next;
-      try{const j=await LocalAIUI.fetchJson(`/api/journal?q=${encodeURIComponent(q)}&limit=5`,{signal:ctrl.signal});if(!Array.isArray(j.items))throw new Error('unreadable reply');next={state:'ok',items:j.items.filter(e=>e&&inApp(e.link)).slice(0,5)}}
+      try{const j=await LocalAIUI.fetchJson(`/api/journal?q=${encodeURIComponent(q)}&limit=5&linked=1`,{signal:ctrl.signal});if(!Array.isArray(j.items))throw new Error('unreadable reply');next={state:'ok',items:j.items.filter(e=>e&&inApp(e.link)).slice(0,5)}}
       catch{next={state:'error',items:[]}} // its own state, never "no results"
       if(seq!==journal.seq)return;
       journal.ctrl=null;Object.assign(journal,next);render(true);

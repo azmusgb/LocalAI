@@ -41,6 +41,16 @@
     const el=document.getElementById(id);if(!el)return;
     el.innerHTML=`${el.hasAttribute('data-part')?'':'Sources: '}${esc(name)}: <span class="ui-chip ui-chip--${SOURCE_WORD[tone]?tone:'unknown'}">${SOURCE_WORD[tone]||'Not read yet'}</span>${when?` ${esc(when)}`:''}`;
   }
+  // A failed refresh (DESIGN: stale), in the kit's words. since: last good read (Date), true (none yet) or null (clear).
+  // Written only on a change, so the status region isn't announced again on each failed poll.
+  // A fixed time, never a running age (the region would be announced again each minute); another day's adds the day.
+  const clockOf=d=>(d.toDateString()===new Date().toDateString()?'':d.toLocaleDateString([],{weekday:'short'})+' ')+d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  function staleNotice(id,{name="Local AI's run list",what='runs',missing='',since=null}={}){
+    const el=document.getElementById(id);if(!el)return;
+    const K=window.ApplianceNeeds,down=(K?.PHRASES?.source_down||"{name} isn't answering").replace('{name}',name);
+    const text=!since?'':since instanceof Date?`${down}. Showing ${what} from ${clockOf(since)}.`:`${down}, so ${missing} may be incomplete.`;
+    if(el.textContent!==text)el.textContent=text;el.hidden=!text;
+  }
   // The one approval sheet for risky actions. ask({title,effect,confirmLabel,tone,typed,input}) -> {ok,value?}.
   // tone: default|danger|host. typed: a word to type before Confirm enables. input: {label,type,placeholder} collects a value.
   // select: {label,options:[{value,label}],value?} replaces input with a chooser; the chosen value comes back in `value`.
@@ -99,7 +109,7 @@
   window.LocalAIUI=Object.assign(window.LocalAIUI||{},{refocus,announce,rateAnswer});
   // One card for every run, whatever its kind: icon, title, summary, status badge, a bar while active, the preview, one action.
   // item is a /api/runs list item; item.card (from the server) says what to show. onOpen(item) opens the run view.
-  const ACTIVE=new Set(['queued','running','streaming','awaiting_approval']);
+  const ACTIVE=new Set(['queued','running','streaming','awaiting_approval']),LIVE_RUN=new Set(['queued','running','streaming']);
   function runPreview(p){
     if(!p)return null;
     const box=document.createElement('div');box.className='run-card__preview run-card__preview--'+p.type;
@@ -118,7 +128,8 @@
     }else if(p.text)box.textContent=p.text;else return null;
     return box;
   }
-  function runCard(item,{onOpen,rowOpen=false}={}){
+  // stale: the list's last read failed: a running run is unknown (A28).
+  function runCard(item,{onOpen,rowOpen=false,stale=false}={}){
     item=item||{};
     const kit=window.LocalAIKit,c=item.card||{kind:'other',icon:'system',title:item.title||'Untitled run',summary:item.summary||'',badge:kit?kit.statusBadge(item.status):{label:'',tone:'neutral'},preview:null,action:{label:'Open'},approval:null};
     const row=document.createElement('div');row.className='list-row run-card';row.dataset.runId=item.id||'';row.dataset.kind=c.kind||'';
@@ -132,12 +143,13 @@
     // The summary shows once: a preview that repeats it (or extends a truncated copy of it) is dropped.
     const plain=t=>String(t||'').replace(/(\.\.\.|…)\s*$/,'').replace(/\s+/g,' ').trim(),pt=plain(c.preview&&c.preview.text),sm=plain(c.summary),dup=pt&&sm&&(pt===sm||pt.startsWith(sm)||sm.startsWith(pt));
     const pv=dup?null:runPreview(c.preview);if(pv)main.appendChild(pv);
-    if(ACTIVE.has(item.status)){const bar=document.createElement('div');bar.className='run-card__bar';bar.setAttribute('role','progressbar');bar.setAttribute('aria-label','Progress');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');
+    const unknown=stale&&LIVE_RUN.has(item.status);
+    if(ACTIVE.has(item.status)&&!unknown){const bar=document.createElement('div');bar.className='run-card__bar';bar.setAttribute('role','progressbar');bar.setAttribute('aria-label','Progress');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');
       const pct=Math.max(0,Math.min(100,Number(item.progress)||0));bar.setAttribute('aria-valuenow',String(pct));const fill=document.createElement('span');fill.style.setProperty('--progress',pct+'%');bar.appendChild(fill);main.appendChild(bar)}
     const act=document.createElement('button');act.type='button';act.className='btn-primary run-card__action';act.textContent=(c.action&&c.action.label)||'Open';
     act.addEventListener('click',e=>{e.stopPropagation();open()});main.appendChild(act);
     const trail=document.createElement('div');trail.className='list-row__trail';
-    const b=document.createElement('span');b.className='badge badge--'+((c.badge&&c.badge.tone)||'neutral');b.textContent=(c.badge&&c.badge.label)||'';trail.appendChild(b);
+    const b=document.createElement('span');b.className=unknown?'ui-chip ui-chip--unknown':'badge badge--'+((c.badge&&c.badge.tone)||'neutral');b.textContent=unknown?window.ApplianceNeeds?.WORDS?.state?.unknown||'Unknown':(c.badge&&c.badge.label)||'';trail.appendChild(b);
     row.append(ico,main,trail);
     // rowOpen: the whole row is the tap target, and the title is the one keyboard stop (a button whose ::after covers the row).
     if(rowOpen){const btn=document.createElement('button');btn.type='button';btn.className='work-open';btn.textContent=title.textContent;title.textContent='';title.appendChild(btn);btn.addEventListener('click',e=>{e.stopPropagation();open()})}
@@ -258,7 +270,7 @@
     if(m.target.dataset?.runList||[...m.removedNodes].some(n=>n.classList?.contains('run-card')))boxes.add(m.target);
     for(const n of m.addedNodes){if(n.nodeType!==1)continue;if(n.classList.contains('run-card'))boxes.add(m.target);else n.querySelectorAll('.run-card').forEach(c=>boxes.add(c.parentElement))}}
     boxes.forEach(markRunList)}).observe(document.documentElement,{subtree:true,childList:true});
-  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{approvalSheet,plate,sources,toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,showSheet,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
+  window.LocalAIUI=Object.assign(window.LocalAIUI||{},{approvalSheet,plate,sources,staleNotice,toast,hideToast:()=>{const t=document.getElementById('toast');if(t)hideToast(t)},fetchJson,loadInto,ask,runCard,sheetHistory,showSheet,afterSheetPop,sheetLive,dropStaleSheet,registerRunBody,runBodyFor,runBodyUpdateFor});
 })();
 // Pull to refresh (touch only): on a list page that registered a refresh, a finger pulling down from the very top by
 // more than 64px refreshes the page once; a small status line says "Updating…", then "Updated just now".

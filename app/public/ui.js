@@ -1028,7 +1028,7 @@ function buildDesktopNav(){
 function buildContext(){
  const main=q('main');if(!main||q('#uxContextBar'))return;
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
- bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><small id="uxContextGreeting"></small><strong>Local AI</strong></span></span><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" aria-label="Needs you, nothing waiting">'+icon('bell','ux-ico')+'<span>Needs you</span><b id="uxInboxCount">0</b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search pages and past work">'+icon('search','ux-ico')+'<span>Search pages and past work</span><kbd>⌘K</kbd></button></div>';
+ bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><small id="uxContextGreeting"></small><strong>Local AI</strong></span></span><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" data-state="checking" aria-label="Needs you, checking">'+icon('bell','ux-ico')+'<span>Needs you</span><b id="uxInboxCount"></b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search pages and past work">'+icon('search','ux-ico')+'<span>Search pages and past work</span><kbd>⌘K</kbd></button></div>';
  main.prepend(bar);
  // "← Pi Hub" (the kit's back bar, Pi Hub A22 6.4) is the first thing in the page, with Pi Hub's address in the markup. This keeps it
  // in step with the tool registry, and a visitor who came from a Pi Hub page goes back to that page (the kit's backbar.js).
@@ -1043,7 +1043,9 @@ function buildContext(){
  // The bell (navigation update, 2 Nov): one place on every page, its badge the number Home's Needs you shows (home.js
  // sends it from any page); it opens Home at Needs you. The Inbox is history, with no badge of its own.
  const bell=q('#uxInboxBtn');
- window.addEventListener('localai:needs-count',e=>{const n=Math.max(0,Number(e.detail?.n)||0);if(!bell)return;bell.dataset.empty=String(n===0);q('#uxInboxCount').textContent=String(n);bell.setAttribute('aria-label',n?`Needs you, ${n} waiting`:'Needs you, nothing waiting')});
+ // Not read yet: checking, no badge; a failed read: "?". Never "nothing waiting" (A28). detail: {n} or {state}.
+ const BELL={checking:'Needs you, checking',unavailable:"Needs you, couldn't check"};
+ window.addEventListener('localai:needs-count',e=>{if(!bell)return;const s=BELL[e.detail?.state]?e.detail.state:'ok',n=Math.max(0,Number(e.detail?.n)||0);bell.dataset.state=s;bell.dataset.empty=String(s==='checking'||(s==='ok'&&n===0));q('#uxInboxCount').textContent=s==='ok'?String(n):s==='unavailable'?'?':'';bell.setAttribute('aria-label',s!=='ok'?BELL[s]:n?`Needs you, ${n} waiting`:'Needs you, nothing waiting')});
  bell?.addEventListener('click',()=>{navigate('home');requestAnimationFrame(()=>requestAnimationFrame(()=>{const sec=q('#homeNeedsYou'),h=q('#homeNeedsTitle');if(!sec||sec.hidden||!h)return;h.setAttribute('tabindex','-1');h.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});h.focus({preventScroll:true})}))});
 }
 // Agent World's ⋯ menu as an icon in the phone header (its heading is hidden behind the city). It sits beside Search and
@@ -2244,13 +2246,9 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     if (!(view.noteId && document.activeElement?.closest?.('[data-claude-note-form]'))) renderFindings(d.findings);
   }
 
-  // The newest SESSION_OPTIONS sessions (the board sends them newest first), plus the one being viewed if it is older.
-  const SESSION_OPTIONS = 50;
-  function renderSessions(sessions) {
+  function renderSessions(sessions = []) {
     const sel = $('claudeSession');
-    const shown = (sessions || []).slice(0, SESSION_OPTIONS);
-    const picked = view.session && !shown.some((s) => s.id === view.session) && (sessions || []).find((s) => s.id === view.session);
-    if (picked) shown.push(picked);
+    const shown = sessions.filter((s, i) => i < 50 || s.id === view.session);
     const opts = ['<option value="">All sessions</option>', ...shown.map((s) => `<option value="${esc(s.id)}"${s.id === view.session ? ' selected' : ''}>${esc(s.title)} · ${esc(ago(s.updatedAt))}</option>`)];
     const html = opts.join('');
     if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }

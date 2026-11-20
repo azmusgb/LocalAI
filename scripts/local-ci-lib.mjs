@@ -271,6 +271,8 @@ export function mergeShardResults(parts) {
 // suites failed, or [] when there are too many to call it a flake (suitesToRetry).
 export function retryPlan(parts) {
   const owner = new Map();
-  parts.forEach((p, i) => { for (const s of failedBrowserSuites(p.out)) if (!owner.has(s)) owner.set(s, i); });
+  // A part names the worker whose server it ran on (the solo phase runs on worker 0's); its place in the list is only
+  // a fallback for parts that don't say.
+  parts.forEach((p, i) => { for (const s of failedBrowserSuites(p.out)) if (!owner.has(s)) owner.set(s, Number.isInteger(p.worker) ? p.worker : i); });
   return suitesToRetry([...owner.keys()]).map(suite => ({ suite, worker: owner.get(suite) }));
 }

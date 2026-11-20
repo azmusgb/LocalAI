@@ -86,6 +86,57 @@ test('routes that run code, write files or approve changes refuse a caller witho
   assert.ok(report.callers.some(c => c.ip === '10.0.0.37' && c.count >= 17), 'refused requests are still listed');
 });
 
+// The owner's past work (A28 D5/D6) and Claude's queue: reading or deleting journal entries, asking about them, and
+// changing, adding or handing board items to Claude are refused like /api/improve/handoff, which they would bypass.
+test('past work and the Claude queue refuse a caller without a device; a paired device and the Mac key get through', { timeout: 30000 }, async t => {
+  const base = await start(t);
+  const cookie = await pair(base);
+  const lan = viaCaddy('10.0.0.37', IPHONE);
+  const routes = [['GET', '/api/journal?limit=3'], ['POST', '/api/journal/delete', { id: 'j-none' }], ['POST', '/api/journal/ask', { question: 'what did I print' }],
+    ['POST', '/api/improve/item', { id: 'none', action: 'handToClaude' }], ['POST', '/api/improve/idea', { text: 'an idea' }],
+    ['POST', '/api/claude/findings/decision', { id: 'none', status: 'approved' }], ['POST', '/api/improve/handoff', { text: 'x' }],
+    ['POST', '/api/claude/findings/vote', { id: 'none', delta: 1 }], ['POST', '/api/improve/signal', { id: 'none', action: 'promote' }]];
+  const send = (method, route, body, headers) => fetch(`${base}${route}`, method === 'GET' ? { headers } : { method, headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });
+  const refused = { error: 'Sign in on this device first: pair it under Improve › Claude Code.', signIn: true };
+  const got = [];
+  for (const [method, route, body] of routes) {
+    const r = await send(method, route, body, lan);
+    got.push([`${method} ${route}`, r.status, await r.json().catch(() => null)]);
+  }
+  assert.deepEqual(got, routes.map(([method, route]) => [`${method} ${route}`, 401, refused]), 'each route without a device answers like the other guarded routes');
+  // Signed in, the same reads pass (writes are checked on a route that changes nothing: the ids don't exist).
+  const paired = await send('GET', '/api/journal?limit=3', null, viaCaddy('10.0.0.40', IPHONE, { Cookie: cookie }));
+  assert.equal(paired.status, 200, 'a paired device reads past work');
+  assert.ok(Array.isArray((await paired.json()).items));
+  const mac = await send('GET', '/api/journal?limit=3', null, viaCaddy('10.0.0.5', 'python-urllib/3.14', { 'X-LocalAI-Mac-Key': KEY }));
+  assert.equal(mac.status, 200, 'the Mac key reads past work');
+  for (const [method, route, body] of routes.slice(1, 2).concat(routes.slice(3, 4), routes.slice(5, 6))) {
+    assert.notEqual((await send(method, route, body, viaCaddy('10.0.0.40', IPHONE, { Cookie: cookie }))).status, 401, `${method} ${route} paired`);
+  }
+});
+
+// Reporting to the Claude board: the Mac's hooks and Claude sessions send the Mac key; nobody else may file into the queue
+// (an unsigned finding reached /api/claude/priorities and the phone, and could pre-plant an id a session later updates).
+test('reporting to the Claude board needs the Mac key or a device', { timeout: 30000 }, async t => {
+  const base = await start(t);
+  const send = (route, body, headers) => fetch(`${base}${route}`, { method: 'POST', headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });
+  const lan = viaCaddy('10.0.0.37', IPHONE), mac = viaCaddy('10.0.0.5', 'python-urllib/3.14', { 'X-LocalAI-Mac-Key': KEY });
+  const finding = { sessionId: 's', findings: [{ id: 'planted', title: 'Planted', severity: 'high', status: 'approved' }] };
+  const event = { sessionId: 's', events: [{ kind: 'note', title: 'Hello' }] };
+  const got = [];
+  for (const [route, body] of [['/api/claude/findings', finding], ['/api/claude/events', event]]) {
+    const r = await send(route, body, lan);
+    got.push([route, r.status, await r.json().catch(() => null)]);
+  }
+  const refused = { error: 'Sign in on this device first: pair it under Improve › Claude Code.', signIn: true };
+  assert.deepEqual(got, [['/api/claude/findings', 401, refused], ['/api/claude/events', 401, refused]]);
+  assert.deepEqual((await (await fetch(`${base}/api/claude/priorities`)).json()).items ?? [], [], 'nothing reached the queue');
+  assert.equal((await send('/api/claude/findings', { sessionId: 's', findings: [{ id: 'mine', title: 'Mine', status: 'in_progress' }] }, mac)).status, 201);
+  assert.equal((await send('/api/claude/events', event, mac)).status, 201);
+  const board = (await (await fetch(`${base}/api/claude/board`)).json()).findings.map(f => [f.id, f.status]);
+  assert.deepEqual(board, [['mine', 'in_progress']], 'the Mac key files and marks its own work');
+});
+
 test('whoami renews a paired device cookie for all of Local AI; an unpaired one gets nothing', { timeout: 30000 }, async t => {
   const base = await start(t);
   const cookie = await pair(base);

@@ -783,6 +783,7 @@ function createChanges(ctx) {
     const sessionId=urlObj.searchParams.get('session')||'';const limit=Math.max(1,Math.min(500,Number(urlObj.searchParams.get('events'))||150));
     const now=Date.now(),allFindings=claudeFindings();
     const sessions=claudeKeptSessions(storage.listSettings(CLAUDE_SESSION_PREFIX),allFindings).keep.map(s=>claudeSessionView(s,now));
+    if(urlObj.searchParams.get('only')==='sessions')return json(res,200,{sessions}); // Improve's In progress: no events or findings
     const events=storage.listSettings(CLAUDE_EVENT_PREFIX,{limit:sessionId?2000:limit,...(sessionId?{where:{sessionId}}:{})}).slice(0,limit);
     const findings=claudeRanked(allFindings.filter(f=>!sessionId||f.sessionId===sessionId));
     const byStatus={},byCategory={};

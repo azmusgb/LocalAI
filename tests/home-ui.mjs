@@ -219,6 +219,85 @@ await check('Needs you shows only Local AI\'s own rows when Pi Hub doesn\'t answ
   await page.context().close();
 });
 
+await check('a failed Recent refresh keeps the rows but says they are stale; the next good one clears that', async () => {
+  // A28: unreadable is not current. A dead server left Recent on screen as if it had just been read.
+  const live = { ...item('agent', 'Sorting the archive', 60e3), status: 'running', progress: 30 };
+  const page = await open(desk, '#home', { threads: () => [live, ...six().slice(0, 5)] });
+  await page.waitForSelector('#homeRecent2 .run-card', T);
+  const notice = page.locator('#homeRunsNotice'), row = page.locator(`#homeRecent2 [data-run-id="${live.id}"]`);
+  assert.equal(await notice.isHidden(), true, 'no notice while the reads are good');
+  assert.match(await page.locator('#homeSrcRuns').innerText(), /^Local AI's run list:\s+Answering\s+read /);
+  assert.equal(await row.locator('[role="progressbar"]').count(), 1);
+  const dead = u => u.pathname === '/api/runs' && !!u.searchParams.get('threads');
+  await page.route(dead, r => r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Server blew up"}' }));
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await notice.waitFor(T);
+  // One notice on Home for one failed source, in the kit's words; the sources line says which source and when.
+  assert.match(await notice.innerText(), /^Local AI's run list isn't answering\. Showing runs from \d{1,2}:\d{2}\s?[AP]M\.$/);
+  assert.equal(await notice.getAttribute('role'), 'status');
+  assert.equal(await page.locator('#home .ui-notice--warn:visible').count(), 1, 'one notice, not one per list');
+  assert.match(await page.locator('#homeSrcRuns').innerText(), /^Local AI's run list:\s+Not answering\s+last read /);
+  assert.equal(await page.locator('#homeRecent2 .run-card').count(), 6, 'the last rows stay on screen');
+  assert.equal((await row.locator('.list-row__trail').innerText()).trim(), 'Unknown', 'a stale running row is not shown as Working');
+  assert.equal(await row.locator('[role="progressbar"]').count(), 0);
+  await page.unroute(dead);
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await page.waitForSelector('#homeRunsNotice[hidden]', { ...T, state: 'attached' });
+  assert.equal(await row.locator('[role="progressbar"]').count(), 1, 'the bar is back after a good read');
+  assert.match(await page.locator('#homeSrcRuns').innerText(), /Answering/);
+  await page.context().close();
+});
+
+// A28: unreadable is not empty. The bell started at "Needs you, nothing waiting" (badge 0) and kept it until a count came,
+// a failed count read looked the same, and Needs you kept its old rows with no cue when /api/runs failed.
+await check('the bell says checking until Needs you is read, couldn\'t check when the read fails; Needs you says its rows are stale', async () => {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: desk });
+  await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  const page = await ctx.newPage();
+  const fulfil = (r, body, status = 200) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  await page.route(u => ['/api/approvals', '/api/activity'].includes(u.pathname), r => fulfil(r, { items: [] }));
+  await page.route(u => u.pathname === '/api/home/hub-needs', r => fulfil(r, { items: null }));
+  await page.route(u => u.pathname === '/api/improve/items', r => fulfil(r, { items: [], signals: [] }));
+  await page.route(u => u.pathname === '/api/capabilities', r => fulfil(r, capabilities()));
+  let mode = 'hang';
+  const held = [], rows = needs();
+  await page.route(u => u.pathname === '/api/runs', r => {
+    const url = new URL(r.request().url());
+    if (url.searchParams.get('threads')) return fulfil(r, { items: six(), summary: {} });
+    if (mode === 'hang') { held.push(r); return; }
+    return mode === 'fail' ? fulfil(r, { error: 'Server blew up' }, 500) : fulfil(r, { items: rows, summary: {} });
+  });
+  await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.LocalAIHome && document.querySelector('#uxInboxBtn'), null, T);
+  await page.waitForTimeout(500);
+  const bell = page.locator('#uxInboxBtn'), badge = page.locator('#uxInboxCount'), notice = page.locator('#homeRunsNotice');
+  assert.equal(await bell.getAttribute('aria-label'), 'Needs you, checking', 'not "nothing waiting" before the count is read');
+  assert.equal(await badge.isVisible(), false, 'no badge while checking');
+  mode = 'fail';
+  for (const r of held.splice(0)) await fulfil(r, { error: 'Server blew up' }, 500);
+  await page.waitForFunction(() => document.querySelector('#uxInboxBtn').getAttribute('aria-label') === "Needs you, couldn't check", null, T);
+  assert.equal(await badge.innerText(), '?');
+  assert.equal(await badge.isVisible(), true, 'the badge says the count is unknown');
+  await notice.waitFor(T);
+  assert.equal(await notice.innerText(), "Local AI's run list isn't answering, so Needs you may be incomplete.");
+  assert.equal(await page.locator('#homeNeedsCount').textContent(), '', 'no number on Needs you while the faceplate says couldn\'t check');
+  assert.match((await page.locator('#homePlate .ui-readout').innerText()).trim(), /^—\s*couldn't check$/, 'no count on the faceplate, and why');
+  mode = 'ok';
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await page.waitForFunction(() => /^Needs you, \d+ waiting$/.test(document.querySelector('#uxInboxBtn').getAttribute('aria-label')), null, T);
+  assert.equal(await notice.isHidden(), true, 'a good read clears the notice');
+  const n = await page.locator('#homeNeedsList .ui-need').count();
+  assert.ok(n > 0);
+  mode = 'fail';
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await notice.waitFor(T);
+  assert.match(await notice.innerText(), /^Local AI's run list isn't answering\. Showing runs from \d{1,2}:\d{2}\s?[AP]M\.$/);
+  assert.equal(await page.locator('#homeNeedsList .ui-need').count(), n, 'the last rows stay');
+  assert.equal(await page.locator('#homeNeedsCount').textContent(), '', 'stale rows are not counted');
+  assert.equal(await bell.getAttribute('aria-label'), "Needs you, couldn't check");
+  await ctx.close();
+});
+
 await check('Recent and Needs you show a run summary once, not again as preview text', async () => {
   const dup = (title, o) => { const r = item('chat', title, 5 * 60e3, o); r.card.preview = { type: 'text', text: 'The answer is forty-two, as computed by Deep Thought.' }; r.card.summary = 'The answer is forty-two'; return r; };
   const a = dup('Meaning of life'), f = dup('Failed meaning', { status: 'failed' });

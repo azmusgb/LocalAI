@@ -160,7 +160,7 @@ test('a run card says where the answer came from', () => {
   const { runCard } = require('../app/run-cards');
   const cloud = runCard({ type: 'research', status: 'completed', meta: { route: { provider: 'groq', model: 'llama-3.3-70b-versatile', class: 'shareable', why: 'Not private: research about public topics' } } });
   assert.deepEqual(cloud.route, { text: 'Answered by Llama 3.3 70B · Groq', why: 'Not private: research about public topics' });
-  const local = runCard({ type: 'chat', status: 'completed', meta: { route: { provider: 'ollama', model: 'qwen3', class: 'private', why: 'It looks personal (health, money or identity)' } } });
+  const local = runCard({ type: 'chat', status: 'completed', meta: { route: { provider: 'ollama', model: 'qwen3', class: 'private', why: 'It looks personal (health, money, legal, family or identity)' } } });
   assert.equal(local.route.text, 'Answered on this PC');
   const mission = runCard({ type: 'agent', status: 'completed', meta: { missionId: 'm1', route: { provider: 'cerebras', model: 'llama-3.3-70b', why: 'x' } } });
   assert.equal(mission.route.text, 'Answered by Llama 3.3 70B · Cerebras');
