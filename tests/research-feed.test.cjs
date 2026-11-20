@@ -80,3 +80,34 @@ test('2 MiB of hostile text parses quickly', () => {
     assert.ok(Date.now() - t0 < 3000, `slow: ${x.slice(0, 40)}`);
   }
 });
+test('no tag survives repeated escaping', () => {
+  const payloads = [
+    ['&amp;amp;lt;script&amp;amp;gt;alert(1)&amp;amp;lt;/script&amp;amp;gt;hi', s => s.endsWith('hi')],
+    ['<![CDATA[&amp;lt;img src=x onerror=1&amp;gt;]]>ok', s => s.includes('ok')],
+    ['&amp;amp;#60;b&amp;amp;#62;x', s => s === 'x'],
+    ['&amp;amp;amp;lt;script&amp;amp;amp;gt;alert(1)&amp;amp;amp;lt;/script&amp;amp;amp;gt;', () => true],
+    ['5 &lt; 6 and 7 &gt; 2', s => s === '5 < 6 and 7 > 2']
+  ];
+  for (const [payload, ok] of payloads) {
+    const atom = `<feed><entry><id>a</id><title>${payload}</title><summary>${payload}</summary></entry></feed>`;
+    const rss = `<rss><channel><item><guid>a</guid><title>${payload}</title><description>${payload}</description></item></channel></rss>`;
+    for (const xml of [atom, rss]) {
+      const [e] = parseFeed(xml, base).entries;
+      for (const s of [e.title, e.text]) {
+        assert.doesNotMatch(s, /<\s*[a-zA-Z/!]/, payload);
+        assert.ok(!s.includes('alert(1)'), payload);
+        assert.ok(ok(s), `${payload} -> ${s}`);
+      }
+    }
+  }
+});
+test('repeated escaping is bounded in time', () => {
+  const xml = `<rss><channel><item><guid>g</guid><title>${'&amp;lt;'.repeat(100000)}</title></item></channel></rss>`;
+  const t0 = Date.now();
+  parseFeed(xml, base);
+  assert.ok(Date.now() - t0 < 3000);
+});
+test('published needs a four-digit year', () => {
+  const f = parseFeed('<feed><entry><id>a</id><updated>1</updated></entry></feed>', base);
+  assert.equal(f.entries[0].published, '');
+});

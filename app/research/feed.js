@@ -100,8 +100,18 @@ function collapse(s) {
   return out;
 }
 const plain = inner => collapse(unwrap(inner));
-// Fields that may hold HTML: decode once, drop the markup, decode what was escaped inside it.
-const textOf = inner => collapse(decodeEntities(stripTags(unwrap(inner))));
+// Fields that may hold HTML: decode once, then strip markup and decode what was escaped inside it, until the text stops
+// changing (at most 4 passes). A final strip means no tag survives however many times the source was escaped; a
+// '<' not followed by a letter, '/', '!' or '?' (as in "a < b") is prose and stays.
+function textOf(inner) {
+  let s = unwrap(inner);
+  for (let pass = 0; pass < 4; pass++) {
+    const next = decodeEntities(stripTags(s));
+    if (next === s) break;
+    s = next;
+  }
+  return collapse(stripTags(s));
+}
 
 // The direct child elements of a block, in order, with the namespace prefix kept in qname and dropped from name.
 // An element's content ends at its closing tag; a missing closing tag means "to the end".
@@ -171,7 +181,7 @@ function absoluteHttps(raw, baseUrl) {
 }
 
 function isoDate(raw) {
-  if (!raw) return '';
+  if (!/\d{4}/.test(raw)) return '';
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? '' : d.toISOString();
 }
