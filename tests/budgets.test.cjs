@@ -183,7 +183,11 @@ const KB = 1024;
 // 368 KB, home.js 155 bytes over 14.3 KB): one notice and a "Local AI's runs" sources part for Needs you and Recent, a stale
 // running row drawn Unknown without its bar (components.js runCard), the kit's age words, and a caption on the faceplate's
 // "—". 376,970 bytes measured, home.js 14,798, components.js 11,675.
-const TOTAL = 369 * KB;
+// 2026-11-20: 369 → 370 KB and run-bodies.js 11.7 → 12 KB for the stalled reply's second review: a stall before the
+// stream starts drawn on the run the server recorded (or the question back in the box, said aloud), and a stalled run
+// read from the server after a reload (+267 bytes); "Try again" in the run menu (ui.js +~4 bytes, 4 under its limit).
+// main had 377,668 bytes (188 under); 377,957 measured, run-bodies.js 12,200, app.js 41,027, ui.js 119,804.
+const TOTAL = 370 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -227,7 +231,7 @@ const TOTAL = 369 * KB;
 // Same day, run-bodies.js 11.4 → 11.7 KB for the UI review of that state: the stalled turn keeps what arrived with its
 // own "No reply after N s" and Try again (one message, not a notice too), focus kept on Try again, and a cut-off turn
 // left out of what a reply sends (+320 bytes). 11,933 measured, app.js 41,012; shell 377,668 bytes, within 369 KB.
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40.1 * KB, 'index.html': 17 * KB, 'home.js': 14.5 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.7 * KB };
+const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40.1 * KB, 'index.html': 17 * KB, 'home.js': 14.5 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 12 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
