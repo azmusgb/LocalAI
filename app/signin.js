@@ -21,7 +21,7 @@ const GUARDED = [
   /^\/api\/workshop\/portal-code$/,
   // The owner's suggested facts: reading them shows what was said in chats; deciding writes a fact into memory.
   /^\/api\/facts\/suggestions(\/decide)?$/,
-  // The owner's past work (A28 D5/D6): reading, deleting or asking about journal entries.
+  // The owner's past work (A7 sign-in): reading, deleting or asking about journal entries.
   /^\/api\/journal(\/(delete|ask))?$/,
   // Claude's queue: handing a request or an item to Claude, adding an idea, promoting a signal, or changing an item's
   // decision or votes. Each lands on the board a Claude session works from, so one left open would bypass the others.
