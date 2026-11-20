@@ -179,7 +179,7 @@ const KB = 1024;
 // their limits; 376,174 bytes (367.4 KB) measured, components.js 11,467, home.js 14,443.
 // Same day, within 368 KB: home.js 14.2 → 14.3 KB for the bell's checking and couldn't-check states and Needs you's
 // stale notice (home.js +155 bytes, ui.js +~0.1 KB inside its limit, app.css and index.html a rule and a notice each); 376,631 bytes, home.js 14,598, ui.js 119,770 measured.
-// Same day, 368 → 369 KB and home.js 14.3 → 14.5 KB for the UI review of that change (not yet approved: 138 bytes over
+// Same day, 368 → 369 KB and home.js 14.3 → 14.5 KB for the UI review of that change (approved in review 19 Nov; 138 bytes over
 // 368 KB, home.js 155 bytes over 14.3 KB): one notice and a "Local AI's runs" sources part for Needs you and Recent, a stale
 // running row drawn Unknown without its bar (components.js runCard), the kit's age words, and a caption on the faceplate's
 // "—". 376,970 bytes measured, home.js 14,798, components.js 11,675.
