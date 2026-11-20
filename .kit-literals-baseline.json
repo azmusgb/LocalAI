@@ -1,11 +1,11 @@
 {
-  "kit": "2.22.0",
+  "kit": "2.23.1",
   "files": {
     "app/public/agent-world-watch.js": {
       "colour": 8
     },
     "app/public/app.css": {
-      "colour": 155,
+      "colour": 153,
       "type": 1,
       "space": 1000,
       "radius": 57,
