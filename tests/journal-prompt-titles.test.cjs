@@ -62,3 +62,76 @@ test('wrappedQuestion finds only a question that ends a prompt after other text'
   for (const plain of [QUESTION, `Question: ${QUESTION}`, 'Question:\n\nQuestion:', `${INSTRUCTIONS}\n\nQuestion: ${QUESTION}\n\nThanks`, '', null, undefined, 42])
     assert.equal(wrappedQuestion(plain), null, JSON.stringify(plain));
 });
+
+// ---- the one-time repair of stored entries ----
+const { repairPromptTitles, REPAIR_KEY } = require('../app/journal-repair');
+
+function oldRun(runLedger, { prompt, title, answer = ANSWER }) {
+  const r = runLedger.create({ type: 'chat', title, input: { prompt: prompt.slice(0, 4000) } });
+  runLedger.complete(r.id, { output: { text: answer } });
+  return runLedger.get(r.id);
+}
+// What the journal stored before the fix: the run's title, and the answer with "Asked: <whole prompt>".
+const oldEntry = (run, over = {}) => ({ at: run.finishedAt, source: 'run', kind: 'chat', title: run.title, body: `${run.output.text}\nAsked: ${run.input.prompt}`, link: `#run/${run.id}`, ref: `run:${run.id}:completed`, meta: { status: 'completed', type: 'chat' }, ...over });
+const byRef = (journal, ref) => journal.search({ limit: 200 }).items.find(x => x.link === `#run/${ref}`);
+
+test('the repair retitles entries named after a wrapping prompt, leaves the rest alone and is safe to re-run', t => {
+  const { storage, runLedger, journal } = setup(t);
+  const wrappedRun = oldRun(runLedger, { prompt: wrapped(QUESTION), title: titleFromText(wrapped(QUESTION)) });
+  const labelled = oldRun(runLedger, { prompt: wrapped('Is the printer busy?'), title: 'House question', answer: 'No, it is idle.' });
+  const plain = oldRun(runLedger, { prompt: 'Which filament for a bracket?', title: 'Which filament for a bracket?', answer: 'PETG.' });
+  const youAre = oldRun(runLedger, { prompt: 'You are a pirate. Tell me a joke about sails, with a long setup and a short punchline please', title: titleFromText('You are a pirate. Tell me a joke about sails, with a long setup and a short punchline please'), answer: 'Arr.' });
+  for (const r of [wrappedRun, labelled, youAre]) journal.record(oldEntry(r));
+  journal.record(runEntry(plain));
+  journal.record({ at: '2026-10-20T10:00:00.000Z', source: 'chat', kind: 'chat', title: INSTRUCTIONS, body: 'kept as typed', ref: 'chat:c1:0' });
+  const before = journal.search({ limit: 200 }).items;
+
+  assert.deepEqual(repairPromptTitles({ storage, journal, runLedger }), { retitled: 2 });
+  const fixed = byRef(journal, wrappedRun.id);
+  assert.equal(fixed.title, QUESTION);
+  assert.equal(fixed.body, ANSWER);
+  assert.equal(fixed.id, before.find(x => x.link === `#run/${wrappedRun.id}`).id, 'same entry, same id');
+  assert.equal(byRef(journal, labelled.id).title, 'Is the printer busy?');
+  // Search finds the question and no longer finds the instructions.
+  assert.equal(journal.search({ q: 'movies drive' }).items[0].id, fixed.id);
+  assert.deepEqual(journal.search({ q: 'voice of a family' }).items.map(x => x.source), ['chat']);
+  // Untouched: an ordinary run, a run whose own message starts "You are", and a chat entry.
+  for (const r of [plain, youAre]) assert.deepEqual(byRef(journal, r.id), before.find(x => x.link === `#run/${r.id}`));
+  assert.equal(journal.search({ sources: ['chat'] }).items[0].title, INSTRUCTIONS.slice(0, 200)); // titles are capped at 200
+  assert.equal(storage.readSetting(REPAIR_KEY, null).retitled, 2);
+
+  // Done once; and a forced second pass finds nothing left to change.
+  assert.deepEqual(repairPromptTitles({ storage, journal, runLedger }), { retitled: 0, skipped: true });
+  storage.deleteSetting(REPAIR_KEY);
+  const after = journal.search({ limit: 200 }).items;
+  assert.deepEqual(repairPromptTitles({ storage, journal, runLedger }), { retitled: 0 });
+  assert.deepEqual(journal.search({ limit: 200 }).items, after);
+});
+
+test('with the run gone, the repair reads the question from the entry, else uses the answer\'s first line', t => {
+  const { storage, runLedger, journal } = setup(t);
+  const fake = (id, title, body) => ({ at: '2026-10-21T10:00:00.000Z', source: 'run', kind: 'chat', title, body, link: `#run/${id}`, ref: `run:${id}:completed`, meta: {} });
+  // The run was pruned, but the entry still holds "Asked: <prompt>" with the question in it.
+  journal.record(fake('run-gone-1', titleFromText(wrapped(QUESTION)), `${ANSWER}\nAsked: ${wrapped(QUESTION)}`));
+  // The run was pruned and the entry's copy of the prompt was cut before the question (the body is capped).
+  journal.record(fake('run-gone-2', titleFromText(INSTRUCTIONS), `The hub does not know.\nSecond line.\nAsked: ${INSTRUCTIONS}\n\nFacts:\n${'Movies drive: off.\n'.repeat(250)}`));
+  // The same, but the body was not cut: whatever the prompt was, it held no question, so the entry is left alone.
+  journal.record(fake('run-gone-4', titleFromText(INSTRUCTIONS), `Arr.\nAsked: ${INSTRUCTIONS} Tell me a joke.`));
+  // The run was pruned and its entry is an ordinary one: left alone.
+  journal.record(fake('run-gone-3', 'Which filament for a bracket?', 'PETG.'));
+
+  assert.deepEqual(repairPromptTitles({ storage, journal, runLedger }), { retitled: 2 });
+  assert.equal(byRef(journal, 'run-gone-1').title, QUESTION);
+  assert.equal(byRef(journal, 'run-gone-1').body, ANSWER);
+  assert.equal(byRef(journal, 'run-gone-2').title, 'The hub does not know.');
+  assert.equal(byRef(journal, 'run-gone-2').body, 'The hub does not know.\nSecond line.');
+  assert.equal(byRef(journal, 'run-gone-3').title, 'Which filament for a bracket?');
+  assert.equal(byRef(journal, 'run-gone-4').title, titleFromText(INSTRUCTIONS));
+});
+
+test('the repair does nothing, and is not marked done, when the journal is unavailable', t => {
+  const { storage, runLedger } = setup(t);
+  const journal = createJournal({ db: { exec() { throw new Error('disk I/O error'); } }, log: () => {} });
+  assert.deepEqual(repairPromptTitles({ storage, journal, runLedger }), { retitled: 0, skipped: true });
+  assert.equal(storage.readSetting(REPAIR_KEY, null), null);
+});
