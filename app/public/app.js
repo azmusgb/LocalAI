@@ -673,9 +673,8 @@ document.addEventListener('visibilitychange',()=>{schedulePolling();if(!document
 
 // Only a positive result is worth showing; without a service worker (plain-HTTP LAN access) the hint stays hidden.
 async function detectOfflineReady(){const hint=$('offlineHint');if(!('serviceWorker' in navigator))return;try{const reg=await navigator.serviceWorker.register('/sw.js');reg.update?.().catch(()=>{});hint.textContent='Works offline · the app shell is cached on this device';hint.hidden=false;}catch(e){console.debug('Service worker registration failed',e);}}
-// Renews this device's sign-in cookie for every page (app/signin.js; a cookie paired before 19 Oct 2026 covered chat only).
-const renewSignIn=()=>fetch('/api/claude/chat/whoami',{cache:'no-store'}).catch(()=>{});
-async function init(){renewSignIn();syncModeSelect();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;}catch{} }
+// signin-report.js asks whoami on load, which renews this device's sign-in cookie for every page.
+async function init(){syncModeSelect();renderAgentMap();renderMessages();setPhase('idle');loadActivity();loadLibrary();loadWorkspace();refreshStatus();schedulePolling();detectOfflineReady();try{const r=await fetch('/api/models',{cache:'no-store'}),j=await r.json();state.model=j.default||j.models?.[0]||null;}catch{} }
 init();
 
 
@@ -927,7 +926,7 @@ function commandPalette(){
     journal.timer=setTimeout(async()=>{
       const ctrl=new AbortController();journal.ctrl=ctrl;let next;
       try{const j=await LocalAIUI.fetchJson(`/api/journal?q=${encodeURIComponent(q)}&limit=5&linked=1`,{signal:ctrl.signal});if(!Array.isArray(j.items))throw new Error('unreadable reply');next={state:'ok',items:j.items.filter(e=>e&&inApp(e.link)).slice(0,5)}}
-      catch{next={state:'error',items:[]}} // its own state, never "no results"
+      catch(e){next={state:e.signIn?'signin':'error',items:[]}} // its own state, never "no results"
       if(seq!==journal.seq)return;
       journal.ctrl=null;Object.assign(journal,next);render(true);
     },150);
@@ -941,7 +940,8 @@ function commandPalette(){
   }
   function pastHtml(){
     const body=journal.state==='loading'?`<div class="cmdk-item cmdk-item--wait" aria-hidden="true" data-cmd-journal-loading><span class="ui-skeleton"></span><span class="ui-skeleton"></span></div>`
-      :journal.state==='error'?`<div class="ui-notice ui-notice--warn cmdk-notice" data-cmd-journal-error><span>Couldn't search past work.</span><button type="button" class="btn-outline" data-cmd-journal-retry>Try again</button></div>`:'';
+      :journal.state==='error'?`<div class="ui-notice ui-notice--warn cmdk-notice" data-cmd-journal-error><span>Couldn't search past work.</span><button type="button" class="btn-outline" data-cmd-journal-retry>Try again</button></div>`
+      :journal.state==='signin'?window.LocalAISignIn?.say('see','cmdk-notice')||'':'';
     return body&&`<div class="cmdk-group__label">Past work</div>${body}`;
   }
   function render(keep=false){
@@ -963,10 +963,11 @@ function commandPalette(){
     if(empty){empty.innerHTML=none?`<p>No pages match “${esc(typed)}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(typed)}”</button>`:'';empty.hidden=!none}
     if(past){past.innerHTML=pastHtml();past.hidden=!past.innerHTML}
     shown=shown.concat(hits.map(e=>({id:'journal:'+e.id,link:e.link})));
-    {const c=$('cmdkCount'),t=found-pages;if(c)c.textContent=(found?(pages?`${pages} page${pages===1?'':'s'}`:'')+(pages&&t?', ':'')+(t?`${t} tool${t===1?'':'s'}`:''):'No pages match')+(hits.length?`, ${hits.length} from past work`:'')+(journal.state==='error'?"; couldn't search past work":'')} // a screen reader hears the count
+    {const c=$('cmdkCount'),t=found-pages;if(c)c.textContent=(found?(pages?`${pages} page${pages===1?'':'s'}`:'')+(pages&&t?', ':'')+(t?`${t} tool${t===1?'':'s'}`:''):'No pages match')+(hits.length?`, ${hits.length} from past work`:'')+(journal.state==='error'?"; couldn't search past work":journal.state==='signin'?'; pair this browser to see past work':'')} // a screen reader hears the count
     list.querySelectorAll('[data-cmd-view]').forEach(b=>b.onclick=()=>go(b.dataset.cmdView));
     list.querySelectorAll('[data-cmd-journal]').forEach(b=>b.onclick=()=>follow(b.dataset.cmdJournal));
     past?.querySelector('[data-cmd-journal-retry]')?.addEventListener('click',()=>{journal.q='';askJournal();render(true);input.focus()});
+    past?.querySelector('[data-signin-pair]')?.addEventListener('click',()=>close(false));
     list.querySelectorAll('[data-cmd-tool]').forEach(b=>b.onclick=()=>go(b.dataset.cmdTool));
     empty?.querySelector('[data-cmd-work]')?.addEventListener('click',searchWork);
     select(keep?active:0); // hits arriving later keep the highlight where the arrows left it

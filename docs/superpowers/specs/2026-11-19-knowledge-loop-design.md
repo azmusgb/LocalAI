@@ -183,7 +183,7 @@ All under `/api/research/*`, all in the sign-in GUARDED list (reads included: ti
 
 | Route | Purpose | Phase |
 |---|---|---|
-| `GET /api/research/state` | Enabled, paused, budgets used today, last tick, next due | 1 |
+| `GET /api/research/state` | Enabled, paused, budgets used today, last tick and its outcome, any error (next due is per source, `nextDueAt`) | 1 |
 | `POST /api/research/pause` | The stop control: `{paused: true}` halts all scheduled work before the next step | 1 |
 | `GET, POST /api/research/sources`, `POST …/sources/update`, `POST …/sources/fetch` | Registry CRUD, run one now | 1 |
 | `GET /api/research/documents` | List and search | 1 |

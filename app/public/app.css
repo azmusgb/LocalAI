@@ -1808,6 +1808,11 @@ h2.run-drawer-title{margin:0;letter-spacing:normal}
 .cmdk-item--wait .ui-skeleton:last-child{width:40%;font-size:var(--ui-fs-2)} /* the meta line: shorter and smaller */
 .cmdk-past{display:grid;gap:var(--ui-s-1);margin-top:var(--ui-s-2)}
 .cmdk-notice{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--ui-s-2);padding:var(--ui-s-2) var(--ui-s-3);font-size:var(--ui-fs-2)}
+/* Not signed in (signin-report.js): the kit's notice under the strip, its action beside the words; the action is
+   outlined (3:1) so it reads as a control on the notice's own fill. Not on Claude Code, the pairing page itself. */
+.signin-line{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--ui-s-2) var(--ui-s-3)}.signin-notice{margin-block:var(--ui-s-3)}
+[data-signin-pair]{border-color:var(--ui-field-line)}.ui-notice [data-signin-pair]{background:var(--ui-surface)}
+body[data-view="claude"] #signinNotice{display:none}
 
 /* Phone polish: layout and install (appended; nothing above edited). No keyboard-shortcut hint where there is no hover
    (an iPad, a phone); the sticky header's hairline once the page scrolls (ui.js headerLine sets body.ux-scrolled). */

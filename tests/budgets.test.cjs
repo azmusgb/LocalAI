@@ -183,11 +183,16 @@ const KB = 1024;
 // 368 KB, home.js 155 bytes over 14.3 KB): one notice and a "Local AI's runs" sources part for Needs you and Recent, a stale
 // running row drawn Unknown without its bar (components.js runCard), the kit's age words, and a caption on the faceplate's
 // "—". 376,970 bytes measured, home.js 14,798, components.js 11,675.
-// 2026-11-20: 369 → 370 KB and run-bodies.js 11.7 → 12 KB for the stalled reply's second review: a stall before the
-// stream starts drawn on the run the server recorded (or the question back in the box, said aloud), and a stalled run
-// read from the server after a reload (+267 bytes); "Try again" in the run menu (ui.js +~4 bytes, 4 under its limit).
-// main had 377,668 bytes (188 under); 377,957 measured, run-bodies.js 12,200, app.js 41,027, ui.js 119,804.
-const TOTAL = 370 * KB;
+// 2026-11-19: 369 → 370 KB for this browser's sign-in (sign-in A2): signin-report.js (whoami at load; the notice under
+// the strip, only while sign-in is required; "Pair this browser to see this. Approve the code on your Mac." and the one
+// Pair action where a read or save was refused), components.js (fetchJson's .signIn, loadInto's sign-in state), app.js
+// (⌘K's Past work state, its own whoami dropped), improve.js and app.css. main had 377,025 bytes (831 under 369 KB);
+// 378,849 bytes (370.0 KB, 31 under) after the UI review, ui.js 119,931 (its own 118 KB below).
+// 2026-11-19: 370 → 371 KB for the UI re-gate: sign-in required leaves a page's Pair and Mac step to the notice (and
+// trims lines drawn before whoami answered), Changes puts its sentence and one Pair in the panel with the list stepping
+// aside, and the idea sheet focuses Pair: signin-report.js +224, improve.js +160, app.js -2. 379,231 bytes measured
+// (370.3 KB), from 378,849.
+const TOTAL = 371 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -224,14 +229,10 @@ const TOTAL = 370 * KB;
 // app.css +0.1 KB, its Atlas section rewritten in one pass without the layered overrides; 321.8 KB measured).
 // 2026-11-02: index.html 16 → 17 KB for the navigation update: the Settings and Tools pages, the Spreadsheets chip and
 // mode, and Home's On Pi Hub line (16.1 KB measured).
-// 2026-11-19: app.js 40 → 40.1 KB and run-bodies.js 11.3 → 11.4 KB for a chat stream that stalls: streamChat's own
-// timer (the server's chatTimeoutMs + 10%, then "No reply after N s", never "Thinking…" for good; app.js +222 bytes)
-// and the run view saying so on the turn with Retry (run-bodies.js +57 bytes). main had app.js 40,782 (178 under) and
-// run-bodies.js 11,556 (15 under); 41,004 and 11,613 measured. The shell total stays within 369 KB (377,322 bytes).
-// Same day, run-bodies.js 11.4 → 11.7 KB for the UI review of that state: the stalled turn keeps what arrived with its
-// own "No reply after N s" and Try again (one message, not a notice too), focus kept on Try again, and a cut-off turn
-// left out of what a reply sends (+320 bytes). 11,933 measured, app.js 41,012; shell 377,668 bytes, within 369 KB.
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40.1 * KB, 'index.html': 17 * KB, 'home.js': 14.5 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 12 * KB };
+// 2026-11-19: ui.js 117 → 118 KB for the Claude Code page's sign-in state (its board api() marks .signIn; Activity says
+// to pair, the live chip says "not read") and the pairing card's words: +134 bytes over main's 119,797 (11 under 117 KB);
+// 119,931 measured. The shell total stays within 370 KB (378,849 bytes).
+const PER_FILE = { 'ui.js': 118 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40 * KB, 'index.html': 17 * KB, 'home.js': 14.5 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.3 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

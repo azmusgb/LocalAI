@@ -163,7 +163,7 @@ the container, stage or approve changes, decide approvals, or post and clear ale
 `/api/browser/fetch`, `/api/actions/http-check`, `/api/repo/inspect`, `/api/changes*`, `/api/approvals/create|decide`,
 `/api/display/approvals/decide` and `/api/display/lab/verdict` (the display's key still signs them in), `/api/display/notify`, `/api/engineering/*`,
 `/api/issues/prepare-change`, `/api/improve/handoff|item|idea|signal` and `/api/claude/findings/decision|vote` and `/api/claude/findings|events` (each changes Claude's queue; the Mac's hooks and Claude sessions send the Mac key), `/api/claude/board|priorities` and `/api/improve/items` (reading that queue: session titles and folders, handed-over requests, the owner's notes), `/api/powershell/*`, `/api/notifications/system|seed|update` and
-`/api/signin/report/clear`, `/api/workshop/portal-code` (it hands out the display's sign-in code), and `/api/facts/suggestions` and `/api/facts/suggestions/decide` (suggested facts quote what was said in a chat, and Save writes a fact; reads are refused too), and `/api/journal` and `/api/journal/delete|ask` (the owner's past work: reads are refused too) (`GUARDED` in `app/signin.js`); and, for any method but GET, starting agent runs
+`/api/signin/report/clear`, `/api/workshop/portal-code` (it hands out the display's sign-in code), and `/api/facts/suggestions` and `/api/facts/suggestions/decide` (suggested facts quote what was said in a chat, and Save writes a fact; reads are refused too), and `/api/journal` and `/api/journal/delete|ask` (the owner's past work: reads are refused too), and `/api/research/*` (research intake: reads are refused too) (`GUARDED` in `app/signin.js`); and, for any method but GET, starting agent runs
 (`/api/agents/dispatch|run|missions/start|specialist/run`), retrying, cancelling, updating or rating runs (`/api/runs/feedback`), GridCraft workbook writes, `/api/knowledge/import|delete`, `/api/conversations/delete`, memory changes, model pulls and deletes,
 `/api/library/delete`, `/api/items/delete` and `/api/display/alerts` (`GUARDED_WRITES`). Pair a browser under
 Improve › Claude Code to use them.
@@ -172,6 +172,42 @@ Improve › Claude Code to use them.
 Requests that did not come through Caddy (the host's own port 3080, the Docker network) and the routes a device needs
 before it is paired (`/healthz`, `pair-request`, `pair-status`, `whoami`) are not checked; pages and static files never
 are.
+
+## Research intake
+
+Research intake reads the feeds (Atom and RSS) the owner registers and stores their entries as data
+(`app/research/`; design: `docs/superpowers/specs/2026-11-19-knowledge-loop-design.md`).
+
+- **Off by default.** It runs only with `LOCALAI_RESEARCH=on` in `stack.env`. The **Pause** control
+  (`POST /api/research/pause {"paused":true}`) stops it too. Off or paused means no network calls at all: no tick
+  fetches and a manual fetch is refused (409). A fetch already in flight when Pause is pressed finishes (20 s at most);
+  nothing new starts. To stop it, pause it, or unset `LOCALAI_RESEARCH` and restart.
+  With the switch off the three reads answer 200 with `enabled:false` and empty lists, and the four writes answer 409
+  `{"error":"research is off"}`. A store that cannot be read is an error status, never an empty list.
+- **Fetch rules** (`app/research/net-guard.js`, `fetcher.js`): https and port 443 only; only the source's own host
+  (exact match); IP-literal hosts are refused; every address the host resolves to is checked and the connection is
+  pinned to a checked address; each redirect is checked again (3 at most); 2 MiB at most; 20 s for the whole call;
+  only the feed media types (`application/atom+xml`, `application/rss+xml`, `application/xml`, `text/xml`); compressed
+  responses are refused (`Accept-Encoding: identity`); no credentials in the URL, no cookies, no authorization header;
+  the user agent is `LocalAI-feed-reader/1`.
+- **Addresses refused.** IPv4: `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10`, `127.0.0.0/8`, `169.254.0.0/16`,
+  `172.16.0.0/12`, `192.0.0.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `224.0.0.0/4`, `240.0.0.0/4`. IPv6 is allowed only
+  inside `2000::/3`; the forms that carry an IPv4 address (mapped, NAT64, 6to4) are judged by the IPv4 list; the
+  IPv4-compatible, Teredo, documentation, discard, site-local, unique-local, link-local and multicast ranges are refused.
+- **Caps.** 3 sources per tick (every 30 s), 200 fetches per day, a schedule of 60 to 10,080 minutes per source,
+  quarantine after 5 consecutive failures (a quarantined source is never resumed automatically; the owner sets it
+  active again), and the newest 2,000 stored document revisions per source are kept, and the newest 50 fetch rows per
+  source plus every row from today. If a fetch cannot be recorded, intake stops for 15 minutes and says so in
+  `GET /api/research/state` (`error`).
+- **Feed text is untrusted plain text.** Tags are stripped from the title and text only, as defence in depth. The
+  guarantee is at render: every document field (id and `ref`, url, title, text, published) is untrusted, and anything
+  that shows one must use `textContent` or the kit's escape helper, never `innerHTML`. It reaches no model in this
+  release.
+- Secrets are redacted (the journal's `redact`) in the title, the text and the failure reasons. The entry URL, the entry
+  id and the etag are stored as received. A commit hash or other 40+ hex string in feed text is redacted by the same
+  rule the journal uses. An entry id longer than 512 characters is stored as a hash (`sha256:` and its hex digest).
+- Every `/api/research/*` route is in `GUARDED` (`app/signin.js`): a caller without a paired device or the Mac key is
+  refused, reads included, because the source list and what was read show what the owner follows.
 
 ## Known gaps
 
