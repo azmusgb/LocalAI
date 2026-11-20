@@ -192,9 +192,9 @@ const KB = 1024;
 // and retry controls (+0.8 KB across run-bodies and app.js). 380,264 bytes measured.
 // 2026-11-20: 372 → 375 KB (run-bodies.js 12.5 → 14 KB) for Amendment A30 Phase 4 action cards and hand-off links.
 // 2026-11-21: within 375 KB: home.js 14.5 → 14.8 KB and index.html 17 → 17.1 KB for Home saying when Improve or the approvals
-// can't be read (A28): their sources parts, one notice, and no count from a failed read (home.js +234 bytes after sharing
-// one sources helper with the runs and Pi Hub parts; index.html +29 bytes). main had home.js 14,811 and index.html 17,406;
-// 377,288 bytes measured, home.js 15,045, index.html 17,435.
+// can't be read (A28): their sources parts and a note under Needs you saying what it may be missing (home.js +344 bytes
+// after sharing one sources helper with the runs and Pi Hub parts; index.html +37 bytes). main had home.js 14,811 and
+// index.html 17,406; 377,406 bytes measured, home.js 15,155 (at its limit), index.html 17,443.
 const TOTAL = 375 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
