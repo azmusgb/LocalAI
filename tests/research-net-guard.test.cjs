@@ -38,3 +38,10 @@ test('vetHost refuses when any address is blocked', async () => {
   await assert.rejects(vetHost('example.com', { lookup: async () => { throw new Error('ENOTFOUND'); } }), e => e.code === 'dns_failed');
   assert.deepEqual(await vetHost('example.com', { lookup: async () => [{ address: '93.184.216.34', family: 4 }] }), [{ address: '93.184.216.34', family: 4 }]);
 });
+test('IPv6 forms that embed or hide an IPv4', () => {
+  for (const ip of ['::ffff:7f00:1', '0:0:0:0:0:ffff:10.0.0.80', '::FFFF:10.0.0.80', '::10.0.0.80', '::7f00:1', '::ffff:0:10.0.0.80',
+    '64:ff9b::10.0.0.80', '64:ff9b::a00:50', '64:ff9b:1::1', '2002:0a00:0050::1', '2002:7f00:0001::', '2001::1',
+    '2001:0:4136:e378:8000:63bf:3fff:fdd2', '2001:db8::1', '100::1', 'fec0::1', '4000::1', '::2', 'fe80::1%eth0']) assert.equal(isBlockedAddress(ip), true, ip);
+  for (const ip of ['2606:4700::1111', '2001:4860:4860::8888', '::ffff:1.1.1.1', '::ffff:101:101', '64:ff9b::1.1.1.1', '2002:0101:0101::1'])
+    assert.equal(isBlockedAddress(ip), false, ip);
+});

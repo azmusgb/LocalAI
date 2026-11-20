@@ -18,19 +18,39 @@ class GuardError extends Error {
 const BLOCKED = new net.BlockList();
 for (const [prefix, bits] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16],
   ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 4], ['240.0.0.0', 4]]) BLOCKED.addSubnet(prefix, bits, 'ipv4');
-BLOCKED.addAddress('::', 'ipv6');
-BLOCKED.addAddress('::1', 'ipv6');
-for (const [prefix, bits] of [['fc00::', 7], ['fe80::', 10], ['ff00::', 8]]) BLOCKED.addSubnet(prefix, bits, 'ipv6');
+// IPv6 is allow-list based: an address is public only if it is global unicast (2000::/3) and is neither a reserved
+// block nor a form that carries an IPv4 address, which is then judged by the IPv4 list.
+const BLOCKED_V6 = new net.BlockList();
+for (const [prefix, bits] of [['64:ff9b:1::', 48], ['2001::', 32], ['2001:db8::', 32], ['100::', 64], ['fec0::', 10],
+  ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]]) BLOCKED_V6.addSubnet(prefix, bits, 'ipv6');
 
-// The IPv4 part of an IPv4-mapped IPv6 address (dotted or hex form), else null.
-function mappedV4(ip) {
-  const s = ip.toLowerCase();
-  let m = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(s);
-  if (m) return m[1];
-  m = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(s);
-  if (!m) return null;
-  const hi = parseInt(m[1], 16), lo = parseInt(m[2], 16);
-  return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+// The 16 bytes of an IPv6 address, or null when it is not a plain IPv6 address (a zone id is refused too).
+function v6Bytes(ip) {
+  if (net.isIP(ip) !== 6 || ip.includes('%')) return null;
+  let host;
+  try { host = new URL(`http://[${ip}]/`).hostname.slice(1, -1); } catch { return null; }
+  const [head, tail] = host.split('::');
+  const part = t => (t ? t.split(':').map(g => parseInt(g, 16)) : []);
+  const h = part(head), t = tail === undefined ? [] : part(tail);
+  const groups = tail === undefined ? h : [...h, ...new Array(8 - h.length - t.length).fill(0), ...t];
+  if (groups.length !== 8 || groups.some(g => !Number.isInteger(g))) return null;
+  return groups.flatMap(g => [g >> 8, g & 255]);
+}
+
+const zero = (b, from, to) => b.slice(from, to).every(x => x === 0);
+const dotted = (b, at) => b.slice(at, at + 4).join('.');
+
+function isBlockedV6(ip) {
+  const b = v6Bytes(ip);
+  if (!b) return true;
+  if (zero(b, 0, 15) && b[15] <= 1) return true; // :: and ::1
+  if (zero(b, 0, 10) && b[10] === 255 && b[11] === 255) return BLOCKED.check(dotted(b, 12), 'ipv4'); // mapped
+  if (zero(b, 0, 12)) return BLOCKED.check(dotted(b, 12), 'ipv4'); // IPv4-compatible
+  if (zero(b, 0, 8) && b[8] === 255 && b[9] === 255 && b[10] === 0 && b[11] === 0) return BLOCKED.check(dotted(b, 12), 'ipv4'); // translated
+  if (b[0] === 0 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b && zero(b, 4, 12)) return BLOCKED.check(dotted(b, 12), 'ipv4'); // NAT64
+  if (b[0] === 0x20 && b[1] === 0x02) return BLOCKED.check(dotted(b, 2), 'ipv4'); // 6to4
+  if ((b[0] & 0xe0) !== 0x20) return true; // not global unicast
+  return BLOCKED_V6.check(ip, 'ipv6');
 }
 
 function isBlockedAddress(ip) {
@@ -38,9 +58,7 @@ function isBlockedAddress(ip) {
   const family = net.isIP(ip);
   if (family === 0) return true;
   try {
-    if (family === 4) return BLOCKED.check(ip, 'ipv4');
-    const v4 = mappedV4(ip);
-    return v4 ? BLOCKED.check(v4, 'ipv4') : BLOCKED.check(ip, 'ipv6');
+    return family === 4 ? BLOCKED.check(ip, 'ipv4') : isBlockedV6(ip);
   } catch {
     return true;
   }
