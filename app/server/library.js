@@ -122,8 +122,11 @@ function createLibrary(ctx) {
     if (found.length) return { kept: true, item: found[0].kept ? found[0] : storage.upsert(LIBRARY_STORE, { ...found[0], kept: true }) };
     const runs = run.threadId ? runLedger.list({ threadId: run.threadId, limit: 500 }) : [run];
     runs.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.id).localeCompare(String(b.id)));
-    const answered = runs.filter(r => r.output);
-    const answerOf = r => (r?.output?.truncated ? fullAnswer(r.id, items) : r?.output?.text);
+    // Answers are completed turns only: a stalled turn's output is what arrived before it was cut off (app/server/chat.js),
+    // and a failed or cancelled one has none, so neither is filed as a turn, the summary or the response.
+    const isAnswer = r => r?.status === 'completed' && !!r.output && !r.output.stalled;
+    const answered = runs.filter(isAnswer);
+    const answerOf = r => (!isAnswer(r) ? undefined : r.output.truncated ? fullAnswer(r.id, items) : r.output.text);
     const item = libraryThreads.itemFromRuns(answered.length ? answered : runs, { id: `${Date.now()}-${Math.random().toString(16).slice(2, 9)}`, now: nowIso(), answerOf });
     item.title = titleFromText(item.title, 'Conversation');
     prependRecord(LIBRARY_STORE, item);

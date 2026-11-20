@@ -33,7 +33,9 @@ function runEntry(run) {
   // A Past work answer (app/journal-ask.js) is made from journal entries; kept, it would be cited instead of the work.
   if (run.meta?.mode === 'history') return null;
   const hidden = run.type === 'powershell' || run.meta?.powershell === true; // host commands: title only
-  const body = hidden ? '' : run.status === 'failed' && !runText({ ...run, summary: '' }) ? str(run.error) : runText(run);
+  // A stalled reply's output is what arrived before it was cut off (app/server/chat.js), not an answer: its error, as a
+  // failed run with no text.
+  const body = hidden ? '' : run.output?.stalled || (run.status === 'failed' && !runText({ ...run, summary: '' })) ? str(run.error) : runText(run);
   return {
     at: run.finishedAt || run.updatedAt || run.createdAt, source: 'run', kind: String(run.type || 'task'), title: runTitle(run),
     body, link: `#run/${run.id}`, ref: `run:${run.id}:${run.status}`, meta: { status: run.status, type: run.type }

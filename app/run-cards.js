@@ -71,7 +71,8 @@ function runCard(run, { approvalFor, changeFor, feedbackFor } = {}) {
   // A mission that finished without some optional follow-ups says so first: "2 follow-ups ran out of time · <answer>".
   const note = kind === 'agent' && typeof out.note === 'string' ? out.note.trim() : '', summary = (note ? note + ' · ' : '') + String(run.summary ?? '');
   let preview = null;
-  if (kind === 'chat' || kind === 'research' || kind === 'prompt') preview = { type: 'text', text: String(out.text || summary).slice(0, 240) };
+  // A turn that stalled (app/server/chat.js) keeps its part answer for the run view; its card says it stalled instead.
+  if (kind === 'chat' || kind === 'research' || kind === 'prompt') preview = { type: 'text', text: String((out.stalled && run.error) || out.text || summary).slice(0, 240) };
   else if (kind === 'image') { const imgs = Array.isArray(out.images) ? out.images : []; preview = { type: 'image', src: imgs[0]?.imageUrl || '', count: imgs.length } }
   else if (kind === 'agent') preview = { type: 'mission', text: summary };
   else if (kind === 'spreadsheet') preview = { type: 'text', text: String(out.text || summary).slice(0, 240) };
@@ -79,7 +80,7 @@ function runCard(run, { approvalFor, changeFor, feedbackFor } = {}) {
     const ch = meta.changeId && changeFor ? changeFor(meta.changeId) : null, files = ch && Array.isArray(ch.files) ? fileStats(ch) : null;
     // No file list: still being prepared while it runs or waits for approval; once finished (failed, cancelled, done) there's nothing to show.
     preview = files || ['running', 'queued', 'awaiting_approval'].includes(run.status) ? { type: 'diff', changeId: meta.changeId || null, files } : null; }
-  const action = { label: run.status === 'awaiting_approval' ? 'Review' : run.status === 'failed' && run.retryable ? 'Retry' : 'Open' };
+  const action = { label: run.status === 'awaiting_approval' ? 'Review' : run.status === 'failed' && run.retryable ? 'Try again' : 'Open' };
   let approval = null;
   if (approvalFor) { const a = approvalFor(run); if (a) approval = { id: a.id, title: a.title, detail: a.detail, risk: a.risk } }
   // Where the answer came from (the model coordinator): "Answered by Llama 3.3 70B · Groq" or "Answered on this PC", and

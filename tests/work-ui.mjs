@@ -334,14 +334,14 @@ await check("Work's faceplate: what is running, the newest, today and this week;
   await page.context().close();
 });
 
-await check('the whole row opens the run: no per-row Open button, Review and Retry stay small buttons', async () => {
+await check('the whole row opens the run: no per-row Open button, Review and Try again stay small buttons', async () => {
   const rev = item('engineering', 'Fix the login bug', HOUR, { status: 'awaiting_approval' }); rev.card.action = { label: 'Review' };
-  const retry = item('agent', 'Failed mission', 2 * HOUR, { status: 'failed' }); retry.card.action = { label: 'Retry' };
+  const retry = item('agent', 'Failed mission', 2 * HOUR, { status: 'failed' }); retry.card.action = { label: 'Try again' };
   const plain = item('chat', 'Plain chat', 3 * HOUR, { threadId: 'pc' });
   const page = await open(desk, '#work', async () => [rev, retry, plain]);
   await page.waitForSelector('#work .run-card', T);
   assert.equal(await page.locator('#work .run-card__action').filter({ hasText: /^Open$/ }).count(), 0);
-  assert.deepEqual(await page.locator('#work .work-secondary').allInnerTexts(), ['Review', 'Retry']);
+  assert.deepEqual(await page.locator('#work .work-secondary').allInnerTexts(), ['Review', 'Try again']);
   const name = page.getByRole('button', { name: 'Plain chat', exact: true });   // its ☆ is "Keep Plain chat"
   assert.equal(await name.count(), 1, 'the row has one button named by its title');
   const row = page.locator(`#work [data-run-id="${plain.id}"]`);

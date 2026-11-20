@@ -147,10 +147,12 @@ function createChat(ctx) {
   // The cloud candidates in the route, in order; the first answer wins. null = none answered (or none allowed): the
   // caller goes on to this PC's model, so a request never fails only because the cloud did. What was tried goes in
   // prep.attempts, so the route this PC's answer records says the cloud was tried and why it isn't the answer.
-  async function cloudAnswer(prep) {
+  // signal: Stop or a caller that went away ends the cloud call at once (it throws), so nothing goes on to this PC.
+  async function cloudAnswer(prep, signal) {
     prep.attempts = [];
-    return coordinator.run(prep.route, cloudMessages(prep), { kind: prep.researchContext ? 'research' : 'chat', attempts: prep.attempts });
+    return coordinator.run(prep.route, cloudMessages(prep), { kind: prep.researchContext ? 'research' : 'chat', attempts: prep.attempts, ...(signal ? { signal } : {}) });
   }
+  const cancelError = signal => Object.assign(new Error(String(signal?.reason?.message || 'Run cancelled')), { name: 'AbortError' });
   const usedLocal = prep => coordinator.local(prep.route, prep.model, prep.attempts);
 
   // After a chat turn is answered and sent: the owner-fact suggestion job (app/fact-suggestions.js), scheduled and left
@@ -164,30 +166,37 @@ function createChat(ctx) {
     } catch { /* a suggestion is never worth a failed answer */ }
   }
 
+  // A caller that goes away before the answer (Pi Hub's House question gives up after 90 s) aborts the model calls and
+  // the run is recorded as cancelled, not as an answer nobody reads.
   async function apiChat(req, res, access) {
     let body, out;
-    try { body = await readBody(req); out = await chatOnce(body); json(res, 200, out); }
-    catch (e) { return storageError(res,e,500); }
+    const gone = new AbortController();
+    res.on('close', () => { if (!res.writableEnded && !gone.signal.aborted) gone.abort(new Error('Client disconnected')); });
+    try { body = await readBody(req); out = await chatOnce(body, { signal: gone.signal }); json(res, 200, out); }
+    catch (e) { if (gone.signal.aborted) return; return storageError(res,e,500); }
     suggestFact(body, { route: out.route, content: out.message.content, runId: out.runId }, access);
   }
 
-  // One non-streaming chat turn as a run; shared by /api/chat and /api/glance/ask.
-  async function chatOnce(body) {
+  // One non-streaming chat turn as a run; shared by /api/chat and /api/glance/ask. signal (optional): the caller is done
+  // with it; the model calls stop and the run is cancelled.
+  async function chatOnce(body, { signal = null } = {}) {
     let execution = null;
     try {
       execution = createChatExecution(body, false);
       runLedger.start(execution.id, body.webSearch === true ? 'Research run started' : 'Chat run started');
-      const prep = await prepareChat(body);
+      const prep = await prepareChat(body, signal);
       const local = chatMessages(prep);
       runLedger.update(execution.id, { meta: { privacy: { class: prep.route.class, why: prep.route.why }, ...projectMemory.runMeta(prep.memory, local.notesSent) } });
       const started = Date.now();
-      const cloud = await cloudAnswer(prep);
+      const cloud = await cloudAnswer(prep, signal);
       let content, used;
       if (cloud) ({ content, used } = cloud);
       else {
+        if (signal?.aborted) throw cancelError(signal);
         const r = await modelFetchWithTimeout(`${OLLAMA_URL}/api/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          ...(signal ? { signal } : {}),
           body: JSON.stringify({
             model: prep.model,
             messages: local.messages,
@@ -203,6 +212,8 @@ function createChat(ctx) {
         content = j?.message?.content || '';
         used = usedLocal(prep);
       }
+      // An answer that arrived after the caller left is not recorded as one.
+      if (signal?.aborted) throw cancelError(signal);
       const elapsedMs = Date.now() - started;
       const lastUser = [...prep.messages].reverse().find(m => m.role === 'user');
 
@@ -235,7 +246,11 @@ function createChat(ctx) {
         runId: execution.id
       };
     } catch (e) {
-      if (execution) { runLedger.fail(execution.id, e); try { e.runId = execution.id; } catch {} }
+      if (execution) {
+        if (signal?.aborted) runLedger.cancel(execution.id, String(signal.reason?.message || 'Run cancelled'));
+        else runLedger.fail(execution.id, e);
+        try { e.runId = execution.id; } catch {}
+      }
       throw e;
     }
   }
@@ -243,14 +258,18 @@ function createChat(ctx) {
   async function apiChatStream(req, res, access) {
     let execution = null;
     let controller = null;
-    // Ollama can stall while loading a model or mid-stream; abort when no output arrives for CHAT_MODEL_TIMEOUT_MS.
+    let full = ''; // what this PC's model sent so far: kept on the run if the turn stalls
+    // No output for CHAT_MODEL_TIMEOUT_MS ends the turn: from the start (search, the cloud call) and between events
+    // (Ollama loading a model, or stalling mid-stream). The browser waits a little longer than this before it says the
+    // reply stalled (app/public/app.js streamChat), so the server's own error arrives first while it is alive.
     let idleTimer = null;
     let stalled = false;
+    let lastOut = Date.now(); // when the browser was last sent anything: the start, the headers, each event
     const armIdle = () => {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => {
         stalled = true;
-        controller?.abort(new Error(`No model output for ${Math.round(CHAT_MODEL_TIMEOUT_MS / 1000)}s`));
+        controller?.abort(new Error(`No reply after ${Math.round(CHAT_MODEL_TIMEOUT_MS / 1000)} s`));
       }, CHAT_MODEL_TIMEOUT_MS);
     };
     try {
@@ -259,11 +278,20 @@ function createChat(ctx) {
       runLedger.start(execution.id, body.webSearch === true ? 'Research run started' : 'Chat run started');
       controller = new AbortController();
       activeRunControllers.set(execution.id, controller);
+      armIdle();
+      // The browser names the wait after which it gives up on a quiet stream (stallMs, app/public/app.js streamChat). A
+      // close after the server has been quiet that long is that stall: recorded as one (failed, with what arrived), as
+      // the server's own stall is. A Stop or a closed tab sooner, or from a caller that named no wait, is cancelled.
+      const wait = Number(body.stallMs);
       res.on('close', () => {
-        if (!res.writableEnded) {
-          runLedger.cancel(execution.id, 'Client disconnected');
-          if (!controller.signal.aborted) controller.abort(new Error('Client disconnected'));
+        if (res.writableEnded || controller.signal.aborted) return;
+        if (wait >= 100 && wait <= 36e5 && Date.now() - lastOut >= wait) {
+          stalled = true;
+          controller.abort(new Error(`No reply after ${Math.round(wait / 1000)} s`));
+          return;
         }
+        runLedger.cancel(execution.id, 'Client disconnected');
+        controller.abort(new Error('Client disconnected'));
       });
 
       const prep = await prepareChat(body, controller.signal);
@@ -274,6 +302,7 @@ function createChat(ctx) {
       }
       const started = Date.now();
 
+      lastOut = Date.now();
       res.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
         'Cache-Control': 'no-cache, no-transform',
@@ -282,15 +311,16 @@ function createChat(ctx) {
       });
 
       const send = (event, data) => {
+        lastOut = Date.now();
         res.write(`event: ${event}\n`);
         res.write(`data: ${JSON.stringify(data)}\n\n`);
       };
 
       // A cloud answer (when the route allows one) arrives whole; this PC's model streams as before.
-      const cloud = await cloudAnswer(prep);
+      const cloud = await cloudAnswer(prep, controller.signal);
+      if (controller.signal.aborted) throw cancelError(controller.signal);
       const used = cloud ? cloud.used : usedLocal(prep);
       send('meta', { model: used.model, route: used, sources: prep.sources, runId: execution.id });
-      let full = '';
       if (cloud) {
         full = cloud.content;
         send('token', { text: full });
@@ -372,15 +402,20 @@ function createChat(ctx) {
     } catch (e) {
       const current = execution ? runLedger.get(execution.id) : null;
       const cancelled = !stalled && (current?.status === 'cancelled' || (controller?.signal.aborted && current?.status !== 'failed'));
-      if (execution && !cancelled) runLedger.fail(execution.id, e);
+      if (execution && !cancelled) runLedger.fail(execution.id, stalled ? controller.signal.reason : e);
+      // A stall keeps what had arrived, marked as stalled: the run view draws it cut off with Try again, after a reload
+      // too, and the run's card shows the stall (app/run-cards.js), never the part answer as an answer.
+      if (execution && stalled) runLedger.update(execution.id, { output: { text: full.slice(0, 40000), stalled: true } });
       if (!res.headersSent) {
         if (!res.destroyed) {
           if (cancelled) json(res, 409, { error: 'Run cancelled', runId: execution?.id || null });
+          // Before the stream started (search, say): the run exists, so say which, and that it stalled.
+          else if (stalled) json(res, 504, { error: String(controller.signal.reason?.message || 'No reply'), runId: execution.id, stalled: true });
           else storageError(res,e,500);
         }
       } else {
         try {
-          res.write(`event: ${cancelled ? 'cancelled' : 'error'}\ndata: ${JSON.stringify(cancelled ? { runId: execution.id } : { error: String(e.message || e), runId: execution?.id || null })}\n\n`);
+          res.write(`event: ${cancelled ? 'cancelled' : 'error'}\ndata: ${JSON.stringify(cancelled ? { runId: execution.id } : { error: String((stalled ? controller.signal.reason : e)?.message || e), runId: execution?.id || null, ...(stalled ? { stalled: true } : {}) })}\n\n`);
           res.end();
         } catch {}
       }
