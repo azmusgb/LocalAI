@@ -12,7 +12,7 @@ const UNAVAILABLE = new Set(['error', 'record_failed']);
 const SOURCE_FIELDS = ['name', 'url', 'kind', 'trust', 'topics', 'scheduleMinutes', 'status'];
 
 function createResearchRoutes(ctx) {
-  const { experiments, intake, json, readBody, store, storageError } = ctx;
+  const { experiments, intake, json, readBody, store, storageError, topics } = ctx;
   const pick = (b, fields) => Object.fromEntries(fields.filter(k => k in b).map(k => [k, b[k]]));
   // Store validation errors carry .status 400, 404, 409 or 410 and a message written for the owner; anything else is a failure.
   function fail(res, e) {
@@ -183,11 +183,53 @@ function createResearchRoutes(ctx) {
     } catch (e) { fail(res, e); }
   }
 
+  async function apiResearchTopics(req, res, urlObj) {
+    try {
+      const enabled = read().enabled;
+      if (!enabled) return json(res, 200, { enabled, topics: [] });
+      if (req.method === 'POST') {
+        const b = await body(req);
+        if (!topics) return json(res, 501, { error: 'Topics manager not configured' });
+        const t = topics.addTopic(b);
+        return json(res, 200, { topic: t });
+      }
+      const list = topics ? topics.listTopics() : [];
+      return json(res, 200, { enabled, topics: list });
+    } catch (e) { fail(res, e); }
+  }
+
+  async function apiResearchTopicUpdate(req, res) {
+    try {
+      if (!read().enabled) return json(res, 409, OFF);
+      const b = await body(req);
+      if (!topics) return json(res, 501, { error: 'Topics manager not configured' });
+      const t = topics.updateTopic(b.id, b);
+      return json(res, 200, { topic: t });
+    } catch (e) { fail(res, e); }
+  }
+
+  async function apiResearchConflicts(req, res, urlObj) {
+    try {
+      const enabled = read().enabled;
+      if (!enabled) return json(res, 200, { enabled, conflicts: [] });
+      if (req.method === 'POST') {
+        const b = await body(req);
+        if (!topics) return json(res, 501, { error: 'Topics manager not configured' });
+        const c = topics.recordConflict(b);
+        return json(res, 200, { conflict: c });
+      }
+      const findingId = urlObj?.searchParams?.get('findingId') || '';
+      const list = topics && findingId ? topics.getConflictsForFinding(findingId) : [];
+      return json(res, 200, { enabled, conflicts: list });
+    } catch (e) { fail(res, e); }
+  }
+
   return {
     apiResearchState, apiResearchPause, apiResearchSources, apiResearchSourceAdd,
     apiResearchSourceUpdate, apiResearchSourceFetch, apiResearchDocuments,
     apiResearchFindings, apiResearchFindingDecide, apiResearchFindingPromote, apiImproveOutcome,
-    apiResearchExperiments, apiResearchContracts
+    apiResearchExperiments, apiResearchContracts,
+    apiResearchTopics, apiResearchTopicUpdate, apiResearchConflicts
   };
 }
 
