@@ -1,0 +1,10 @@
+{"id":"case-001","query":"SSRF guard validateExternalUrl","expectedIds":["j-ssrf-001"],"heldOut":false}
+{"id":"case-002","query":"FastAPI lifespan state optimization","expectedIds":["j-fastapi-002"],"heldOut":false}
+{"id":"case-003","query":"Bambu Studio preset hex tiles","expectedIds":["j-bambu-003"],"heldOut":false}
+{"id":"case-004","query":"Ollama context window allocation","expectedIds":["j-ollama-004"],"heldOut":false}
+{"id":"case-005","query":"SQLite FTS5 porter tokenizer unicode61","expectedIds":["j-sqlite-005"],"heldOut":false}
+{"id":"case-006","query":"Pydantic v2 migration pipeline","expectedIds":["j-pydantic-006"],"heldOut":false}
+{"id":"case-007","query":"Tailscale CGNAT private address block","expectedIds":["j-ssrf-001"],"heldOut":false}
+{"id":"case-008","query":"Node.js DatabaseSync rollback safety","expectedIds":["j-sqlite-005"],"heldOut":false}
+{"id":"case-009","query":"Print lab volumetric flow rate observations","expectedIds":["j-bambu-003"],"heldOut":true}
+{"id":"case-010","query":"Claude session worktree isolation","expectedIds":["j-claude-010"],"heldOut":true}

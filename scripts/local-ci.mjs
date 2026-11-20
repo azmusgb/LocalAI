@@ -336,6 +336,24 @@ async function main() {
   const step = async (name, ...a) => { const r = await run(name, ...a); results.push([name, r.ok]); return r; };
   const jsFiles = ['app', 'app/public', 'tests'].flatMap(d => fs.readdirSync(path.join(dir, d)).filter(f => /\.(js|mjs|cjs)$/.test(f) && (d !== 'tests' || /\.(mjs|cjs)$/.test(f))).map(f => `${d}/${f}`));
   await step('JavaScript syntax', 'sh', ['-c', jsFiles.map(f => `node --check '${f}'`).join(' && ')]);
+
+  // Evolution Contract Guard: A PR citing a contract cannot touch that contract's test suite files under evals/
+  if (pr) {
+    try {
+      const prBody = execFileSync('gh', ['pr', 'view', pr, '--json', 'body', '-q', '.body'], { cwd: dir, encoding: 'utf8' }) || '';
+      const citedContract = prBody.match(/contract:\s*(ctr-[a-zA-Z0-9-]+)/i);
+      if (citedContract) {
+        const changedFiles = execFileSync('git', ['diff', '--name-only', `origin/${baseRef}...HEAD`], { cwd: dir, encoding: 'utf8' }).split('\n').filter(Boolean);
+        const touchesSuite = changedFiles.some(f => f.startsWith('evals/'));
+        if (touchesSuite) {
+          say(`--- Evolution Contract Guard: FAILED (PR cites contract ${citedContract[1]} but modifies benchmark suite files in evals/)`);
+          await status('failure', `Contract violation: PR touches evals/ suite`);
+          return false;
+        }
+      }
+    } catch {}
+  }
+
   const unit = await step('Unit and contract tests', 'npm', ['test']);
   await step('Python syntax', 'python3', ['-m', 'py_compile', 'host/gridcraft-bridge.py', 'host/gridcraft-agent/gridcraft_ai.py']);
   if (hasPwsh) {
