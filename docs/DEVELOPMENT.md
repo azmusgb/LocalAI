@@ -110,6 +110,11 @@ default, `http://10.0.0.28`): suites that open Services or Agent World without m
 real requests. Port 9 on loopback refuses at once, so the Workshop card just reads as offline. Servers the tests start
 themselves (`spawnAppServer()`, `tests/run-browser.mjs`, `npm run ci`) already default to it unless you set one.
 
+`tests/run-browser.mjs` refuses (exit 2) a `LOCALAI_URL` whose `/healthz` reports a `releaseCommit` (a deployed release,
+such as the live appliance on 3080 on the Windows host) or can't be read; `LOCALAI_TESTS_WRITE_TO_PRODUCTION=1`
+overrides the first only. A suite run directly with `node tests/<name>-ui.mjs` makes the same check through its first
+import, `tests/browser-target-guard.mjs`, which every suite that reads `LOCALAI_URL` must have (`npm test` checks).
+
 Use a fresh `DATA_DIR`: the scripts write data (for example Claude board findings and paired chat devices). `tests/claude-chat-ui.mjs`
 ignores `LOCALAI_URL` and starts its own server. Run some suites with `node tests/run-browser.mjs images claude` (names are matched as substrings;
 a full name such as `home-ui.mjs` matches only that suite), or one with `node tests/<name>-ui.mjs`. `--shard 2/4` runs

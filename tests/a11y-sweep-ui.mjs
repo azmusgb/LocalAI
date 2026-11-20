@@ -1,5 +1,6 @@
 // Accessibility sweep: axe (WCAG 2.2 AA + best practices) on every page at phone and desktop width, with data in the
 // lists that once failed (Claude Code heat map and activity, Library, Issues, What's new), plus keyboard checks.
+import './browser-target-guard.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';

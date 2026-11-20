@@ -2,6 +2,7 @@
 // under a finished answer (press, change, clear, the note, a failed save, keyboard only), none on a failed run, the
 // Past work body, and Models › How answers have landed in its empty, loaded and failed states. axe on both. The
 // server's routes are stubbed in the page, so it runs against any server at LOCALAI_URL. SHOTS=<dir> saves screenshots.
+import './browser-target-guard.mjs';
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

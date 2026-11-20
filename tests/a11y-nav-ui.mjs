@@ -1,5 +1,6 @@
 // Keyboard and screen-reader basics for moving around: the tab title names the page, focus lands on the new page
 // (not left on the menu), and the ⌘K palette is a real modal dialog that gives focus back when it closes.
+import './browser-target-guard.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 

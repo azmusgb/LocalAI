@@ -1,5 +1,6 @@
 // Page-open counter: opening pages is counted on this appliance, Settings › Pages you open lists the top ones, and Reset
 // forgets them behind a confirmation. Needs a server with a throwaway data folder (the counts are shared, then reset).
+import './browser-target-guard.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 

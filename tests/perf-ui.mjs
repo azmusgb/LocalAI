@@ -2,6 +2,7 @@
 // slowed 4x (about a phone), frames stay at 30 fps or better and none takes 200 ms. Measured 2026-10-16: 60 fps
 // (p95 16.8 ms), longest animation frame 86 ms, at both phone and desktop width. Since 2026-10-17 it also runs on an
 // emulated iPhone 14 (touch, 3x screen; the canvas paints at 2x).
+import './browser-target-guard.mjs';
 import { chromium, devices } from 'playwright';
 import assert from 'node:assert/strict';
 

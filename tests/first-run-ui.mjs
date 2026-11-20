@@ -1,4 +1,5 @@
 // First run: the Get started card on Home, and no developer-tools switch to find (navigation update, 2 Nov).
+import './browser-target-guard.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 

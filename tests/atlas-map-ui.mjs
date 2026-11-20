@@ -2,6 +2,7 @@
 // named modules in columns with links, selecting a module colours what it uses and what uses it, the inspector says why it
 // ranks where it does, at most six findings, search with / Enter Escape, lenses as pressed buttons, the page at 390 px
 // with 44 px rows and no sideways scroll, axe on the drawn map in both schemes, an older snapshot and a missing graph.
+import './browser-target-guard.mjs';
 import { chromium, devices } from 'playwright';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
