@@ -87,7 +87,75 @@ function createResearchRoutes(ctx) {
     } catch (e) { fail(res, e); }
   }
 
-  return { apiResearchState, apiResearchPause, apiResearchSources, apiResearchSourceAdd, apiResearchSourceUpdate, apiResearchSourceFetch, apiResearchDocuments };
+  async function apiResearchFindings(req, res, urlObj) {
+    try {
+      const enabled = read().enabled;
+      if (!enabled) return json(res, 200, { enabled, findings: [] });
+      const q = urlObj.searchParams;
+      const status = q.get('status') || '';
+      const limit = Math.min(10, Math.max(1, Number.parseInt(q.get('limit'), 10) || 10)); // Daily attention cap default 10
+      return json(res, 200, { enabled, findings: store.listFindings({ status, limit }) });
+    } catch (e) { fail(res, e); }
+  }
+
+  async function apiResearchFindingDecide(req, res) {
+    try {
+      if (!read().enabled) return json(res, 409, OFF);
+      const b = await body(req);
+      const finding = store.decideFinding(String(b.id || ''), String(b.status || ''), { changeId: b.changeId });
+      return json(res, 200, { finding });
+    } catch (e) { fail(res, e); }
+  }
+
+  async function apiResearchFindingPromote(req, res) {
+    try {
+      if (!read().enabled) return json(res, 409, OFF);
+      const b = await body(req);
+      const finding = store.getFinding(String(b.id || ''));
+      if (!finding) return json(res, 404, { error: 'No such finding' });
+
+      // Promotion creates an ordinary Improve backlog item
+      const itemTitle = String(b.title || finding.claim).slice(0, 140);
+      const desc = `Promoted from Research Finding ${finding.id}.\nEvidence quote:\n"${finding.quote}"\n\nTarget project: ${finding.targetProject}\nRelevance: ${finding.relevance}`;
+
+      let changeId = '';
+      if (ctx.changes && typeof ctx.changes.addChange === 'function') {
+        const chg = ctx.changes.addChange({
+          title: itemTitle,
+          description: desc,
+          project: finding.targetProject,
+          kind: 'improvement',
+          source: 'research'
+        });
+        changeId = chg.id;
+      }
+
+      const updated = store.decideFinding(finding.id, 'promoted', { changeId });
+      return json(res, 200, { finding: updated, changeId });
+    } catch (e) { fail(res, e); }
+  }
+
+  async function apiImproveOutcome(req, res) {
+    try {
+      const b = await body(req);
+      const outcome = store.recordOutcome({
+        findingId: b.findingId,
+        changeId: b.changeId,
+        metricName: b.metricName,
+        beforeVal: b.beforeVal,
+        afterVal: b.afterVal,
+        verdict: b.verdict,
+        notes: b.notes
+      });
+      return json(res, 200, { ok: true, outcome });
+    } catch (e) { fail(res, e); }
+  }
+
+  return {
+    apiResearchState, apiResearchPause, apiResearchSources, apiResearchSourceAdd,
+    apiResearchSourceUpdate, apiResearchSourceFetch, apiResearchDocuments,
+    apiResearchFindings, apiResearchFindingDecide, apiResearchFindingPromote, apiImproveOutcome
+  };
 }
 
 module.exports = { createResearchRoutes };

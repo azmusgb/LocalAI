@@ -35,6 +35,14 @@ const SCHEMA = `
     INSERT INTO research_documents_fts(rowid, title, text) VALUES (new.seq, new.title, new.text); END;
   CREATE TRIGGER IF NOT EXISTS research_documents_ad AFTER DELETE ON research_documents BEGIN
     INSERT INTO research_documents_fts(research_documents_fts, rowid, title, text) VALUES ('delete', old.seq, old.title, old.text); END;
+  CREATE TABLE IF NOT EXISTS research_findings (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, document_id TEXT NOT NULL,
+    source_id TEXT NOT NULL, claim TEXT NOT NULL, quote TEXT NOT NULL, target_project TEXT NOT NULL, relevance TEXT NOT NULL,
+    status TEXT NOT NULL, created_at TEXT NOT NULL, decided_at TEXT NOT NULL DEFAULT '', change_id TEXT NOT NULL DEFAULT '');
+  CREATE INDEX IF NOT EXISTS research_findings_status ON research_findings (status, seq);
+  CREATE INDEX IF NOT EXISTS research_findings_doc ON research_findings (document_id);
+  CREATE TABLE IF NOT EXISTS research_outcomes (id TEXT PRIMARY KEY, finding_id TEXT NOT NULL, change_id TEXT NOT NULL,
+    metric_name TEXT NOT NULL, before_val REAL NOT NULL, after_val REAL NOT NULL, verdict TEXT NOT NULL, notes TEXT NOT NULL, created_at TEXT NOT NULL);
+  CREATE INDEX IF NOT EXISTS research_outcomes_finding ON research_outcomes (finding_id);
   CREATE TABLE IF NOT EXISTS research_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`;
 
 function fail(status, message) { return Object.assign(new Error(message), { status }); }
@@ -98,6 +106,16 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     insertDoc: db.prepare('INSERT INTO research_documents (id, source_id, ref, revision, url, title, text, published, fetched_at, hash) VALUES (?,?,?,?,?,?,?,?,?,?)'),
     trimDocs: db.prepare(`DELETE FROM research_documents WHERE source_id = ? AND seq <= COALESCE((SELECT seq FROM research_documents WHERE source_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?), 0)`),
     docSeq: db.prepare('SELECT seq FROM research_documents WHERE id = ?'),
+    getDocument: db.prepare('SELECT * FROM research_documents WHERE id = ?'),
+    insertFinding: db.prepare(`INSERT INTO research_findings (id, document_id, source_id, claim, quote, target_project, relevance, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'extracted', ?)`),
+    getFinding: db.prepare('SELECT * FROM research_findings WHERE id = ?'),
+    listFindings: db.prepare("SELECT * FROM research_findings WHERE (status = ? OR ? = '') ORDER BY seq DESC LIMIT ?"),
+    countFindingsToday: db.prepare('SELECT count(*) AS n FROM research_findings WHERE created_at >= ?'),
+    updateFindingStatus: db.prepare('UPDATE research_findings SET status = ?, decided_at = ?, change_id = ? WHERE id = ?'),
+    insertOutcome: db.prepare(`INSERT INTO research_outcomes (id, finding_id, change_id, metric_name, before_val, after_val, verdict, notes, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+    listOutcomes: db.prepare('SELECT * FROM research_outcomes WHERE finding_id = ? ORDER BY created_at DESC'),
     getMeta: db.prepare('SELECT value FROM research_meta WHERE key = ?'),
     setMeta: db.prepare('INSERT INTO research_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'),
   };
@@ -241,10 +259,70 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
   const fetchesToday = () => st.fetchesToday.get(localDay(now(), timeZone)).n;
   const listFetches = (sourceId, limit = 20) => st.listFetches.all(String(sourceId ?? ''), Math.max(1, Math.min(KEEP_FETCHES, Number.parseInt(limit, 10) || 20)))
     .map(r => ({ at: r.at, day: r.day, ok: !!r.ok, status: r.status, code: r.code, reason: r.reason, bytes: r.bytes, added: r.added, revised: r.revised, ms: r.ms }));
+  const getDocument = id => { const r = st.getDocument.get(String(id ?? '')); return r ? hydrateDoc(r) : null; };
+
+  const hydrateFinding = r => r && ({
+    id: r.id, documentId: r.document_id, sourceId: r.source_id, claim: r.claim, quote: r.quote,
+    targetProject: r.target_project, relevance: r.relevance, status: r.status, createdAt: r.created_at,
+    decidedAt: r.decided_at, changeId: r.change_id
+  });
+
+  function addFinding({ documentId, sourceId, claim, quote, targetProject = 'LocalAI', relevance = 'General' } = {}) {
+    if (!documentId || !claim || !quote) throw fail(400, 'documentId, claim, and quote are required');
+    const id = newId('fnd');
+    const at = nowIso();
+    st.insertFinding.run(id, String(documentId), String(sourceId || ''), redact(claim, 300), redact(quote, 2000), String(targetProject).slice(0, 60), String(relevance).slice(0, 60), at);
+    return hydrateFinding(st.getFinding.get(id));
+  }
+
+  function getFinding(id) {
+    return hydrateFinding(st.getFinding.get(String(id ?? ''))) || null;
+  }
+
+  function listFindings({ status = '', limit = 10 } = {}) {
+    const s = String(status || '').trim();
+    const l = Math.max(1, Math.min(100, Number.parseInt(limit, 10) || 10));
+    return st.listFindings.all(s, s, l).map(hydrateFinding);
+  }
+
+  function countFindingsToday() {
+    const startOfDay = new Date(localDay(now(), timeZone) + 'T00:00:00Z').toISOString();
+    return st.countFindingsToday.get(startOfDay).n;
+  }
+
+  function decideFinding(id, status, { changeId = '' } = {}) {
+    const cur = getFinding(id);
+    if (!cur) throw fail(404, 'unknown finding');
+    const valid = ['kept', 'dismissed', 'promoted'];
+    if (!valid.includes(status)) throw fail(400, `status must be one of: ${valid.join(', ')}`);
+    st.updateFindingStatus.run(status, nowIso(), String(changeId || ''), cur.id);
+    return getFinding(cur.id);
+  }
+
+  function recordOutcome({ findingId, changeId = '', metricName, beforeVal, afterVal, verdict = 'validated', notes = '' } = {}) {
+    const cur = getFinding(findingId);
+    if (!cur) throw fail(404, 'unknown finding');
+    const id = newId('out');
+    const at = nowIso();
+    st.insertOutcome.run(id, cur.id, String(changeId || cur.changeId || ''), String(metricName || 'metric'), Number(beforeVal) || 0, Number(afterVal) || 0, String(verdict), redact(notes, 1000), at);
+    return { id, findingId: cur.id, verdict, recordedAt: at };
+  }
+
+  function listOutcomes(findingId) {
+    return st.listOutcomes.all(String(findingId ?? '')).map(r => ({
+      id: r.id, findingId: r.finding_id, changeId: r.change_id, metricName: r.metric_name,
+      beforeVal: r.before_val, afterVal: r.after_val, verdict: r.verdict, notes: r.notes, createdAt: r.created_at
+    }));
+  }
+
   const getMeta = key => { const r = st.getMeta.get(String(key)); return r ? r.value : null; };
   const setMeta = (key, value) => { st.setMeta.run(String(key), String(value)); };
 
-  return { addSource, updateSource, listSources, getSource, dueSources, recordFetch, saveEntries, listDocuments, fetchesToday, listFetches, getMeta, setMeta };
+  return {
+    addSource, updateSource, listSources, getSource, dueSources, recordFetch, saveEntries,
+    listDocuments, getDocument, fetchesToday, listFetches, getMeta, setMeta,
+    addFinding, getFinding, listFindings, countFindingsToday, decideFinding, recordOutcome, listOutcomes
+  };
 }
 
 module.exports = { createResearchStore };

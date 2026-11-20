@@ -409,7 +409,7 @@ const { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGrid
 const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore: (...a) => changeStore(...a), decideChange: (...a) => decideChange(...a), hostDetail, isInfoNotice, journalWriter, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
 const { apiNavPins } = require('./server/nav-pins').createNavPins({ json, readBody, sameOriginJson, storage, storageError });
 const { apiJournal, apiJournalAsk, apiJournalDelete, startPastWork } = require('./server/journal').createJournalRoutes({ ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, coordinator, fitMessages, journal, json, modelFetchWithTimeout, prints: piHub.prints, readBody, runLedger, storageError });
-const { apiResearchDocuments, apiResearchPause, apiResearchSourceAdd, apiResearchSourceFetch, apiResearchSourceUpdate, apiResearchSources, apiResearchState } = require('./server/research').createResearchRoutes({ intake: researchIntake, json, readBody, store: researchStore, storageError });
+const { apiResearchDocuments, apiResearchPause, apiResearchSourceAdd, apiResearchSourceFetch, apiResearchSourceUpdate, apiResearchSources, apiResearchState, apiResearchFindings, apiResearchFindingDecide, apiResearchFindingPromote, apiImproveOutcome } = require('./server/research').createResearchRoutes({ intake: researchIntake, json, readBody, store: researchStore, storageError });
 setInterval(() => researchIntake.tick().catch(e => console.error(`${nowIso()} Research intake failed:`, e)), 30000).unref?.();
 const { apiFeedback, apiFeedbackSummary } = require('./server/answer-feedback').createAnswerFeedbackRoutes({ answerFeedback, json, readBody, runLedger });
 const { apiNavOpen, apiNavOpens, apiNavOpensClear } = require('./server/nav').createNav({ json, readBody, sameOriginJson, storage, storageError });
@@ -471,6 +471,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && p === '/api/research/sources/update') return await apiResearchSourceUpdate(req, res);
     if (req.method === 'POST' && p === '/api/research/sources/fetch') return await apiResearchSourceFetch(req, res);
     if (req.method === 'GET' && p === '/api/research/documents') return await apiResearchDocuments(req, res, urlObj);
+    if (req.method === 'GET' && p === '/api/research/findings') return await apiResearchFindings(req, res, urlObj);
+    if (req.method === 'POST' && p === '/api/research/findings/decide') return await apiResearchFindingDecide(req, res);
+    if (req.method === 'POST' && p === '/api/research/findings/promote') return await apiResearchFindingPromote(req, res);
+    if (req.method === 'POST' && p === '/api/improve/outcome') return await apiImproveOutcome(req, res);
     if (req.method === 'POST' && p === '/api/nav/open') return await apiNavOpen(req, res);
     if (req.method === 'GET' && p === '/api/nav/opens') return await apiNavOpens(req, res, urlObj);
     if (req.method === 'DELETE' && p === '/api/nav/opens') return await apiNavOpensClear(req, res);
