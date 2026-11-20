@@ -117,8 +117,38 @@ async function findInProject(projectRoot, query, scope, maxChars) {
   throw new Error('Not enough room left in the model context to search; write up what you have');
 }
 
-function createResearchTools({ projectRoot, projectId = '', knowledgeStore = () => [], knowledgeScore, searxSearch, allowWeb = false }) {
+function createResearchTools({ projectRoot, projectId = '', knowledgeStore = () => [], knowledgeScore, searxSearch, researchStore = null, allowWeb = false }) {
   const tools = [
+    tool('search_research_findings', 'Search validated or kept research findings and claims across projects. Returns evidence excerpts and claim summaries.', { query: stringSchema, target_project: stringSchema }, ['query'], async args => {
+      objectArgs(args, ['query', 'target_project']);
+      const query = stringArg(args.query, 'query');
+      const targetProj = args.target_project ? String(args.target_project) : '';
+      if (!researchStore || typeof researchStore.listFindings !== 'function') {
+        return { data: { matches: [], note: 'Research store not available' }, evidence: [] };
+      }
+      const allFindings = researchStore.listFindings({ limit: 50 });
+      const q = query.toLowerCase();
+      const hits = allFindings.filter(f => {
+        if (targetProj && f.targetProject.toLowerCase() !== targetProj.toLowerCase()) return false;
+        return f.claim.toLowerCase().includes(q) || f.quote.toLowerCase().includes(q);
+      }).slice(0, 5);
+
+      const evidence = hits.map(f => evidenceRecord(`research:finding:${f.id}`, `Claim: ${f.claim}\nQuote: ${f.quote}`, { kind: 'research_finding', title: f.claim }));
+      return {
+        data: {
+          matches: hits.map((f, i) => ({
+            id: f.id,
+            evidenceId: evidence[i].id,
+            claim: f.claim,
+            quote: f.quote,
+            status: f.status,
+            targetProject: f.targetProject,
+            relevance: f.relevance
+          }))
+        },
+        evidence
+      };
+    }),
     tool('search_project_knowledge', 'Search indexed knowledge documents for the selected project (not the app code: use find_in_project for code). Returns matching excerpts with evidence IDs.', { query: stringSchema }, ['query'], async args => {
       objectArgs(args, ['query']);
       const query = stringArg(args.query, 'query');

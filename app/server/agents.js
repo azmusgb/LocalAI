@@ -9,7 +9,7 @@ const { label: routeLabel } = require('../model-router');
 function withRouteText(m) { const t = m && m.route && typeof m.route === 'object' ? routeLabel(m.route) : ''; return t ? { ...m, routeText: t } : m; }
 
 function createAgents(ctx) {
-  const { APPROVALS_STORE, APP_DIR, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, LARGE_ANSWER_RESERVE, MISSION_ANSWER_RESERVE, MISSION_EVIDENCE_TOKENS, MISSION_MODEL_CONCURRENCY, MISSION_NUM_CTX, MISSION_TIMEOUT_MS, MODEL, OLLAMA_URL, RUNS_STORE, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, URL, activeRunControllers, coordinator, addNotification, agentRunStore, approvalStore, busy, fetchWithTimeout, fitMessages, inFlight, json, knowledgeScore, knowledgeStore, makeId, modelFetchWithTimeout, nowIso, plainText, readBody, recordActivity, requireFeature, runLedger, saveStore, searxSearch, storage, storageError, titleFromText } = ctx;
+  const { APPROVALS_STORE, APP_DIR, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, LARGE_ANSWER_RESERVE, MISSION_ANSWER_RESERVE, MISSION_EVIDENCE_TOKENS, MISSION_MODEL_CONCURRENCY, MISSION_NUM_CTX, MISSION_TIMEOUT_MS, MODEL, OLLAMA_URL, RUNS_STORE, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, TEXT_NUM_CTX_LARGE, URL, activeRunControllers, coordinator, addNotification, agentRunStore, approvalStore, busy, fetchWithTimeout, fitMessages, inFlight, json, knowledgeScore, knowledgeStore, makeId, modelFetchWithTimeout, nowIso, plainText, readBody, recordActivity, requireFeature, researchStore, runLedger, saveStore, searxSearch, storage, storageError, titleFromText } = ctx;
   // What a restart would interrupt now. The host's auto-deploy holds an update while this says busy (docs/DEPLOY.md).
   // The orchestrator is only asked once something has created it: before that nothing of its can be running, and
   // creating it here would settle records from before the restart as a side effect.
@@ -177,7 +177,7 @@ function createAgents(ctx) {
    if(specialistOrchestrator)return specialistOrchestrator;
    specialistOrchestrator=require('../agent-orchestrator')({
     dataDir:DATA_DIR,storage,ollamaUrl:OLLAMA_URL,defaultModel:MODEL,fetchWithTimeout,runLocalModel,coordinator,
-    knowledgeStore,knowledgeScore,searxSearch,recordActivity,
+    knowledgeStore,knowledgeScore,searxSearch,researchStore,recordActivity,
     projectRoot:APP_DIR,
     // Mission turns use a context sized to fit the GPU (text-context.js MISSION_NUM_CTX), one model turn at a time, and
     // an opening-evidence budget that keeps the first prompt to about a minute of reading.
