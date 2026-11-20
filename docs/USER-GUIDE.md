@@ -74,7 +74,8 @@ a chat that uses a project's Memory notes always stay on this computer. Research
 model when nothing in them is private. If a cloud model is busy or fails, this computer answers instead.
 
 Every answer says where it came from: **Answered by GPT-OSS 120B · Groq** or **Answered on this PC**, with the
-reason, under the answer and on its card in Work. Each cloud call is listed in the Audit log (which service, which
+reason, under the answer and on its card in Work. When a cloud model was tried and didn't answer, the reason says so
+("Cloud models didn't answer (Groq: timed out; Cerebras: busy), so this PC answered"). Each cloud call is listed in the Audit log (which service, which
 model, how much text; never the text itself).
 
 Beside that line, **Good answer** and **Not right** say how the answer landed (on chats, research and Past work

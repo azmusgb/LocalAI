@@ -109,3 +109,77 @@ test('the Activity line is written before each cloud call, failures included; a 
   assert.equal(calls2.length, 1);
   void calls;
 });
+
+// A route records what happened, not only what was planned: the model that answered, why when that differs from the
+// plan, and a bounded list of what was tried (provider, model, outcome, ms; never the text or a key).
+const timedOut = () => Object.assign(new Error('Groq: timed out'), { outcome: 'timeout' });
+const busy = () => Object.assign(new Error('Cerebras: rate limit reached, resting until 3:00:00 PM'), { outcome: 'rate_limited' });
+const checkAttempt = (a, provider, outcome) => {
+  assert.deepEqual(Object.keys(a).sort(), ['model', 'ms', 'outcome', 'provider']);
+  assert.equal(a.provider, provider); assert.equal(a.outcome, outcome);
+  assert.ok(Number.isFinite(a.ms) && a.ms >= 0, String(a.ms));
+};
+
+test('attempts: the cloud answers first try; the route keeps the plan\'s why and lists one answered attempt', async () => {
+  const { c } = setup();
+  const r = c.route({ kind: 'plan', text: 'x' }), tried = [];
+  const out = await c.run(r, msgs, { kind: 'plan', attempts: tried });
+  assert.equal(out.used.why, r.why);
+  assert.equal(out.used.attempts.length, 1);
+  checkAttempt(out.used.attempts[0], 'groq', 'answered');
+  assert.equal(out.used.attempts[0].model, 'openai/gpt-oss-120b');
+  assert.deepEqual(tried, out.used.attempts);
+});
+
+test('attempts: the first cloud model times out, the second answers, and the why says so', async () => {
+  let n = 0;
+  const { c } = setup({ answer: () => (n++ === 0 ? timedOut() : { content: 'Cerebras answer' }) });
+  const out = await c.run(c.route({ kind: 'plan', text: 'x' }), msgs, { kind: 'plan' });
+  assert.equal(out.used.provider, 'cerebras');
+  assert.equal(out.used.why, 'Groq timed out, so Cerebras answered');
+  checkAttempt(out.used.attempts[0], 'groq', 'timeout');
+  checkAttempt(out.used.attempts[1], 'cerebras', 'answered');
+});
+
+test('attempts: every cloud model fails, this PC answers, and the route says what was tried', async () => {
+  let n = 0;
+  const { c } = setup({ answer: () => (n++ === 0 ? timedOut() : busy()) });
+  const r = c.route({ kind: 'research', text: 'Compare PETG and ASA' }), tried = [];
+  assert.equal(await c.run(r, msgs, { kind: 'research', attempts: tried }), null);
+  const used = c.local(r, 'local-model', tried);
+  assert.deepEqual([used.provider, used.model, used.class], ['ollama', 'local-model', 'shareable']);
+  assert.equal(used.why, "Cloud models didn't answer (Groq: timed out; Cerebras: busy), so this PC answered");
+  assert.equal(used.attempts.length, 2);
+  checkAttempt(used.attempts[0], 'groq', 'timeout');
+  checkAttempt(used.attempts[1], 'cerebras', 'rate_limited');
+  assert.ok(!JSON.stringify(used).includes('Models page'), 'no prompt text');
+});
+
+test('attempts: an error without an outcome is classified from its words; an empty answer is an error', async () => {
+  const words = [new Error('Groq: timed out'), new Error('Cerebras: HTTP 503')];
+  const { c } = setup({ answer: () => words.shift() });
+  const tried = [];
+  await c.run(c.route({ kind: 'plan', text: 'x' }), msgs, { kind: 'plan', attempts: tried });
+  assert.deepEqual(tried.map(a => a.outcome), ['timeout', 'error']);
+  const { c: c2 } = setup({ answer: () => ({ content: '' }) });
+  const tried2 = [];
+  assert.equal(await c2.run(c2.route({ kind: 'plan', text: 'x' }), msgs, { kind: 'plan', attempts: tried2 }), null);
+  assert.deepEqual(tried2.map(a => a.outcome), ['error', 'error']);
+  assert.match(c2.local(c2.route({ kind: 'plan', text: 'x' }), 'q', tried2).why, /Groq: failed; Cerebras: failed/);
+});
+
+test('attempts: a local-only plan tries nothing and records the route exactly as before', async () => {
+  const { c, calls } = setup({ cloud: false });
+  const r = c.route({ kind: 'plan', text: 'x' }), tried = [];
+  assert.equal(await c.run(r, msgs, { kind: 'plan', attempts: tried }), null);
+  assert.deepEqual(tried, []);
+  assert.deepEqual(c.local(r, 'qwen', tried), { provider: 'ollama', model: 'qwen', class: r.class, why: r.why });
+  assert.equal(calls.length, 0);
+});
+
+test('attempts: the list is capped', () => {
+  const { c } = setup();
+  const r = c.route({ kind: 'plan', text: 'x' });
+  const many = Array.from({ length: 9 }, () => ({ provider: 'groq', model: 'm', outcome: 'timeout', ms: 1 }));
+  assert.equal(c.local(r, 'q', many).attempts.length, 5);
+});

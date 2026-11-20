@@ -145,11 +145,13 @@ function createChat(ctx) {
   }
 
   // The cloud candidates in the route, in order; the first answer wins. null = none answered (or none allowed): the
-  // caller goes on to this PC's model, so a request never fails only because the cloud did.
+  // caller goes on to this PC's model, so a request never fails only because the cloud did. What was tried goes in
+  // prep.attempts, so the route this PC's answer records says the cloud was tried and why it isn't the answer.
   async function cloudAnswer(prep) {
-    return coordinator.run(prep.route, cloudMessages(prep), { kind: prep.researchContext ? 'research' : 'chat' });
+    prep.attempts = [];
+    return coordinator.run(prep.route, cloudMessages(prep), { kind: prep.researchContext ? 'research' : 'chat', attempts: prep.attempts });
   }
-  const usedLocal = prep => ({ provider: 'ollama', model: prep.model, class: prep.route.class, why: prep.route.why });
+  const usedLocal = prep => coordinator.local(prep.route, prep.model, prep.attempts);
 
   // After a chat turn is answered and sent: the owner-fact suggestion job (app/fact-suggestions.js), scheduled and left
   // to run on its own. Only the chat routes call this, never voice, missions, agents or Past work; the job itself skips

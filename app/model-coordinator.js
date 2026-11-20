@@ -42,8 +42,22 @@ function redact(text, env = process.env, extra = []) {
   return t;
 }
 
+// What a cloud call came to, for the route a run records: answered, timeout, rate_limited or error. cloud-models.js
+// marks its errors (outcome); anything else is read from its words.
+const MAX_ATTEMPTS = 5;
+const OUTCOME_WORDS = { timeout: 'timed out', rate_limited: 'busy', error: 'failed' };
+function outcomeOf(e) {
+  if (['timeout', 'rate_limited', 'error'].includes(e?.outcome)) return e.outcome;
+  const m = String(e?.code || '') + ' ' + String(e?.message || e || '');
+  return /timeout|timed out/i.test(m) ? 'timeout' : /rate limit|\b429\b/i.test(m) ? 'rate_limited' : 'error';
+}
+// attempts as a route keeps them: at most MAX_ATTEMPTS of {provider, model, outcome, ms}, nothing else.
+const keepAttempts = list => (Array.isArray(list) ? list : []).slice(0, MAX_ATTEMPTS).map(a => ({
+  provider: String(a?.provider || ''), model: String(a?.model || '').slice(0, 80), outcome: (a?.outcome === 'answered' || OUTCOME_WORDS[a?.outcome]) ? a.outcome : 'error', ms: Math.max(0, Math.round(Number(a?.ms) || 0)),
+}));
+
 // secrets(): extra values never to send (what the server read from its key files); read at each call.
-function createCoordinator({ modelRouter, cloudModels, routingSetting, recordActivity = () => {}, env = process.env, localModel = '', secrets = () => [] }) {
+function createCoordinator({ modelRouter, cloudModels, routingSetting, recordActivity = () => {}, env = process.env, localModel = '', secrets = () => [], now = Date.now }) {
   const log = (...a) => { try { recordActivity(...a); } catch { /* a log that fails never changes what is sent */ } };
   const extra = () => { try { return secrets() || []; } catch { return []; } };
   function route(req = {}) {
@@ -52,9 +66,18 @@ function createCoordinator({ modelRouter, cloudModels, routingSetting, recordAct
       localModel: req.localModel || localModel,
     });
   }
-  const local = (r, model) => ({ provider: 'ollama', model: model || r.order.at(-1)?.model || localModel, class: r.class, why: r.why });
-  // The cloud candidates in order; the first answer wins. null: go on to this PC.
-  async function run(r, messages, { kind = 'plan', maxTokens } = {}) {
+  const name = p => (Object.prototype.hasOwnProperty.call(modelRouter.PROVIDER_NAMES || {}, p) ? modelRouter.PROVIDER_NAMES[p] : 'A cloud model');
+  const failed = list => list.map(a => `${name(a.provider)}: ${OUTCOME_WORDS[a.outcome] || 'failed'}`).join('; ');
+  // The record for an answer from this PC. attempts: what run() tried first (its `attempts` option); when the cloud was
+  // tried, the why says so instead of the plan's reason, and the list goes with it. Nothing tried: as before.
+  const local = (r, model, attempts) => {
+    const tried = keepAttempts(attempts);
+    const used = { provider: 'ollama', model: model || r.order.at(-1)?.model || localModel, class: r.class, why: r.why };
+    return tried.length ? { ...used, why: `Cloud models didn't answer (${failed(tried)}), so this PC answered`, attempts: tried } : used;
+  };
+  // The cloud candidates in order; the first answer wins. null: go on to this PC. attempts (optional): an array this
+  // fills with what was tried, so a caller that goes on to this PC can pass it to local().
+  async function run(r, messages, { kind = 'plan', maxTokens, attempts = [] } = {}) {
     const candidates = (r?.order || []).filter(c => c.provider !== 'ollama');
     if (!candidates.length || r.class !== 'shareable' || routingSetting().cloud !== true) return null;
     const hidden = extra(), out = (Array.isArray(messages) ? messages : []).map(m => ({ role: m.role, content: redact(m.content, env, hidden) }));
@@ -63,9 +86,14 @@ function createCoordinator({ modelRouter, cloudModels, routingSetting, recordAct
       // Logged before the send, so a timeout or a server error still shows that text went out.
       log('model', 'Sent to a cloud model', `${modelRouter.label(c).replace(/^Answered by /, '')} · ${kind} · ${chars.toLocaleString('en-US')} characters`, { provider: c.provider, model: c.model, kind, chars });
       let answer = null;
+      const t0 = now(), tried = outcome => { if (attempts.length < MAX_ATTEMPTS) attempts.push({ provider: c.provider, model: c.model, outcome, ms: Math.max(0, now() - t0) }); };
       try { answer = await cloudModels.chat({ provider: c.provider, model: c.model, messages: out, ...(maxTokens ? { maxTokens } : {}) }); }
-      catch (e) { log('model', 'Cloud model unavailable', redact(String(e?.message || e), env, hidden).slice(0, 180), { provider: c.provider, model: c.model, kind }); continue; }
-      if (answer?.content) return { content: answer.content, used: { provider: c.provider, model: c.model, class: r.class, why: r.why } };
+      catch (e) { tried(outcomeOf(e)); log('model', 'Cloud model unavailable', redact(String(e?.message || e), env, hidden).slice(0, 180), { provider: c.provider, model: c.model, kind }); continue; }
+      if (!answer?.content) { tried('error'); continue; }
+      tried('answered');
+      const before = attempts.slice(0, -1);
+      const why = before.length ? `${before.map(a => `${name(a.provider)} ${OUTCOME_WORDS[a.outcome] || 'failed'}`).join(', ')}, so ${name(c.provider)} answered` : r.why;
+      return { content: answer.content, used: { provider: c.provider, model: c.model, class: r.class, why, attempts: keepAttempts(attempts) } };
     }
     return null;
   }

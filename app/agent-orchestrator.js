@@ -253,12 +253,12 @@ module.exports=function createAgentOrchestrator(deps={}){
     // findings looks secret or personal. A project mission or a voice mission stays here too. Cloud off,
     // private, or a cloud failure: the Coordinator on this PC, as before. The mission says where it ran (m.route).
     const co=deps.coordinator,route=co?co.route({kind:'plan',text:goal+'\n'+joined,voice:opts.voice===true,stay:projectId||!results.every(r=>(r.evidenceRecords||[]).every(publicEvidence))?'Missions that read your documents or files stay on this PC':secretish(goal+'\n'+joined)?"Local AI's own keys, passwords and setup stay on this PC":'',localModel:coordinatorModel}):null;
-    const cloud=route?await co.run(route,[{role:'system',content:synthSystem},{role:'user',content:synthPrompt}],{kind:'plan',maxTokens:4000}):null;
+    const tried=[],cloud=route?await co.run(route,[{role:'system',content:synthSystem},{role:'user',content:synthPrompt}],{kind:'plan',maxTokens:4000,attempts:tried}):null;
     opts.signal?.throwIfAborted();
     if(cloud){m.answer=cloud.content;m.coordinatorModel=cloud.used.model;m.route=cloud.used}
     else{
     m.answer=typeof deps.runAgentTurn==='function'?await coordinate(m,goal,projectId,coordinatorModel,joined,opts).catch(e=>{if(e.code!=='MODEL_NO_TOOLS')throw e;m.toolFallback=e.message;return null}):null;
-    if(m.answer===null)m.answer=await runModelReliable(synthPrompt,synthSystem,coordinatorTimeoutMs,coordinatorModel);m.coordinatorModel=coordinatorModel;if(route)m.route=co.local(route,coordinatorModel);
+    if(m.answer===null)m.answer=await runModelReliable(synthPrompt,synthSystem,coordinatorTimeoutMs,coordinatorModel);m.coordinatorModel=coordinatorModel;if(route)m.route=co.local(route,coordinatorModel,tried);
     }
     // The answer tidied (mission-answer.js: no process talk, Markdown or emoji, "missing" things the evidence names
     // rewritten as present, repeated gaps once, a length cap), then absence the workers never searched for is marked
