@@ -11,7 +11,6 @@ const { titleFromText, wrappedQuestion } = require('./prompt-title');
 
 const REPAIR_KEY = 'repair:journal-prompt-titles-v1';
 const BODY_MAX = 4000; // app/journal.js: a body at this length was cut
-const ASKED = /(?:^|\n)Asked: /;
 const INSTRUCTIONS = /^you are\b/i; // how a prompt of instructions opens ("You are the voice of …")
 const oneLine = t => String(t ?? '').replace(/\s+/g, ' ').trim();
 
@@ -30,11 +29,13 @@ function fixFor(entry, runLedger) {
   // The run kept a whole prompt that wraps no question: an ordinary run.
   if (run && prompt.length < BODY_MAX) return null;
   // No run, or its copy of the prompt was cut: read the entry's own copy ("<answer>\nAsked: <prompt>").
-  const m = ASKED.exec(entry.body);
-  if (!m) return null;
-  const answer = entry.body.slice(0, m.index).trim(), asked = entry.body.slice(m.index + m[0].length);
+  // The recorder appended the prompt last, so it follows the last "Asked: " line; an answer may hold one of its own.
+  const at = entry.body.startsWith('Asked: ') && !entry.body.includes('\nAsked: ') ? 0 : entry.body.lastIndexOf('\nAsked: ');
+  if (at < 0) return null;
+  const answer = entry.body.slice(0, at).trim(), asked = entry.body.slice(at + (at ? 8 : 7));
   const q = wrappedQuestion(asked);
-  if (q) {
+  // Only an entry the old recorder named after the prompt or the "House question" label; a caller's own name stays.
+  if (q && (entry.title === 'House question' || entry.title === titleFromText(asked))) {
     const title = titleFromText(q);
     return { title, body: q === title ? answer : (answer ? `${answer}\nAsked: ${q}` : `Asked: ${q}`) };
   }

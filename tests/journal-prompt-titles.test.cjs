@@ -133,8 +133,15 @@ test('with the run gone, the repair reads the question from the entry, else uses
   journal.record(fake('run-gone-4', titleFromText(INSTRUCTIONS), `Arr.\nAsked: ${INSTRUCTIONS} Tell me a joke.`));
   // The run was pruned and its entry is an ordinary one: left alone.
   journal.record(fake('run-gone-3', 'Which filament for a bracket?', 'PETG.'));
+  // An answer that itself has a line starting "Asked: " keeps all of it: the prompt is after the last one.
+  journal.record(fake('run-gone-5', 'House question', `Line one.\nAsked: the hub, twice.\nLine three.\nAsked: ${wrapped(QUESTION)}`));
+  // An entry the caller named something else keeps its name, even with the run gone.
+  journal.record(fake('run-gone-6', 'Automation: nightly check', `${ANSWER}\nAsked: ${wrapped(QUESTION)}`));
 
-  assert.deepEqual(repairPromptTitles({ storage, journal, runLedger }), { retitled: 2 });
+  assert.deepEqual(repairPromptTitles({ storage, journal, runLedger }), { retitled: 3 });
+  assert.equal(byRef(journal, 'run-gone-5').title, QUESTION);
+  assert.equal(byRef(journal, 'run-gone-5').body, 'Line one.\nAsked: the hub, twice.\nLine three.');
+  assert.equal(byRef(journal, 'run-gone-6').title, 'Automation: nightly check');
   assert.equal(byRef(journal, 'run-gone-1').title, QUESTION);
   assert.equal(byRef(journal, 'run-gone-1').body, ANSWER);
   assert.equal(byRef(journal, 'run-gone-2').title, 'The hub does not know.');
