@@ -187,6 +187,8 @@ const KB = 1024;
 // one notice under the strip, the fetch watcher for 401 {signIn:true}, the "Sign in on this device to see …" state),
 // components.js +74 (fetchJson's .signIn, loadInto's sign-in state), app.js +18 (⌘K's Past work state, its own whoami
 // dropped), improve.js +75, app.css +155. main had 377,025 bytes (831 under 369 KB); 378,270 bytes (369.4 KB) measured.
+// After the UI review (the notice only when sign-in is required, the words where a read was refused, Changes' New idea,
+// Claude Code's state): 378,849 bytes (370.0 KB, 31 under), ui.js 119,931 (its own 118 KB below).
 const TOTAL = 370 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
