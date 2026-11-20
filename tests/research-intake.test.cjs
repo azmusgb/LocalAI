@@ -188,3 +188,108 @@ test('pausing between sources stops the tick', async () => {
   assert.deepEqual(await ctx.intake.tick(), { ran: 1, skipped: 'paused' });
   assert.equal(ctx.calls.length, 1);
 });
+
+// ---- fix round 1: unrecorded fetches and unreadable state ----
+const MSG_UNREAD = 'research state could not be read', MSG_UNRECORDED = 'the last fetch could not be recorded';
+function withStore(ctx, over, opts = {}) {
+  const store = { ...ctx.store, ...over };
+  return createIntake({ store, fetcher: ctx.fetcher, enabled: true, now: () => T, ...opts });
+}
+const boom = () => { throw new Error('disk full'); };
+
+test('recordFetch throwing stops the tick after one call, then holds for 15 minutes', async () => {
+  const ctx = setup();
+  for (let i = 0; i < 3; i++) add(ctx.store, i);
+  const logs = [];
+  const intake = withStore(ctx, { recordFetch: boom }, { log: (...a) => logs.push(a.join(' ')) });
+  assert.deepEqual(await intake.tick(), { ran: 1, skipped: 'error' });
+  assert.equal(ctx.calls.length, 1);
+  assert.ok(logs.some(l => /disk full/.test(l)));
+  assert.equal(intake.state().error, MSG_UNRECORDED);
+  assert.deepEqual(await intake.tick(), { ran: 0, skipped: 'error' });
+  const r = await intake.fetchSource(ctx.store.listSources()[1].id);
+  assert.deepEqual(r, { ok: false, code: 'error', reason: MSG_UNRECORDED });
+  assert.equal(ctx.calls.length, 1);
+  T += 15 * MIN;
+  assert.equal(intake.state().error, '');
+  assert.deepEqual(await intake.tick(), { ran: 1, skipped: 'error' });
+  assert.equal(ctx.calls.length, 2);
+});
+
+test('a success whose record fails is not reported as ok', async () => {
+  const ctx = setup();
+  const s = add(ctx.store);
+  const intake = withStore(ctx, { recordFetch: boom });
+  const r = await intake.fetchSource(s.id);
+  assert.deepEqual(r, { ok: false, code: 'record_failed', reason: 'could not record the fetch' });
+  assert.equal(ctx.calls.length, 1);
+});
+
+test('unrecorded calls count toward the daily cap', async () => {
+  const ctx = setup();
+  const s = add(ctx.store);
+  const intake = withStore(ctx, { recordFetch: boom }, { dailyFetches: 2 });
+  assert.equal((await intake.fetchSource(s.id)).code, 'record_failed'); T += 15 * MIN;
+  assert.equal((await intake.fetchSource(s.id)).code, 'record_failed'); T += 15 * MIN;
+  assert.equal(intake.state().fetchesToday, 2);
+  assert.equal((await intake.fetchSource(s.id)).code, 'daily_cap');
+  assert.deepEqual(await intake.tick(), { ran: 0, skipped: 'daily_cap' });
+  assert.equal(ctx.calls.length, 2);
+});
+
+test('an enabled() that throws does nothing and says so', async () => {
+  const ctx = setup();
+  const s = add(ctx.store);
+  const intake = withStore(ctx, {}, { enabled: boom });
+  assert.deepEqual(await intake.tick(), { ran: 0, skipped: 'error' });
+  assert.deepEqual(await intake.fetchSource(s.id), { ok: false, code: 'error', reason: MSG_UNREAD });
+  const st = intake.state();
+  assert.equal(st.enabled, false); assert.equal(st.paused, true); assert.equal(st.error, MSG_UNREAD);
+  assert.equal(ctx.calls.length, 0);
+});
+
+test('an unreadable pause flag does nothing and says so', async () => {
+  const ctx = setup();
+  const s = add(ctx.store);
+  const intake = withStore(ctx, { getMeta: boom });
+  assert.deepEqual(await intake.tick(), { ran: 0, skipped: 'error' });
+  assert.equal((await intake.fetchSource(s.id)).code, 'error');
+  assert.equal(intake.state().error, MSG_UNREAD);
+  assert.equal(ctx.calls.length, 0);
+});
+
+test('a store throw in dueSources or fetchesToday gives skipped error and releases the flag', async () => {
+  const ctx = setup();
+  const s = add(ctx.store);
+  for (const over of [{ dueSources: boom }, { fetchesToday: boom }]) {
+    const intake = withStore(ctx, over);
+    assert.deepEqual(await intake.tick(), { ran: 0, skipped: 'error' });
+    assert.equal(intake.state().running, false);
+  }
+  const intake = withStore(ctx, { getSource: boom });
+  const r = await intake.fetchSource(s.id);
+  assert.equal(r.ok, false); assert.equal(r.code, 'error');
+  assert.notEqual((await intake.fetchSource(s.id)).code, 'busy');
+  const intake2 = withStore(ctx, { dueSources: boom });
+  await intake2.tick();
+  assert.notEqual((await intake2.tick()).skipped, 'busy');
+  assert.equal(ctx.calls.length, 0);
+});
+
+test('enabled() flipping to false between sources stops the tick', async () => {
+  const ctx = setup();
+  for (let i = 0; i < 3; i++) add(ctx.store, i);
+  const intake = withStore(ctx, {}, { enabled: () => ctx.calls.length < 1 });
+  assert.deepEqual(await intake.tick(), { ran: 1, skipped: 'off' });
+  assert.equal(ctx.calls.length, 1);
+});
+
+test('state counts sources by status', async () => {
+  const ctx = setup();
+  const a = add(ctx.store, 1), b = add(ctx.store, 2), c = add(ctx.store, 3); add(ctx.store, 4);
+  ctx.store.updateSource(a.id, { status: 'paused' });
+  ctx.store.updateSource(b.id, { status: 'retired' });
+  ctx.storage.db.prepare("UPDATE research_sources SET status = 'quarantined' WHERE id = ?").run(c.id);
+  assert.deepEqual(ctx.intake.state().sources, { active: 1, paused: 1, quarantined: 1, retired: 1 });
+  assert.equal(ctx.intake.state().error, '');
+});
