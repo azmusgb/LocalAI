@@ -23,7 +23,7 @@ async function mock(page, handler) {
   await page.route('**/api/journal?*', async route => {
     const u = new URL(route.request().url());
     const q = u.searchParams.get('q');
-    seen.push({ q, limit: u.searchParams.get('limit') });
+    seen.push({ q, limit: u.searchParams.get('limit'), linked: u.searchParams.get('linked') });
     const r = await handler(q);
     if (r === 'abort') return route.abort('failed');
     if (r.delay) await sleep(r.delay);
@@ -46,7 +46,7 @@ const group = () => page.locator('#cmdkList [data-cmd-group="journal"]');
 const journalRows = () => page.locator('#cmdkList [data-cmd-journal]');
 const pageRows = () => page.locator('#cmdkList [data-cmd-view]');
 
-await check('one typed character asks nothing; two ask once, after the pause, for 5', async () => {
+await check('one typed character asks nothing; two ask once, after the pause, for 5 that open in the app', async () => {
   const seen = await mock(page, () => ({ body: { items: [] } }));
   await open();
   await page.locator('#cmdkInput').pressSequentially('m');
@@ -54,7 +54,7 @@ await check('one typed character asks nothing; two ask once, after the pause, fo
   assert.equal(seen.length, 0, 'no request for one character');
   await page.locator('#cmdkInput').pressSequentially('ode', { delay: 30 });
   await sleep(500);
-  assert.deepEqual(seen, [{ q: 'mode', limit: '5' }], 'one debounced request for the final text');
+  assert.deepEqual(seen, [{ q: 'mode', limit: '5', linked: '1' }], 'one debounced request for the final text, linked entries only');
 });
 
 await check('hits show below the page matches as Past work, with title, date and source, all text escaped', async () => {

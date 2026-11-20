@@ -37,6 +37,19 @@ test('search matches words and their forms, newest first on equal matches', () =
   storage.close();
 });
 
+test('linked: only entries that open in the app, so 5 link-less matches cannot hide the openable ones', () => {
+  // Live, ⌘K asked for the top 5 "fix" matches and dropped the link-less ones (imported activity such as "Automation
+  // complete"), so it showed nothing while openable matches existed further down.
+  const { journal, storage } = open();
+  for (let i = 0; i < 6; i++) journal.record(entry({ ref: `act:${i}`, source: 'activity', kind: 'automation', title: 'Automation complete', body: `fix ${i}`, at: `2026-10-2${i}T12:00:00.000Z` }));
+  journal.record(entry({ ref: 'run:old:completed', title: 'Fix the login bug', link: '#run/old', at: '2026-10-01T12:00:00.000Z' }));
+  journal.record(entry({ ref: 'odd', title: 'fix elsewhere', link: 'https://example.com/fix', at: '2026-10-02T12:00:00.000Z' }));
+  assert.equal(journal.search({ q: 'fix', limit: 5 }).items.filter(x => x.link === '#run/old').length, 0, 'the openable one is past the first 5');
+  assert.deepEqual(journal.search({ q: 'fix', limit: 5, linked: true }).items.map(x => x.link), ['#run/old']);
+  assert.deepEqual(journal.search({ limit: 5, linked: true }).items.map(x => x.link), ['#run/old'], 'the same without a query');
+  storage.close();
+});
+
 test('search treats FTS syntax as plain words', () => {
   const { journal, storage } = open();
   journal.record(entry({ body: 'near the star' }));

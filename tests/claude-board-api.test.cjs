@@ -44,6 +44,10 @@ test('Claude board ingests progress and findings, ranks them, and records votes 
   assert.deepEqual(b.findings.map(f => f.id), ['sec-1', 'perf-1', 'ui-1'], 'ranked by severity');
   assert.deepEqual(b.summary.byCategory.security, { high: 1, medium: 0, low: 0, open: 1, total: 1 });
   assert.equal((await board('?session=other')).events.length, 1, 'session filter');
+  // Improve's In progress needs only the sessions: ?only=sessions leaves out events and findings (the whole board was ~439 KB).
+  const only = await board('?only=sessions');
+  assert.deepEqual(Object.keys(only), ['sessions']);
+  assert.deepEqual(only.sessions, b.sessions);
 
   for (let i = 0; i < 3; i++) await post('/api/claude/findings/vote', { id: 'ui-1', delta: 1 }, 200);
   await post('/api/claude/findings/vote', { id: 'perf-1', delta: 2 }, 400);

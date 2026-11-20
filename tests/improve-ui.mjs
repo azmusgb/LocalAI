@@ -44,7 +44,9 @@ let failItems = false;
 const posts = [];
 await page.route('**/api/improve/items', r => failItems ? r.fulfill({ status: 500, json: { error: 'Database is busy' } }) : r.fulfill({ json: { items: ITEMS, signals: SIGNALS } }));
 await page.route('**/api/improve/{item,idea,signal,handoff}', async r => { posts.push({ url: new URL(r.request().url()).pathname, body: r.request().postDataJSON() }); await r.fulfill({ status: 200, json: { item: ITEMS[0] } }); });
-await page.route('**/api/claude/board', r => r.fulfill({ json: { sessions: [{ id: 'sess-1', title: 'Fix login', status: 'active', lastEvent: 'Running the tests', updatedAt: new Date(Date.now() - 120e3).toISOString() }] } }));
+let failBoard = false;
+const boardAsks = [];
+await page.route('**/api/claude/board*', r => { boardAsks.push(new URL(r.request().url()).search); return failBoard ? r.fulfill({ status: 500, json: { error: 'Database is busy' } }) : r.fulfill({ json: { sessions: [{ id: 'sess-1', title: 'Fix login', status: 'active', lastEvent: 'Running the tests', updatedAt: new Date(Date.now() - 120e3).toISOString() }] } }); });
 // Releases as the appliance records them (newest first): an unstamped item belongs to the first release after it closed.
 await page.route('**/api/releases', r => r.fulfill({ json: { current: { version: '2.0.310' }, history: [
   { version: '2.0.310', deployedAt: '2026-10-15T09:00:00.000Z' }, { version: '2.0.305', deployedAt: '2026-10-14T20:00:00.000Z' }, { version: '2.0.300', deployedAt: '2026-10-14T09:00:00.000Z' }] } }));
@@ -220,6 +222,20 @@ await check('In progress lists running changes with their state, and a Claude-he
   // The session's state, not its latest step: one session holds many items, so its step would repeat on each of them.
   assert.match(rows[3][1], /Claude's session is active · 2m ago/);
   assert.doesNotMatch(rows[3][1], /Running the tests/);
+});
+
+await check("a board that can't be read says Couldn't check Claude's sessions, never that the session isn't reporting", async () => {
+  // A28: unreadable is not none. A failed /api/claude/board read as no sessions, so every Claude-held item said its
+  // session wasn't reporting.
+  failBoard = true;
+  await page.evaluate(() => window.LocalAIImprove.refresh());
+  const sub = page.locator('#inProgressList .improve-row[data-item-id="claude-held"] .list-row__sub');
+  await sub.filter({ hasText: "Couldn't check Claude's sessions" }).waitFor({ timeout: 6000 });
+  assert.doesNotMatch(await sub.innerText(), /isn't reporting/);
+  failBoard = false;
+  await page.evaluate(() => window.LocalAIImprove.refresh());
+  await sub.filter({ hasText: "Claude's session is active" }).waitFor({ timeout: 6000 });
+  assert.ok(boardAsks.length && boardAsks.every(q => q === '?only=sessions'), `asks for the sessions only: ${boardAsks}`);
 });
 
 await check('a failed change offers Retry, Back to backlog and Discard; Discard asks Back to backlog or Set aside', async () => {

@@ -154,7 +154,7 @@ function runEntry(it,tone,go,data={}){
 }
 // Opening a failure marks it (and the repeats on its row) seen on the server: it leaves Needs you on every device. The row
 // goes once the run view closes, so nothing moves under the open run.
-let stale=false;
+let stale=false,needsRead=null,needsFailed=false,recentReadAt=null,recentFailed=false; // the last good reads of Local AI's runs
 function failedRow(g){
  const n=g.runs.length,it=n>1&&g.run.card?{...g.run,card:{...g.run.card,badge:{tone:'bad',...g.run.card?.badge,label:`Failed ×${n}`}}}:g.run;
  return runEntry(it,'bad',()=>{const ids=new Set(g.runs.map(x=>x.id));root.LocalAINeedsYou.markSeen([...ids]);needs=needs.filter(x=>!ids.has(x.id));stale=true;openRun(g.run)},n>1?{needsCount:n}:{});
@@ -188,8 +188,9 @@ function paintNeeds(){
  // Everything that asks for a decision shows and failures fill up to CAP; max shows that many, and the kit adds "See all N" for the rest.
  const entries=[...act,...failed.map(failedRow)],shown=act.length+room;
  bindNeeds(box);
- root.dispatchEvent(new CustomEvent('localai:needs-count',{detail:{n:n+covered}})); // the bell in the header shows this number on every page
- plateNeeds(n+covered);
+ // The bell shows this on every page; no number until Local AI's runs are read.
+ root.dispatchEvent(new CustomEvent('localai:needs-count',{detail:needsFailed?{state:'unavailable'}:needsRead?{n:n+covered}:{state:'checking'}}));
+ if(needsFailed)plateNeeds(null);else if(needsRead)plateNeeds(n+covered);
  if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  if(!root.ApplianceNeeds){if(!needsKitMissing){needsKitMissing=true;console.warn('Needs you: /ui/needs.js did not load; the section stays hidden')}box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  // Dense on the Assistant's Home (A7 P2): one line a row, the same rows as Pi Hub's.
@@ -197,15 +198,15 @@ function paintNeeds(){
  inShell(ul);
  [...ul.querySelectorAll('.ui-need')].forEach((li,i)=>{const e=entries[i];Object.assign(li.dataset,e.data);if(e.go)rowGo.set(li,e.go);const d=li.querySelector('.ui-need__detail');if(d&&e.item.detail)d.title=e.item.detail}); // the clamped detail keeps its full text on hover and long-press
  box.replaceChildren(ul);
- $('homeNeedsCount').textContent=n+covered?'· '+(n+covered):''; // the same number as the bell and the readout
+ $('homeNeedsCount').textContent=n+covered&&!needsFailed?'· '+(n+covered):''; // the bell's and the readout's number; none when unread
  sec.hidden=!n;
 }
 // Home's faceplate readout (A7 P1): how many things need you; its lamp and caption are Local AI's status (app.js).
-const plateNeeds=n=>root.LocalAIUI?.plate?.('homePlate',{readout:n||'Nothing',unit:n===1?'needs you':n?'need you':'needs you'});
+const plateNeeds=n=>n===null?root.LocalAIUI?.plate?.('homePlate',{readout:'—',unit:"couldn't check"}):root.LocalAIUI?.plate?.('homePlate',{readout:n||'Nothing',unit:n===1?'needs you':n?'need you':'needs you'});
 function recentRow(it,onOpen=openRun){
  // A conversation shows once, under its first message, with its turn count (as Work does).
  const n=it.turns||1;if(it.card?.kind==='chat'&&n>1)it={...it,card:{...it.card,summary:`Chat · ${n} turns`,preview:it.card.preview||(it.card.summary?{type:'text',text:it.card.summary}:null)}};
- const row=root.LocalAIUI.runCard(it,{onOpen,rowOpen:true}),act=row.querySelector('.run-card__action');
+ const row=root.LocalAIUI.runCard(it,{onOpen,rowOpen:true,stale:recentFailed}),act=row.querySelector('.run-card__action');
  if(act)act.remove(); // the row itself opens the run
  if(it.status==='awaiting_approval')row.querySelector('.run-card__bar')?.remove(); // waiting on you is not progress
  return row;
@@ -239,7 +240,9 @@ async function loadNeeds(){
  root.LocalAIUI?.sources?.('homeSrcHub',"Pi Hub's Needs you",hubItems?'ok':'bad');
  if(imp.status==='fulfilled'){const day=Date.now()-864e5;newSignals=(imp.value.items||[]).filter(i=>i.source==='signal'&&i.status==='proposed'&&i.stage==='backlog'&&Date.parse(i.createdAt)>day).length}
  const runs=d.status==='fulfilled'?d.value.items||[]:null;
- if(runs)needs=root.LocalAINeedsYou.pick(runs);
+ if(runs){needs=root.LocalAINeedsYou.pick(runs);needsRead=new Date()}
+ needsFailed=!runs; // the rows stay, said to be stale (A28)
+ paintRuns();
  if(p.status==='fulfilled'){
   const waiting=new Set(needs.filter(r=>r.status==='awaiting_approval').map(r=>r.meta?.changeId).filter(Boolean));
   approvals=(p.value.items||[]).filter(a=>a.status==='pending'&&!(a.meta?.changeId&&waiting.has(a.meta.changeId)))
@@ -248,14 +251,21 @@ async function loadNeeds(){
  paintNeeds();
  if(lastRecent?.box.isConnected&&!lastRecent.box.querySelector(':scope > .state-loading,:scope > .state-error'))paintRecent(lastRecent.box,lastRecent.data); // Recent may have painted before Needs you knew its rows
 }
+// One notice and sources part for Local AI's runs (Needs you and Recent; A28). A Recent never loaded shows its own error.
+function paintRuns(){
+ const U=root.LocalAIUI,bad=needsFailed||recentFailed&&recentReadAt,at=[needsFailed&&needsRead,recentFailed&&recentReadAt].filter(Boolean),since=at.length?new Date(Math.min(...at)):null,last=bad?since:new Date(Math.max(needsRead,recentReadAt));
+ U?.staleNotice?.('homeRunsNotice',{since:bad?needsFailed&&!needsRead||since||true:null,missing:'Needs you'});
+ if(needsRead||recentReadAt||bad)U?.sources?.('homeSrcRuns',"Local AI's run list",bad?'bad':'ok',last?(bad?'last read ':'read ')+last.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'');
+}
+function recentRead(ok){if(ok)recentReadAt=new Date();recentFailed=!ok;paintRuns();if(!ok&&lastRecent?.box.isConnected&&!lastRecent.box.querySelector(':scope > .state-loading,:scope > .state-error'))paintRecent(lastRecent.box,lastRecent.data)}
 let inflight=null;
 function refresh(){
  if(inflight)return inflight;
  if(!active()||!onHomeHash())return Promise.resolve();
  const box=$('homeRecent2');if(!box)return Promise.resolve();
  const first=!loaded;
- const recent=first?root.LocalAIUI.loadInto(box,()=>root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}),{what:'your recent work',empty:'Nothing yet. Ask a question or make an image below.',render:paintRecent}).then(()=>{loaded=true},()=>{})
-  :root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}).then(d=>{if(!paintRecent(box,d))box.innerHTML='<div class="state-empty empty-state">Nothing yet. Ask a question or make an image below.</div>'}).catch(()=>{});
+ const recent=first?root.LocalAIUI.loadInto(box,()=>root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}),{what:'your recent work',empty:'Nothing yet. Ask a question or make an image below.',render:paintRecent}).then(()=>{loaded=true;recentRead(true)},()=>{})
+  :root.LocalAIUI.fetchJson(recentUrl,{cache:'no-store'}).then(d=>{recentRead(true);if(!paintRecent(box,d))box.innerHTML='<div class="state-empty empty-state">Nothing yet. Ask a question or make an image below.</div>'}).catch(()=>recentRead(false));
  return inflight=Promise.all([recent,loadNeeds()]).finally(()=>{inflight=null});
 }
 function schedule(){clearTimeout(timer);timer=setTimeout(()=>{if(active()&&!document.hidden)refresh().then(schedule);else schedule()},30000)}

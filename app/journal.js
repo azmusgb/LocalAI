@@ -123,7 +123,8 @@ function createJournal({ db, now = Date.now, timeZone = 'UTC', log = console.err
     return true;
   }
 
-  function search({ q = '', from = null, to = null, sources = [], limit = 50, before = null } = {}) {
+  // linked: only entries that open in the app (a '#' link), filtered before the limit (⌘K's Past work).
+  function search({ q = '', from = null, to = null, sources = [], limit = 50, before = null, linked = false } = {}) {
     const n = Math.max(1, Math.min(LIMIT_MAX, Number.parseInt(limit, 10) || 50));
     const where = [], args = [];
     const iso = v => { const t = Date.parse(v); return v && Number.isFinite(t) ? new Date(t).toISOString() : null; };
@@ -135,6 +136,7 @@ function createJournal({ db, now = Date.now, timeZone = 'UTC', log = console.err
     else if (iso(bAt)) { where.push('j.at < ?'); args.push(iso(bAt)); }
     const src = (Array.isArray(sources) ? sources : []).map(String).filter(Boolean).slice(0, 10);
     if (src.length) { where.push(`j.source IN (${src.map(() => '?').join(',')})`); args.push(...src); }
+    if (linked === true) where.push("substr(j.link, 1, 1) = '#'");
     let rows;
     if (String(q || '').trim()) {
       const match = ftsQuery(q);

@@ -8,13 +8,13 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const ICON={claude:'sparkle',signal:'alert',idea:'improve'};
 const SOURCE={claude:'From Claude',signal:'Signal',idea:'Your idea'};
 const LABEL={high:'High',medium:'Medium',low:'Low'};
-const st={data:null,openId:'',sessions:[]};
+const st={data:null,openId:'',sessions:[]}; // sessions: null when the board couldn't be read (unknown, not none)
 // A running change's state, in words: [label, badge tone].
 const CHANGE_STATE={planned:['Planning','neutral'],staged:['Testing','neutral'],awaiting_approval:['Waiting for your OK','attention'],patch_failed:['Needs a look','bad'],validation_failed:['Needs a look','bad'],approved:['Shipping','accent'],apply_requested:['Shipping','accent']};
 const failed=it=>['patch_failed','validation_failed'].includes(it.change?.status);
 const badge=([label,tone])=>`<span class="badge badge--${tone}">${esc(label)}</span>`;
 // Board sessions are cc-<first 8 of the Claude session id>; findings carry the full id.
-const sessionOf=it=>it.sessionId?st.sessions.find(s=>s.id===it.sessionId||s.id==='cc-'+String(it.sessionId).slice(0,8)):null;
+const sessionOf=it=>it.sessionId&&st.sessions?st.sessions.find(s=>s.id===it.sessionId||s.id==='cc-'+String(it.sessionId).slice(0,8)):null;
 const icon=n=>root.LocalAIKit?.icon(n)||'';
 const ago=iso=>{const s=(Date.now()-new Date(iso))/1000;if(!isFinite(s))return '';if(s<3600)return Math.max(1,Math.round(s/60))+'m ago';if(s<86400)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago'};
 const sev=x=>`<span class="badge badge--neutral badge--severity">${LABEL[x]||'Medium'}</span>`;   // severity is neutral; colour is for status (E7)
@@ -58,7 +58,7 @@ function inProgressRow(it){
  const s=sessionOf(it),state=it.change?badge(CHANGE_STATE[it.change.status]||['Working','neutral']):badge(['Claude','accent']);
  // The session's state, not its latest step: one session holds many items, so its step would repeat on each of them.
  const quiet=s&&s.status!=='active'&&Date.now()-Date.parse(s.updatedAt||'')>6*36e5;
- const claude=!it.change?` <span>${!s?(it.handedToClaude?'Waiting for a Claude session':"Claude's session isn't reporting"):quiet?`Paused: Claude last worked on this ${esc(ago(s.updatedAt))}`:`Claude's session is ${s.status==='active'?'active':'idle'}${s.updatedAt?' · '+esc(ago(s.updatedAt)):''}`}</span>`:'';
+ const claude=!it.change?` <span>${!st.sessions?"Couldn't check Claude's sessions":!s?(it.handedToClaude?'Waiting for a Claude session':"Claude's session isn't reporting"):quiet?`Paused: Claude last worked on this ${esc(ago(s.updatedAt))}`:`Claude's session is ${s.status==='active'?'active':'idle'}${s.updatedAt?' · '+esc(ago(s.updatedAt)):''}`}</span>`:'';
  row.innerHTML=`<span class="list-row__icon" title="${SOURCE[it.source]||''}" role="img" aria-label="${SOURCE[it.source]||'Change'}">${icon(ICON[it.source]||'improve')}</span>`+
   `<button type="button" class="improve-row__open list-row__main"><span class="list-row__title">${esc(plain(it.title))}</span><span class="list-row__sub">${state}${claude}</span></button>`;
  row.querySelector('.improve-row__open').onclick=()=>openItem(it.id);
@@ -240,8 +240,9 @@ function rowError(row,msg){let p=row.nextElementSibling?.classList.contains('imp
 function checksError(msg){const sec=$('signals');if(!sec)return;let p=$('signalsError');
  if(!msg){if(p)p.hidden=true;return}if(!p){p=alertBox('improve-page-error');p.id='signalsError';(sec.querySelector('.topbar')||sec.firstElementChild).after(p)}p.textContent=msg;p.hidden=false}
 
-// Claude sessions' live status, for items Claude is working on; the list still shows without it.
-async function sessions(){try{st.sessions=(await root.LocalAIUI.fetchJson('/api/claude/board',{cache:'no-store'})).sessions||[]}catch{st.sessions=[]}}
+// Claude sessions' live status, for items Claude is working on; the list still shows without it. Only the sessions are
+// asked for (the whole board is hundreds of KB); a board that can't be read leaves them unknown (null), not none.
+async function sessions(){try{const j=await root.LocalAIUI.fetchJson('/api/claude/board?only=sessions',{cache:'no-store'});if(!Array.isArray(j.sessions))throw new Error('unreadable reply');st.sessions=j.sessions}catch{st.sessions=null}}
 // One request feeds every list; each list shows its own error state if it fails.
 async function refresh(){
  const p=load();

@@ -44,6 +44,7 @@ test('finished chats are searchable through /api/journal and can be deleted', { 
   assert.match(found.items[0].body, /PETG/);
   assert.match(found.items[0].link, /^#run\/run-/);
   assert.equal((await get('?q=bracket&source=print')).items.length, 0);
+  assert.equal((await get('?q=bracket&linked=1')).items.length, 1, 'a run entry opens in the app');
   assert.equal((await get('?limit=999&from=not-a-date')).items.length >= 1, true);
 
   const r = await del(found.items[0].id);

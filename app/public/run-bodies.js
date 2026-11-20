@@ -298,7 +298,7 @@
         window.LocalAIUI?.toast?.('Deleted from your past work');
       } catch (err) {
         del.disabled = false; del.textContent = 'Delete';
-        fail.textContent = `Couldn't delete it: ${err.message || err}. Try again.`; fail.hidden = false;
+        fail.textContent = `Couldn't delete it: ${String(err.message || err).replace(/\.$/, '')}. Try again.`; fail.hidden = false;
       }
     });
     li.appendChild(del);
