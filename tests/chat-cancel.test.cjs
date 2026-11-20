@@ -20,6 +20,7 @@ const { createCloudModels } = require('../app/cloud-models');
 const { fitMessages } = require('../app/text-context');
 const { createChat } = require('../app/server/chat');
 const { createRuns } = require('../app/server/runs');
+const { runCard } = require('../app/run-cards');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function until(fn, ms = 2000) { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(10); } return fn(); }
@@ -34,7 +35,7 @@ function hanging() {
   return log;
 }
 
-async function setup(t, { cloud = true, cloudModels, local, timeoutMs = 60000 } = {}) {
+async function setup(t, { cloud = true, cloudModels, local, timeoutMs = 60000, search } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat-cancel-'));
   const storage = new Storage({ dataDir: dir });
   const runLedger = new RunLedger({ storage });
@@ -53,7 +54,7 @@ async function setup(t, { cloud = true, cloudModels, local, timeoutMs = 60000 } 
     aboutApplianceBlock: () => '', accessAddresses: () => [], activeRunControllers, capabilityPrompt: () => '', createChatExecution, fitMessages,
     getCapabilitiesSnapshot: async () => ({}), isAboutLocalAi: () => false, json, keepLongAnswer: () => {}, modelFetch, modelFetchWithTimeout: (url, opts) => modelFetch(url, opts),
     projectNotes: () => [], projectStore, readBody, recordActivity: (...a) => activity.push(a), recordTurnArtifact: () => null,
-    runLedger, sanitizeMessages, searxSearch: async () => [], selfChange: { isSelfChange: () => false }, storageError: (res, e, code) => json(res, code, { error: e.message }),
+    runLedger, sanitizeMessages, searxSearch: search || (async () => []), selfChange: { isSelfChange: () => false }, storageError: (res, e, code) => json(res, code, { error: e.message }),
     voiceFacts: () => '', voiceTimeZone: () => 'UTC', factSuggestions: { afterChat: () => {} }
   });
   const server = http.createServer((req, res) => (req.url === '/api/chat' ? chat.apiChat(req, res, 'host') : chat.apiChatStream(req, res, 'host')));
@@ -175,4 +176,49 @@ test("/api/chat: a caller that goes away aborts this PC's model; an answer that 
   const run = env.onlyRun();
   assert.equal(run.status, 'cancelled');
   assert.equal(run.output, null);
+});
+
+// A stall before the stream starts (search, say) answers with the run it recorded, marked as a stall, so the browser can
+// draw that run as a stalled turn instead of putting the question back as if nothing had been sent.
+test('stream: a stall before the stream starts answers {error, runId, stalled} and records the stall on the run', async t => {
+  const env = await setup(t, {
+    cloud: false, cloudModels: cloudStub(hanging()), timeoutMs: 300,
+    search: (q, signal) => new Promise((_, reject) => signal?.addEventListener('abort', () => reject(signal.reason), { once: true })),
+  });
+  const s = env.send('/api/chat/stream', { messages: [{ role: 'user', content: 'Latest PETG prices' }], webSearch: true });
+  assert.ok(await until(() => s.ended, 3000), 'the request ended on its own');
+  assert.equal(s.status, 504);
+  const body = JSON.parse(s.text);
+  assert.equal(body.stalled, true);
+  assert.match(body.error, /^No reply after \d+ s$/);
+  const run = env.runLedger.get(body.runId);
+  assert.equal(run.status, 'failed');
+  assert.deepEqual(run.output, { text: '', stalled: true });
+  assert.equal(env.localCalls.length, 0);
+});
+
+// What had arrived before a stall stays on the run, so a reload or Work still shows it, marked as cut off; the card shows
+// the stall, not the part answer as if it were one.
+test('stream: a stall mid-answer keeps the text that arrived on the run, marked as stalled', async t => {
+  const env = await setup(t, {
+    cloud: false, cloudModels: cloudStub(hanging()), timeoutMs: 300,
+    local: opts => {
+      let ctl;
+      const body = new ReadableStream({ start(c) { ctl = c; c.enqueue(new TextEncoder().encode(JSON.stringify({ message: { content: 'A mutex ' } }) + '\n')); } });
+      opts.signal?.addEventListener('abort', () => { try { ctl.error(opts.signal.reason); } catch {} }, { once: true });
+      return Promise.resolve(new Response(body, { status: 200 }));
+    },
+  });
+  const s = env.send('/api/chat/stream', { messages: [{ role: 'user', content: 'What is a mutex' }] });
+  assert.ok(await until(() => s.ended, 3000), 'the stream ended on its own');
+  assert.match(s.text, /event: token\ndata: \{"text":"A mutex "\}/);
+  const err = JSON.parse(/event: error\ndata: (.*)\n/.exec(s.text)[1]);
+  assert.equal(err.stalled, true);
+  const run = env.runLedger.get(err.runId);
+  assert.equal(run.status, 'failed');
+  assert.match(run.error, /^No reply after \d+ s$/);
+  assert.deepEqual(run.output, { text: 'A mutex ', stalled: true });
+  const card = runCard(run);
+  assert.equal(card.preview.text, run.error, 'the card says it stalled');
+  assert.equal(card.badge.label, runCard({ ...run, output: null }).badge.label);
 });

@@ -258,6 +258,7 @@ function createChat(ctx) {
   async function apiChatStream(req, res, access) {
     let execution = null;
     let controller = null;
+    let full = ''; // what this PC's model sent so far: kept on the run if the turn stalls
     // No output for CHAT_MODEL_TIMEOUT_MS ends the turn: from the start (search, the cloud call) and between events
     // (Ollama loading a model, or stalling mid-stream). The browser waits a little longer than this before it says the
     // reply stalled (app/public/app.js streamChat), so the server's own error arrives first while it is alive.
@@ -309,7 +310,6 @@ function createChat(ctx) {
       if (controller.signal.aborted) throw cancelError(controller.signal);
       const used = cloud ? cloud.used : usedLocal(prep);
       send('meta', { model: used.model, route: used, sources: prep.sources, runId: execution.id });
-      let full = '';
       if (cloud) {
         full = cloud.content;
         send('token', { text: full });
@@ -392,9 +392,14 @@ function createChat(ctx) {
       const current = execution ? runLedger.get(execution.id) : null;
       const cancelled = !stalled && (current?.status === 'cancelled' || (controller?.signal.aborted && current?.status !== 'failed'));
       if (execution && !cancelled) runLedger.fail(execution.id, stalled ? controller.signal.reason : e);
+      // A stall keeps what had arrived, marked as stalled: the run view draws it cut off with Try again, after a reload
+      // too, and the run's card shows the stall (app/run-cards.js), never the part answer as an answer.
+      if (execution && stalled) runLedger.update(execution.id, { output: { text: full.slice(0, 40000), stalled: true } });
       if (!res.headersSent) {
         if (!res.destroyed) {
           if (cancelled) json(res, 409, { error: 'Run cancelled', runId: execution?.id || null });
+          // Before the stream started (search, say): the run exists, so say which, and that it stalled.
+          else if (stalled) json(res, 504, { error: String(controller.signal.reason?.message || 'No reply'), runId: execution.id, stalled: true });
           else storageError(res,e,500);
         }
       } else {
