@@ -18,7 +18,7 @@ function publicEvidence(r){
  return false;
 }
 module.exports=function createAgentOrchestrator(deps={}){
- const {dataDir,ollamaUrl,defaultModel,fetchWithTimeout,runLocalModel,knowledgeStore,knowledgeScore,searxSearch,recordActivity}=deps;
+ const {dataDir,ollamaUrl,defaultModel,fetchWithTimeout,runLocalModel,knowledgeStore,knowledgeScore,searxSearch,researchStore,recordActivity}=deps;
  const catalog=JSON.parse(fs.readFileSync(path.join(__dirname,'specialist-agents.json'),'utf8')).agents;
  // A specialist's "not seen" is not a finding that something is missing (checkAbsenceClaims, mission-evidence.js).
  const COORDINATOR_ABSENCE_RULE='A specialist writing that something was not seen in the parts it read means it was not checked, never that a feature is missing. Report something as missing only when a specialist\'s find_in_project search for it returned no matches, and cite that search\'s evidence ID; otherwise write that it wasn\'t checked.';
@@ -138,8 +138,8 @@ module.exports=function createAgentOrchestrator(deps={}){
     const opening=fitEvidence(packet.sources.map((x,i)=>'['+run.evidenceRecords[i].id+'] SOURCE: '+x.source+'\n'+x.text),evidenceRoom);
     run.openingEvidence={sources:opening.kept,of:packet.sources.length,chars:opening.chars,budgetChars:evidenceRoom};
     const evidence=opening.blocks.join('\n\n');
-    const prompt=grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+upstreamText+'\n\nInvestigate missing facts using the offered tools. Read files by the paths in the source labels (for example app/public/ui.js, app/public/app.css, docs/README.md). Each source opens with a MAP of its functions or headings and their line numbers: read exactly those lines with read_project_file, and find any other name or word with find_in_project. Search knowledge only within the selected project. Cite evidence IDs such as [E-...] for every observation. Separate observations, recommendations, and remaining unknowns.';
-    const result=await runAgentLoop({model:rt.model,system:agent.system,prompt,turn:deps.runAgentTurn,tools:createResearchTools({projectRoot,projectId,knowledgeStore,knowledgeScore,searxSearch,...run.policy}),evidence:run.evidenceRecords,onEvent:publish,signal:options.signal,modelQueue,...deps.agentLimits,timeoutMs:groundedTimeoutMs});
+    const prompt=grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+upstreamText+'\n\nInvestigate missing facts using the offered tools. Read files by the paths in the source labels (for example app/public/ui.js, app/public/app.css, docs/README.md). Each source opens with a MAP of its functions or headings and their line numbers: read exactly those lines with read_project_file, and find any other name or word with find_in_project. Search knowledge only within the selected project. Search research findings for validated conclusions. Cite evidence IDs such as [E-...] for every observation. Separate observations, recommendations, and remaining unknowns.';
+    const result=await runAgentLoop({model:rt.model,system:agent.system,prompt,turn:deps.runAgentTurn,tools:createResearchTools({projectRoot,projectId,knowledgeStore,knowledgeScore,searxSearch,researchStore,...run.policy}),evidence:run.evidenceRecords,onEvent:publish,signal:options.signal,modelQueue,...deps.agentLimits,timeoutMs:groundedTimeoutMs});
     Object.assign(run,result);run.evidence=result.evidenceRecords.map(x=>x.source);
     // An answer that cites nothing is kept, marked partial (agent-runtime.js), rather than thrown away.
     if(result.unsupported)run.partial=true;
