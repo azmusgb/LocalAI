@@ -258,19 +258,34 @@ await check('a failed refresh keeps the list but says it is stale; the next good
   // with no cue at all.
   let n = 0;
   const run = item('agent', 'Sorting the archive', 60e3, { status: 'running' });
-  const page = await open(desk, '#work', async () => { n++; return n === 2 ? { status: 500 } : [run, ...mixed()]; });
+  const page = await open(desk, '#work', async () => { n++; return n === 2 || n === 3 ? { status: 500 } : [run, ...mixed()]; });
   await page.waitForSelector('#work .run-card', T);
   assert.equal(await page.locator('#workNotice').isHidden(), true, 'no notice while the reads are good');
+  const live = page.locator(`#work [data-run-id="${run.id}"]`);
+  assert.equal(await live.locator('[role="progressbar"]').count(), 1);
   await page.waitForSelector('#workNotice:not([hidden])', T);
-  assert.match(await page.locator('#workNotice').innerText(), /Local AI's runs isn't answering\. Showing your work as it was at /);
+  // The kit's words: source_down with the one name "Local AI", and the age.
+  assert.match(await page.locator('#workNotice').innerText(), /^Local AI isn't answering\. Showing runs from (\d+ min ago|\d{1,2}:\d{2}\s?[AP]M)\.$/);
   assert.equal(await page.locator('#workNotice').getAttribute('role'), 'status');
   assert.equal(await rows(page).count(), 8, 'the last list stays on screen');
   assert.equal(await page.locator('#workPlate [data-plate-lamp]').innerText(), 'Unknown', 'a stale running count is not shown as Running');
   assert.equal(await page.locator('#workPlate .ui-readout').innerText(), '—');
-  assert.match(await page.locator('#workSources').innerText(), /Not answering/);
+  assert.match(await page.locator('#workSources').innerText(), /Not answering\s+last read /);
+  // A run read as running before the failure is not known to be running now: the unknown chip, no progress bar.
+  assert.equal((await live.locator('.list-row__trail').innerText()).trim(), 'Unknown');
+  assert.equal(await live.locator('.list-row__trail .ui-chip--unknown').count(), 1);
+  assert.equal(await live.locator('[role="progressbar"]').count(), 0);
+  // A second failed poll with the same words does not write the live region again.
+  await page.evaluate(() => { window.__noticeWrites = 0; new MutationObserver(m => { window.__noticeWrites += m.length; }).observe(document.getElementById('workNotice'), { childList: true, characterData: true, subtree: true }); });
+  for (let i = 0; i < 80 && n < 3; i++) await page.waitForTimeout(100);
+  await page.waitForTimeout(300);
+  assert.equal(n >= 3, true, 'the second failed poll happened');
+  assert.equal(await page.evaluate(() => window.__noticeWrites), 0, 'the same text is not rewritten');
   await page.waitForSelector('#workNotice[hidden]', { ...T, state: 'attached' });
   assert.equal(await page.locator('#workPlate [data-plate-lamp]').innerText(), 'Running');
   assert.match(await page.locator('#workSources').innerText(), /Answering/);
+  assert.equal(await live.locator('[role="progressbar"]').count(), 1, 'the bar is back after a good read');
+  assert.doesNotMatch(await live.locator('.list-row__trail').innerText(), /Unknown/);
   await page.context().close();
 });
 

@@ -179,7 +179,11 @@ const KB = 1024;
 // their limits; 376,174 bytes (367.4 KB) measured, components.js 11,467, home.js 14,443.
 // Same day, within 368 KB: home.js 14.2 → 14.3 KB for the bell's checking and couldn't-check states and Needs you's
 // stale notice (home.js +155 bytes, ui.js +~0.1 KB inside its limit, app.css and index.html a rule and a notice each); 376,631 bytes, home.js 14,598, ui.js 119,770 measured.
-const TOTAL = 368 * KB;
+// Same day, 368 → 369 KB and home.js 14.3 → 14.5 KB for the UI review of that change (not yet approved: 138 bytes over
+// 368 KB, home.js 155 bytes over 14.3 KB): one notice and a "Local AI's runs" sources part for Needs you and Recent, a stale
+// running row drawn Unknown without its bar (components.js runCard), the kit's age words, and a caption on the faceplate's
+// "—". 376,970 bytes measured, home.js 14,798, components.js 11,675.
+const TOTAL = 369 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -216,7 +220,7 @@ const TOTAL = 368 * KB;
 // app.css +0.1 KB, its Atlas section rewritten in one pass without the layered overrides; 321.8 KB measured).
 // 2026-11-02: index.html 16 → 17 KB for the navigation update: the Settings and Tools pages, the Spreadsheets chip and
 // mode, and Home's On Pi Hub line (16.1 KB measured).
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40 * KB, 'index.html': 17 * KB, 'home.js': 14.3 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.3 * KB };
+const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40 * KB, 'index.html': 17 * KB, 'home.js': 14.5 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.3 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;

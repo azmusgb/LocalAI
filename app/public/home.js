@@ -154,7 +154,7 @@ function runEntry(it,tone,go,data={}){
 }
 // Opening a failure marks it (and the repeats on its row) seen on the server: it leaves Needs you on every device. The row
 // goes once the run view closes, so nothing moves under the open run.
-let stale=false,needsRead=null,needsFailed=false; // needsRead: the last good read of Needs you's runs
+let stale=false,needsRead=null,needsFailed=false,recentReadAt=null,recentFailed=false; // the last good reads of Local AI's runs
 function failedRow(g){
  const n=g.runs.length,it=n>1&&g.run.card?{...g.run,card:{...g.run.card,badge:{tone:'bad',...g.run.card?.badge,label:`Failed ×${n}`}}}:g.run;
  return runEntry(it,'bad',()=>{const ids=new Set(g.runs.map(x=>x.id));root.LocalAINeedsYou.markSeen([...ids]);needs=needs.filter(x=>!ids.has(x.id));stale=true;openRun(g.run)},n>1?{needsCount:n}:{});
@@ -202,11 +202,11 @@ function paintNeeds(){
  sec.hidden=!n;
 }
 // Home's faceplate readout (A7 P1): how many things need you; its lamp and caption are Local AI's status (app.js).
-const plateNeeds=n=>n===null?root.LocalAIUI?.plate?.('homePlate',{readout:'—'}):root.LocalAIUI?.plate?.('homePlate',{readout:n||'Nothing',unit:n===1?'needs you':n?'need you':'needs you'});
+const plateNeeds=n=>n===null?root.LocalAIUI?.plate?.('homePlate',{readout:'—',unit:"couldn't check"}):root.LocalAIUI?.plate?.('homePlate',{readout:n||'Nothing',unit:n===1?'needs you':n?'need you':'needs you'});
 function recentRow(it,onOpen=openRun){
  // A conversation shows once, under its first message, with its turn count (as Work does).
  const n=it.turns||1;if(it.card?.kind==='chat'&&n>1)it={...it,card:{...it.card,summary:`Chat · ${n} turns`,preview:it.card.preview||(it.card.summary?{type:'text',text:it.card.summary}:null)}};
- const row=root.LocalAIUI.runCard(it,{onOpen,rowOpen:true}),act=row.querySelector('.run-card__action');
+ const row=root.LocalAIUI.runCard(it,{onOpen,rowOpen:true,stale:recentFailed}),act=row.querySelector('.run-card__action');
  if(act)act.remove(); // the row itself opens the run
  if(it.status==='awaiting_approval')row.querySelector('.run-card__bar')?.remove(); // waiting on you is not progress
  return row;
@@ -242,7 +242,7 @@ async function loadNeeds(){
  const runs=d.status==='fulfilled'?d.value.items||[]:null;
  if(runs){needs=root.LocalAINeedsYou.pick(runs);needsRead=new Date()}
  needsFailed=!runs; // the rows stay, said to be stale (A28)
- root.LocalAIUI?.staleNotice?.('homeNeedsNotice',"Local AI's runs",'Needs you',runs?null:needsRead||true);
+ paintRuns();
  if(p.status==='fulfilled'){
   const waiting=new Set(needs.filter(r=>r.status==='awaiting_approval').map(r=>r.meta?.changeId).filter(Boolean));
   approvals=(p.value.items||[]).filter(a=>a.status==='pending'&&!(a.meta?.changeId&&waiting.has(a.meta.changeId)))
@@ -251,9 +251,13 @@ async function loadNeeds(){
  paintNeeds();
  if(lastRecent?.box.isConnected&&!lastRecent.box.querySelector(':scope > .state-loading,:scope > .state-error'))paintRecent(lastRecent.box,lastRecent.data); // Recent may have painted before Needs you knew its rows
 }
-// A failed quiet refresh keeps Recent's rows and says how old they are; the next good read clears that (A28).
-let recentReadAt=null;
-function recentRead(ok){if(ok)recentReadAt=new Date();root.LocalAIUI?.staleNotice?.('homeRecentNotice',"Local AI's runs",'Recent',ok?null:recentReadAt||new Date())}
+// One notice and sources part for Local AI's runs (Needs you and Recent; A28). A Recent never loaded shows its own error.
+function paintRuns(){
+ const U=root.LocalAIUI,bad=needsFailed||recentFailed&&recentReadAt,at=[needsFailed&&needsRead,recentFailed&&recentReadAt].filter(Boolean),since=at.length?new Date(Math.min(...at)):null,last=bad?since:new Date(Math.max(needsRead,recentReadAt));
+ U?.staleNotice?.('homeRunsNotice',{since:bad?needsFailed&&!needsRead||since||true:null,missing:'Needs you'});
+ if(needsRead||recentReadAt||bad)U?.sources?.('homeSrcRuns',"Local AI's runs",bad?'bad':'ok',last?(bad?'last read ':'read ')+last.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'');
+}
+function recentRead(ok){if(ok)recentReadAt=new Date();recentFailed=!ok;paintRuns();if(!ok&&lastRecent?.box.isConnected&&!lastRecent.box.querySelector(':scope > .state-loading,:scope > .state-error'))paintRecent(lastRecent.box,lastRecent.data)}
 let inflight=null;
 function refresh(){
  if(inflight)return inflight;

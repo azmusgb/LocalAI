@@ -15,7 +15,7 @@ function groupOf(it){
  const n=Math.round((d(new Date())-d(t))/864e5);
  return n<=0?0:n===1?1:n<7?2:3;
 }
-const sig=it=>[it.id,it.status,it.progress,it.updatedAt,it.turns,it.kept,it.card?.title,it.card?.summary,it.card?.badge?.label,st.selecting,it.repeat?.length].join('|');
+const sig=it=>[st.stale,it.id,it.status,it.progress,it.updatedAt,it.turns,it.kept,it.card?.title,it.card?.summary,it.card?.badge?.label,st.selecting,it.repeat?.length].join('|');
 // The server sends one row per thread (its latest run, with `turns`), so each thread lives on exactly one page.
 // `window` (a refresh of the newest page) also drops what that page no longer holds: runs deleted or filed away.
 function merge(list,{older=false,window=false}={}){
@@ -53,7 +53,7 @@ function rowFor(it){
  if(c.kind==='chat'&&n>1)c={...c,summary:`Chat · ${n} turns`,preview:c.preview||(c.summary?{type:'text',text:c.summary}:null)};
  if(it.repeat?.length>1)c={...c,summary:[repeatWords(it.repeat),c.summary].filter(Boolean).join(' · ')};
  // In Select mode a tap picks the row instead of opening it, and the row carries its checkbox.
- const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:x=>st.selecting?pick(key(x),!st.picked.has(key(x))):openRun(x),rowOpen:true});
+ const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:x=>st.selecting?pick(key(x),!st.picked.has(key(x))):openRun(x),rowOpen:true,stale:st.stale});
  const act=row.querySelector('.run-card__action');
  if(act){if(!st.selecting&&/^(Review|Retry)$/i.test(act.textContent.trim()))act.className='btn-outline work-secondary';else act.remove()}
  if(st.selecting){
@@ -101,9 +101,9 @@ const visible=()=>{const q=st.query.trim().toLowerCase();return st.items.filter(
 // stale list (a refresh failed): the rows stay, but its running count is no longer known.
 const KIND_WORD={needs:'Needs you',chats:'Chats',images:'Images',missions:'Missions',sheets:'Spreadsheets',changes:'Changes',other:'Other'};
 // A good read clears the stale notice; a failed quiet refresh keeps the rows and puts it up (A28: unreadable is not current).
-function clearStale(){st.stale=false;window.LocalAIUI?.staleNotice?.('workNotice',"Local AI's runs",'your work',null)}
+function clearStale(){st.stale=false;window.LocalAIUI?.staleNotice?.('workNotice')}
 function readOk(){st.readAt=new Date();clearStale()}
-function readFailed(){st.stale=true;window.LocalAIUI?.staleNotice?.('workNotice',"Local AI's runs",'your work',st.readAt||new Date());plate()}
+function readFailed(){st.stale=true;window.LocalAIUI?.staleNotice?.('workNotice',{since:st.readAt||new Date()});paint()}
 function plate(failed){
  const ui=window.LocalAIUI;if(!ui?.plate)return;const latest=$('workLatest'),readings=$('workReadings');
  if(failed){ui.plate('workPlate',{lamp:['unknown','Unknown'],readout:'—'});if(latest)latest.textContent="Couldn't read your work.";if(readings)readings.hidden=true;ui.sources('workSources',"Local AI's runs",'bad');return}
