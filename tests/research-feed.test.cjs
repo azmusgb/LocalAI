@@ -101,6 +101,41 @@ test('no tag survives repeated escaping', () => {
     }
   }
 });
+test('no tag opener survives stripping that assembles tags', () => {
+  const esc = (x, n) => { for (let i = 0; i < n; i++) x = x.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); return x; };
+  const nest = (x, n) => { for (let i = 0; i < n; i++) x = x.replace(/</g, '<<b>'); return x; };
+  const payloads = [
+    ['&lt;&lt;b&gt;script&gt;alert(1)&lt;&lt;/b&gt;/script&gt;x', true],
+    ['<![CDATA[<<b>script>alert(1)<</b>/script>]]>x', true],
+    ['&lt;scr&lt;script&gt;ipt&gt;alert(1)&lt;/scr&lt;/script&gt;ipt&gt;x', true],
+    [esc('<script>alert(1)</script>', 6), false],
+    [esc('<script>alert(1)</script>', 8), false],
+    ['&amp;lt;img src=x', false],
+    ['&lt;?php x ?&gt;y', false],
+    [nest('<script>alert(1)</script>', 3), false],
+    [nest('<script>alert(1)</script>', 5), false],
+    [nest('<img src=x onerror=1>', 6), false]
+  ];
+  for (const [payload, noAngle] of payloads) {
+    const atom = `<feed><entry><id>a</id><title>${payload}</title><summary>${payload}</summary></entry></feed>`;
+    const rss = `<rss><channel><item><guid>a</guid><title>${payload}</title><description>${payload}</description></item></channel></rss>`;
+    for (const xml of [atom, rss]) {
+      const [e] = parseFeed(xml, base).entries;
+      for (const s of [e.title, e.text]) {
+        assert.doesNotMatch(s, /<[A-Za-z/!?]/, `${payload} -> ${s}`);
+        if (noAngle) assert.ok(!s.includes('<'), `${payload} -> ${s}`);
+      }
+    }
+  }
+});
+test('opener-heavy text is bounded in time', () => {
+  for (const unit of ['<', '<<b>', '<a', '<script>']) {
+    const xml = `<rss><channel><item><guid>g</guid><title>${unit.repeat(Math.floor(200000 / unit.length) * (unit === '<' ? 1 : 1))}</title><description>${unit.repeat(100000)}</description></item></channel></rss>`;
+    const t0 = Date.now();
+    parseFeed(xml, base);
+    assert.ok(Date.now() - t0 < 3000, unit);
+  }
+});
 test('repeated escaping is bounded in time', () => {
   const xml = `<rss><channel><item><guid>g</guid><title>${'&amp;lt;'.repeat(100000)}</title></item></channel></rss>`;
   const t0 = Date.now();

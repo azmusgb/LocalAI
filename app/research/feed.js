@@ -110,7 +110,31 @@ function textOf(inner) {
     if (next === s) break;
     s = next;
   }
-  return collapse(stripTags(s));
+  return collapse(noOpeners(s));
+}
+
+const OPENER = /<[A-Za-z/!?]/;
+// Last step of text cleaning: strip until stable, then drop each remaining tag opener (through its '>', or just the '<'
+// when no '>' follows). Stripping can join text into a new tag, so repeat (bounded); if an opener still remains, every
+// '<' goes. The result can never match OPENER; a lone '<' in prose ("a < b") stays.
+function noOpeners(s) {
+  for (let pass = 0; pass < 8; pass++) {
+    const next = stripTags(s);
+    if (next === s) break;
+    s = next;
+  }
+  for (let pass = 0; pass < 8 && OPENER.test(s); pass++) {
+    let out = '', pos = 0;
+    const lastGt = s.lastIndexOf('>');
+    for (let lt = s.indexOf('<'); lt >= 0; lt = s.indexOf('<', pos)) {
+      if (!OPENER.test(s.slice(lt, lt + 2))) { out += s.slice(pos, lt + 1); pos = lt + 1; continue; }
+      out += s.slice(pos, lt);
+      const gt = lt > lastGt ? -1 : s.indexOf('>', lt);
+      pos = gt < 0 ? lt + 1 : gt + 1;
+    }
+    s = out + s.slice(pos);
+  }
+  return OPENER.test(s) ? s.replaceAll('<', '') : s;
 }
 
 // The direct child elements of a block, in order, with the namespace prefix kept in qname and dropped from name.
