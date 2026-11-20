@@ -16,10 +16,48 @@ function createWorkbench(ctx) {
   async function apiWorkbenchDiff(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req,3*1024*1024);const full=safeWorkspacePath(b.path);const before=fs.existsSync(full)?fs.readFileSync(full,'utf8'):'';const after=String(b.content||'');json(res,200,{path:b.path,diff:simpleDiff(before,after),changed:before!==after})}catch(e){storageError(res,e,400)}}
   async function apiWorkbenchWrite(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req,3*1024*1024);if(b.approved!==true)return json(res,409,{error:'Explicit approval is required',approvalRequired:true});const full=safeWorkspacePath(b.path);fs.mkdirSync(path.dirname(full),{recursive:true});let backup=null;if(fs.existsSync(full)){backup=`${full}.localai-${Date.now()}.bak`;fs.copyFileSync(full,backup)}fs.writeFileSync(full,String(b.content||''),'utf8');recordActivity('workbench','Workspace file written',String(b.path),{backup:backup?workspaceRel(backup):null});json(res,200,{ok:true,path:b.path,backup:backup?workspaceRel(backup):null,size:Buffer.byteLength(String(b.content||''),'utf8')})}catch(e){storageError(res,e,400)}}
   async function apiWorkbenchSearch(req,res){if(!requireFeature(res,5))return;try{const b=await readBody(req);const query=String(b.query||'').toLowerCase().trim();if(!query)return json(res,400,{error:'query is required'});const root=safeWorkspacePath(b.path||'');const results=[];let scannedBytes=0;const limited=()=>results.length>=100||scannedBytes>=64*1024*1024;function walk(dir,depth){if(depth>5||limited())return;for(const e of fs.readdirSync(dir,{withFileTypes:true})){if(limited())return;if(['.git','node_modules','.venv','bin','obj'].includes(e.name))continue;const p=path.join(dir,e.name);if(e.isDirectory())walk(p,depth+1);else if(e.isFile()){if(e.name.toLowerCase().includes(query))results.push({path:workspaceRel(p),match:'filename'});else{try{const st=fs.statSync(p);if(st.size<512000){scannedBytes+=st.size;const txt=fs.readFileSync(p,'utf8');const idx=txt.toLowerCase().indexOf(query);if(idx>=0)results.push({path:workspaceRel(p),match:'content',snippet:txt.slice(Math.max(0,idx-100),idx+query.length+160).replace(/\s+/g,' ')})}}catch{}}}if(results.length>=100)return}}walk(root,0);json(res,200,{results,truncated:limited()})}catch(e){storageError(res,e,400)}}
-  function validateExternalUrl(raw){const u=new URL(String(raw||''));if(!['http:','https:'].includes(u.protocol))throw new Error('Only http/https URLs are allowed');return u}
+  function isPrivateIp(ip){
+    if(!ip)return true;
+    if(net.isIPv4(ip)){
+      const p=ip.split('.').map(Number);
+      if(p[0]===10||p[0]===127||p[0]===0)return true;
+      if(p[0]===169&&p[1]===254)return true; // Link-local
+      if(p[0]===172&&p[1]>=16&&p[1]<=31)return true; // RFC 1918
+      if(p[0]===192&&p[1]===168)return true; // RFC 1918
+      if(p[0]===100&&p[1]>=64&&p[1]<=127)return true; // CGNAT / Tailscale
+      return false;
+    }
+    if(net.isIPv6(ip)){
+      const l=ip.toLowerCase();
+      if(l==='::1'||l==='::'||l.startsWith('fe80:')||l.startsWith('fc')||l.startsWith('fd'))return true;
+      if(l.startsWith('::ffff:'))return isPrivateIp(l.slice(7));
+      return false;
+    }
+    return true;
+  }
+  async function validateExternalUrl(raw){
+    const u=new URL(String(raw||''));
+    if(!['http:','https:'].includes(u.protocol))throw new Error('Only http/https URLs are allowed');
+    const host=u.hostname;
+    if(host==='localhost'||host==='127.0.0.1'||host==='::1'||host.endsWith('.local')||host.endsWith('.internal'))throw new Error('Access to private or local network hosts is blocked');
+    if(net.isIP(host)){
+      if(isPrivateIp(host))throw new Error('Access to private or loopback IP addresses is blocked');
+    }else{
+      try{
+        const resolved=await dns.promises.lookup(host,{all:true});
+        for(const addr of resolved){
+          if(isPrivateIp(addr.address))throw new Error('Access to private or internal addresses is blocked');
+        }
+      }catch(e){
+        if(e.message&&e.message.includes('blocked'))throw e;
+        throw new Error(`Failed to resolve host: ${host}`);
+      }
+    }
+    return u;
+  }
   function stripHtml(html){return String(html||'').replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/\s+/g,' ').trim()}
-  async function apiBrowserFetch(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req);const u=validateExternalUrl(b.url);const r=await fetchWithTimeout(u.toString(),{headers:{'User-Agent':'LocalAI-Appliance/1.6'}},15000);const raw=await r.text();const ct=r.headers.get('content-type')||'';const title=/<title[^>]*>([\s\S]*?)<\/title>/i.exec(raw)?.[1]?.replace(/\s+/g,' ').trim()||u.hostname;const content=ct.includes('html')?stripHtml(raw):raw;recordActivity('browser','Fetched web page',u.toString(),{status:r.status});json(res,200,{url:u.toString(),status:r.status,title,contentType:ct,text:content.slice(0,40000),truncated:content.length>40000})}catch(e){storageError(res,e,400)}}
-  async function apiHttpCheck(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req);const u=validateExternalUrl(b.url);const started=Date.now();const r=await fetchWithTimeout(u.toString(),{method:String(b.method||'GET').toUpperCase()==='HEAD'?'HEAD':'GET'},10000);json(res,200,{url:u.toString(),status:r.status,ok:r.ok,latencyMs:Date.now()-started,contentType:r.headers.get('content-type')||''})}catch(e){storageError(res,e,400)}}
+  async function apiBrowserFetch(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req);const u=await validateExternalUrl(b.url);const r=await fetchWithTimeout(u.toString(),{headers:{'User-Agent':'LocalAI-Appliance/1.6'}},15000);const raw=await r.text();const ct=r.headers.get('content-type')||'';const title=/<title[^>]*>([\s\S]*?)<\/title>/i.exec(raw)?.[1]?.replace(/\s+/g,' ').trim()||u.hostname;const content=ct.includes('html')?stripHtml(raw):raw;recordActivity('browser','Fetched web page',u.toString(),{status:r.status});json(res,200,{url:u.toString(),status:r.status,title,contentType:ct,text:content.slice(0,40000),truncated:content.length>40000})}catch(e){storageError(res,e,400)}}
+  async function apiHttpCheck(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req);const u=await validateExternalUrl(b.url);const started=Date.now();const r=await fetchWithTimeout(u.toString(),{method:String(b.method||'GET').toUpperCase()==='HEAD'?'HEAD':'GET'},10000);json(res,200,{url:u.toString(),status:r.status,ok:r.ok,latencyMs:Date.now()-started,contentType:r.headers.get('content-type')||''})}catch(e){storageError(res,e,400)}}
   async function apiComputerBatch(req,res){if(!requireFeature(res,6))return;try{const b=await readBody(req,5*1024*1024);if(b.approved!==true)return json(res,409,{error:'Explicit approval is required',approvalRequired:true});const ops=Array.isArray(b.operations)?b.operations.slice(0,30):[];const results=[];for(const op of ops){try{if(op.type==='mkdir'){fs.mkdirSync(safeWorkspacePath(op.path),{recursive:true});results.push({type:op.type,path:op.path,ok:true})}else if(op.type==='write'){const full=safeWorkspacePath(op.path);fs.mkdirSync(path.dirname(full),{recursive:true});let backup=null;if(fs.existsSync(full)){backup=`${full}.localai-${Date.now()}.bak`;fs.copyFileSync(full,backup)}fs.writeFileSync(full,String(op.content||''),'utf8');results.push({type:op.type,path:op.path,ok:true,backup:backup?workspaceRel(backup):null})}else if(op.type==='copy'){const src=safeWorkspacePath(op.from),dst=safeWorkspacePath(op.to);fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst);results.push({type:op.type,from:op.from,to:op.to,ok:true})}else{results.push({type:op.type,ok:false,error:'Unsupported operation'})}}catch(e){results.push({type:op.type,path:op.path,ok:false,error:String(e.message||e)})}}recordActivity('computer','Approved computer action batch',`${results.filter(x=>x.ok).length}/${results.length} operations completed`,{});json(res,200,{results})}catch(e){storageError(res,e,400)}}
   function findGitRoot(start){
     let cur=safeWorkspacePath(start||'');
