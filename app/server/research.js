@@ -12,7 +12,7 @@ const UNAVAILABLE = new Set(['error', 'record_failed']);
 const SOURCE_FIELDS = ['name', 'url', 'kind', 'trust', 'topics', 'scheduleMinutes', 'status'];
 
 function createResearchRoutes(ctx) {
-  const { intake, json, readBody, store, storageError } = ctx;
+  const { experiments, intake, json, readBody, store, storageError } = ctx;
   const pick = (b, fields) => Object.fromEntries(fields.filter(k => k in b).map(k => [k, b[k]]));
   // Store validation errors carry .status 400, 404, 409 or 410 and a message written for the owner; anything else is a failure.
   function fail(res, e) {
@@ -151,10 +151,43 @@ function createResearchRoutes(ctx) {
     } catch (e) { fail(res, e); }
   }
 
+  async function apiResearchExperiments(req, res, urlObj) {
+    try {
+      const enabled = read().enabled;
+      if (!enabled) return json(res, 200, { enabled, experiments: [] });
+      if (req.method === 'POST') {
+        const b = await body(req);
+        if (!experiments) return json(res, 501, { error: 'Experiments engine not configured' });
+        const exp = experiments.planExperiment(b);
+        return json(res, 200, { experiment: exp });
+      }
+      const limit = Number(urlObj?.searchParams?.get('limit')) || 50;
+      const list = experiments ? experiments.listExperiments({ limit }) : [];
+      return json(res, 200, { enabled, experiments: list });
+    } catch (e) { fail(res, e); }
+  }
+
+  async function apiResearchContracts(req, res, urlObj) {
+    try {
+      const enabled = read().enabled;
+      if (!enabled) return json(res, 200, { enabled, contracts: [] });
+      if (req.method === 'POST') {
+        const b = await body(req);
+        if (!experiments) return json(res, 501, { error: 'Contracts engine not configured' });
+        const contract = experiments.createContract(b);
+        return json(res, 200, { contract });
+      }
+      const id = urlObj?.searchParams?.get('id') || '';
+      const c = experiments ? experiments.getContractRecord(id) : null;
+      return json(res, 200, { enabled, contract: c });
+    } catch (e) { fail(res, e); }
+  }
+
   return {
     apiResearchState, apiResearchPause, apiResearchSources, apiResearchSourceAdd,
     apiResearchSourceUpdate, apiResearchSourceFetch, apiResearchDocuments,
-    apiResearchFindings, apiResearchFindingDecide, apiResearchFindingPromote, apiImproveOutcome
+    apiResearchFindings, apiResearchFindingDecide, apiResearchFindingPromote, apiImproveOutcome,
+    apiResearchExperiments, apiResearchContracts
   };
 }
 
