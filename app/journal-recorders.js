@@ -5,8 +5,16 @@
 // runs, voice answers, approval decisions and Local AI's own releases. record() is how callers write one: it never
 // throws, so a journal that fails never breaks the thing being recorded.
 
+const { titleFromText, wrappedQuestion } = require('./prompt-title');
+
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
 const str = v => (typeof v === 'string' ? v.trim() : '');
+// What the owner asked: the prompt, or the question it wraps in instructions (Pi Hub's House question), never the
+// instructions themselves.
+const askedOf = run => wrappedQuestion(run?.input?.prompt) || str(run?.input?.prompt);
+// An entry is named by the run's title, except a run whose prompt wraps a question, which is named by that question
+// (its run title is the instructions' first words, or a caller's label such as "House question").
+const runTitle = run => { const q = wrappedQuestion(run?.input?.prompt); return q ? titleFromText(q) : run?.title; };
 
 // The readable result of a run: its own text, then the summary, then a bare outcome.
 function runText(run) {
@@ -15,8 +23,8 @@ function runText(run) {
   if (!text && o && typeof o === 'object') text = str(o.text) || str(o.answer) || str(o.content);
   if (!text) text = str(run?.summary);
   if (!text && o && typeof o === 'object') text = str(o.outcome) || str(o.preview);
-  const asked = str(run?.input?.prompt);
-  if (asked && asked !== str(run?.title) && !text.includes(asked)) text = text ? `${text}\nAsked: ${asked}` : `Asked: ${asked}`;
+  const asked = askedOf(run), title = str(runTitle(run));
+  if (asked && asked !== title && !text.includes(asked)) text = text ? `${text}\nAsked: ${asked}` : `Asked: ${asked}`;
   return text;
 }
 
@@ -27,7 +35,7 @@ function runEntry(run) {
   const hidden = run.type === 'powershell' || run.meta?.powershell === true; // host commands: title only
   const body = hidden ? '' : run.status === 'failed' && !runText({ ...run, summary: '' }) ? str(run.error) : runText(run);
   return {
-    at: run.finishedAt || run.updatedAt || run.createdAt, source: 'run', kind: String(run.type || 'task'), title: run.title,
+    at: run.finishedAt || run.updatedAt || run.createdAt, source: 'run', kind: String(run.type || 'task'), title: runTitle(run),
     body, link: `#run/${run.id}`, ref: `run:${run.id}:${run.status}`, meta: { status: run.status, type: run.type }
   };
 }

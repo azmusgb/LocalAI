@@ -3,6 +3,7 @@
 // Activity and Library: the activity log, Library items, ☆ Keep, long answers kept whole, and which failed runs the
 // owner has seen. Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md).
 // ctx holds what this code uses from the rest of the server.
+const { titleFromText } = require('../prompt-title');
 function createLibrary(ctx) {
   const { ACTIVITY_STORE, LIBRARY_STORE, cleanRunId, imageEngines, json, libraryThreads, nowIso, prependRecord, readBody, readState, runLedger, storage, storageError, writeState } = ctx;
   function activityStore() {
@@ -26,12 +27,6 @@ function createLibrary(ctx) {
   function libraryStore() {
     const value = readState(LIBRARY_STORE, []);
     return Array.isArray(value) ? value : [];
-  }
-
-  function titleFromText(value, fallback = 'Untitled') {
-    const clean = String(value || '').replace(/\s+/g, ' ').trim();
-    if (!clean) return fallback;
-    return clean.length <= 72 ? clean : `${clean.slice(0, 69).trim()}…`;
   }
 
   function recordArtifact(kind, title, summary = '', meta = {}, data = {}) {
