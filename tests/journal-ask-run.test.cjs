@@ -214,5 +214,5 @@ test('a disabled journal: search and delete are 503 unavailable, never empty or 
   }
   for (const k of Object.keys(out)) delete out[k];
   await routes.apiJournalDelete({}, {});
-  assert.equal(out.status, 503, 'delete'); assert.equal(out.body.error, "Couldn't reach your past work, so nothing was deleted.");
+  assert.equal(out.status, 503, 'delete'); assert.equal(out.body.error, 'Past work is switched off.', 'the cause only: the run view says "Couldn\'t delete it"');
 });

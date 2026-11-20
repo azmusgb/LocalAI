@@ -38,7 +38,7 @@ function createJournalRoutes(ctx) {
     try {
       const b = await readBody(req, 4 * 1024);
       // Switched off, the stub's remove() answers false for every id: that is "couldn't reach it", not "already deleted".
-      if (journal.disabled) return json(res, 503, { error: "Couldn't reach your past work, so nothing was deleted." });
+      if (journal.disabled) return json(res, 503, { error: 'Past work is switched off.' }); // the cause: the run view says "Couldn't delete it"
       return journal.remove(String(b.id || '')) ? json(res, 200, { ok: true }) : json(res, 404, { error: 'No such entry' });
     } catch (e) { storageError(res, e, 400); }
   }
