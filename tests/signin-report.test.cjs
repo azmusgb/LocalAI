@@ -147,10 +147,10 @@ test('whoami renews a paired device cookie for all of Local AI; an unpaired one 
   const base = await start(t);
   const cookie = await pair(base);
   const r = await fetch(`${base}/api/claude/chat/whoami`, { headers: { Cookie: cookie, 'X-Forwarded-Proto': 'https' } });
-  assert.deepEqual(await r.json(), { paired: true });
+  assert.deepEqual(await r.json(), { paired: true, signedIn: true });
   assert.equal(r.headers.get('set-cookie'), `${cookie}; HttpOnly; SameSite=Lax; Path=/; Max-Age=15552000; Secure`);
   const none = await fetch(`${base}/api/claude/chat/whoami`, { headers: { Cookie: 'localai_chat_device=dev-000000000000.nope' } });
-  assert.deepEqual(await none.json(), { paired: false });
+  assert.deepEqual(await none.json(), { paired: false, signedIn: true }, 'the host itself is signed in without a device');
   assert.equal(none.headers.get('set-cookie'), null);
 });
 

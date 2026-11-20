@@ -30,7 +30,8 @@ function requestIsHttps(req) {
   return String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase() === 'https';
 }
 
-function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.now() }) {
+// isHost(req): the request came from the host itself (app/signin.js, A4), which is signed in without a device.
+function createClaudeChat({ storage, dataDir, json, readBody, isHost = () => false, now = () => Date.now() }) {
   const onlineMs = Number(process.env.LOCALAI_CHAT_ONLINE_MS) > 0 ? Number(process.env.LOCALAI_CHAT_ONLINE_MS) : 45000;
   // How long a claimed (delivering) message waits for the bridge's ack before it is offered again.
   const leaseMs = Number(process.env.LOCALAI_CHAT_LEASE_MS) > 0 ? Number(process.env.LOCALAI_CHAT_LEASE_MS) : 60000;
@@ -467,7 +468,8 @@ function createClaudeChat({ storage, dataDir, json, readBody, now = () => Date.n
     }
     // Lets the page ask whether it is paired without provoking a 401 (and a console error) on every load.
     // It also renews the device cookie for all of Local AI (refreshCookies); the app calls it on every load.
-    if (route === 'GET /api/claude/chat/whoami') { json(res, 200, { paired: refreshCookies(req, res) }); return true; }
+    // signedIn: paired, or the host itself; the app's sign-in notice (signin-report.js) reads it. Chat still needs a device.
+    if (route === 'GET /api/claude/chat/whoami') { const paired = refreshCookies(req, res); json(res, 200, { paired, signedIn: paired || isHost(req) }); return true; }
     const deviceRoutes = {
       'GET /api/claude/chat/sessions': () => sessions(req, res),
       'GET /api/claude/chat/messages': () => messagesHandler(req, res, urlObj),
