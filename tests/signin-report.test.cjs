@@ -87,7 +87,7 @@ test('routes that run code, write files or approve changes refuse a caller witho
 });
 
 // The owner's past work (A28 D5/D6) and Claude's queue: reading or deleting journal entries, asking about them, and
-// changing, adding or handing board items to Claude are refused like /api/improve/handoff, which they would bypass.
+// reading, changing, adding or handing board items to Claude are refused like /api/improve/handoff, which they would bypass.
 test('past work and the Claude queue refuse a caller without a device; a paired device and the Mac key get through', { timeout: 30000 }, async t => {
   const base = await start(t);
   const cookie = await pair(base);
@@ -95,7 +95,9 @@ test('past work and the Claude queue refuse a caller without a device; a paired 
   const routes = [['GET', '/api/journal?limit=3'], ['POST', '/api/journal/delete', { id: 'j-none' }], ['POST', '/api/journal/ask', { question: 'what did I print' }],
     ['POST', '/api/improve/item', { id: 'none', action: 'handToClaude' }], ['POST', '/api/improve/idea', { text: 'an idea' }],
     ['POST', '/api/claude/findings/decision', { id: 'none', status: 'approved' }], ['POST', '/api/improve/handoff', { text: 'x' }],
-    ['POST', '/api/claude/findings/vote', { id: 'none', delta: 1 }], ['POST', '/api/improve/signal', { id: 'none', action: 'promote' }]];
+    ['POST', '/api/claude/findings/vote', { id: 'none', delta: 1 }], ['POST', '/api/improve/signal', { id: 'none', action: 'promote' }],
+    // Reading the queue: session titles and folders, findings, handed-over requests and owner notes.
+    ['GET', '/api/claude/board'], ['GET', '/api/claude/board?only=sessions'], ['GET', '/api/claude/priorities?limit=5'], ['GET', '/api/improve/items']];
   const send = (method, route, body, headers) => fetch(`${base}${route}`, method === 'GET' ? { headers } : { method, headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });
   const refused = { error: 'Sign in on this device first: pair it under Improve › Claude Code.', signIn: true };
   const got = [];
@@ -110,6 +112,10 @@ test('past work and the Claude queue refuse a caller without a device; a paired 
   assert.ok(Array.isArray((await paired.json()).items));
   const mac = await send('GET', '/api/journal?limit=3', null, viaCaddy('10.0.0.5', 'python-urllib/3.14', { 'X-LocalAI-Mac-Key': KEY }));
   assert.equal(mac.status, 200, 'the Mac key reads past work');
+  for (const [, route] of routes.filter(([method, route]) => method === 'GET' && route !== '/api/journal?limit=3')) {
+    assert.equal((await send('GET', route, null, viaCaddy('10.0.0.40', IPHONE, { Cookie: cookie }))).status, 200, `GET ${route} paired`);
+    assert.equal((await send('GET', route, null, viaCaddy('10.0.0.5', 'python-urllib/3.14', { 'X-LocalAI-Mac-Key': KEY }))).status, 200, `GET ${route} with the Mac key`);
+  }
   for (const [method, route, body] of routes.slice(1, 2).concat(routes.slice(3, 4), routes.slice(5, 6))) {
     assert.notEqual((await send(method, route, body, viaCaddy('10.0.0.40', IPHONE, { Cookie: cookie }))).status, 401, `${method} ${route} paired`);
   }
