@@ -140,6 +140,9 @@ const journal = require('./journal').createJournal({ db: storage.db, now: clockN
 const journalRecorders = require('./journal-recorders');
 // Answer feedback (app/answer-feedback.js): the owner's Good answer / Not right on a finished answer, for Models. Never read by a prompt (A28 D5).
 const answerFeedback = require('./answer-feedback').createAnswerFeedback({ db: storage.db, now: clockNow });
+// Research intake (docs/superpowers/specs/2026-11-19-knowledge-loop-design.md): owner-registered feeds, off unless LOCALAI_RESEARCH=on.
+const researchStore = require('./research/store').createResearchStore({ db: storage.db, now: clockNow, timeZone: process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
+const researchIntake = require('./research/intake').createIntake({ store: researchStore, fetcher: require('./research/fetcher').createFetcher({}), enabled: process.env.LOCALAI_RESEARCH === 'on', log: m => console.log(`${nowIso()} ${m}`) });
 // What the voice and approval handlers (PowerShell Workbench decisions too) get: writing an entry, never reading one (A28 D5: no journal text reaches code
 // beyond the journal routes).
 const journalWriter = Object.freeze({ record: entry => journal.record(entry) });
@@ -406,6 +409,8 @@ const { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGrid
 const { addNotification, apiApprovalCreate, apiApprovalDecide, apiApprovals, apiNotificationSeed, apiNotificationSystem, apiNotificationUpdate, apiNotifications, approvalStore, notificationStore, resolveDeployFailures } = require('./server/notifications').createNotifications({ APPROVALS_STORE, NOTIFICATIONS_STORE, changeStore: (...a) => changeStore(...a), decideChange: (...a) => decideChange(...a), hostDetail, isInfoNotice, journalWriter, json, makeId, normalizeTitle, notifier, notifyLib, nowIso, objectStore, prependRecord, readBody, recordActivity, requireFeature, saveStore, storage, storageError });
 const { apiNavPins } = require('./server/nav-pins').createNavPins({ json, readBody, sameOriginJson, storage, storageError });
 const { apiJournal, apiJournalAsk, apiJournalDelete, startPastWork } = require('./server/journal').createJournalRoutes({ ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, coordinator, fitMessages, journal, json, modelFetchWithTimeout, prints: piHub.prints, readBody, runLedger, storageError });
+const { apiResearchDocuments, apiResearchPause, apiResearchSourceAdd, apiResearchSourceFetch, apiResearchSourceUpdate, apiResearchSources, apiResearchState } = require('./server/research').createResearchRoutes({ intake: researchIntake, json, readBody, store: researchStore, storageError });
+setInterval(() => researchIntake.tick().catch(e => console.error(`${nowIso()} Research intake failed:`, e)), 30000).unref?.();
 const { apiFeedback, apiFeedbackSummary } = require('./server/answer-feedback').createAnswerFeedbackRoutes({ answerFeedback, json, readBody, runLedger });
 const { apiNavOpen, apiNavOpens, apiNavOpensClear } = require('./server/nav').createNav({ json, readBody, sameOriginJson, storage, storageError });
 const { accessAddresses, apiAccess, apiPush, apiReleases, recordReleaseHistory } = require('./server/push').createPush({ APP_VERSION, json, notifier, nowIso, pushLib, readBody, release, resolveDeployFailures, storage, storageError });
@@ -459,6 +464,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/journal') return await apiJournal(req, res, urlObj);
     if (req.method === 'POST' && p === '/api/journal/delete') return await apiJournalDelete(req, res);
     if (req.method === 'POST' && p === '/api/journal/ask') return await apiJournalAsk(req, res);
+    if (req.method === 'GET' && p === '/api/research/state') return await apiResearchState(req, res);
+    if (req.method === 'POST' && p === '/api/research/pause') return await apiResearchPause(req, res);
+    if (req.method === 'GET' && p === '/api/research/sources') return await apiResearchSources(req, res);
+    if (req.method === 'POST' && p === '/api/research/sources') return await apiResearchSourceAdd(req, res);
+    if (req.method === 'POST' && p === '/api/research/sources/update') return await apiResearchSourceUpdate(req, res);
+    if (req.method === 'POST' && p === '/api/research/sources/fetch') return await apiResearchSourceFetch(req, res);
+    if (req.method === 'GET' && p === '/api/research/documents') return await apiResearchDocuments(req, res, urlObj);
     if (req.method === 'POST' && p === '/api/nav/open') return await apiNavOpen(req, res);
     if (req.method === 'GET' && p === '/api/nav/opens') return await apiNavOpens(req, res, urlObj);
     if (req.method === 'DELETE' && p === '/api/nav/opens') return await apiNavOpensClear(req, res);
