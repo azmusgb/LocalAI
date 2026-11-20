@@ -4,6 +4,32 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 const { cloudSafePath, secretish } = require('../model-coordinator');
+// Claude session records. A session with no event for the live window has stopped reporting: the live row drops it
+// then (claudeLive), and the board reports it idle rather than the "active" it last sent. Sessions are pruned to the
+// newest 200 by updatedAt: about two weeks of the owner's sessions, and more than the 3000-event log can still show
+// activity for. A session an open finding names (Improve shows its state) is never pruned.
+const CLAUDE_LIVE_WINDOW_MS=30*60*1000,CLAUDE_MAX_SESSIONS=200;
+const CLAUDE_CLOSED_FINDING=new Set(['fixed','rejected']);
+// Improve matches a finding to a session by id or by `cc-` plus its first 8 characters; hold both.
+function claudeOpenSessionIds(findings){
+  const ids=new Set();
+  for(const f of findings||[]){if(!f?.sessionId||CLAUDE_CLOSED_FINDING.has(f.status))continue;const id=String(f.sessionId);ids.add(id);ids.add('cc-'+id.slice(0,8))}
+  return ids;
+}
+// Pure. Newest first by updatedAt; keeps `cap` plus any open-finding session, drops the rest.
+function claudeKeptSessions(sessions,findings,cap=CLAUDE_MAX_SESSIONS){
+  const open=claudeOpenSessionIds(findings),keep=[],drop=[];
+  const sorted=[...(sessions||[])].sort((a,b)=>String(b.updatedAt||'').localeCompare(String(a.updatedAt||'')));
+  sorted.forEach((s,i)=>(i<cap||open.has(s.id)?keep:drop).push(s));
+  return {keep,drop};
+}
+// Pure. A session stored "active" whose last event (updatedAt for records from before lastEventAt) is older than the
+// live window, or unreadable, is reported idle and marked stale; other statuses are left as the session sent them.
+function claudeSessionView(s,now){
+  if(s?.status!=='active')return s;
+  const t=Date.parse(s.lastEventAt||s.updatedAt||'');
+  return Number.isFinite(t)&&now-t<CLAUDE_LIVE_WINDOW_MS?s:{...s,status:'idle',stale:true};
+}
 function createChanges(ctx) {
   const { APPROVALS_STORE, APP_VERSION, DATA_DIR, ENGINEERING_MODEL_TIMEOUT_MS, SELF_APP_ROOT, addNotification, approvalStore, childEnv, coordinator, MODEL, fetchWithTimeout, fs, improve, issueStore, json, makeId, notifier, nowIso, objectStore, path, plainText, readBody, recordActivity, release, requireFeature, runEngineeringPlannerModel, safeWorkspacePath, sameOriginJson, saveIssues, saveStore, simpleDiff, spawn, storage, storageError, workspaceRel } = ctx;
   // ===== END PRODUCT EVOLUTION PLATFORM ======================================
@@ -565,7 +591,7 @@ function createChanges(ctx) {
   // decisions. Claude reads the ranking back from /api/claude/priorities. Rows live in settings under
   // per-kind key prefixes (newest key first), so no schema change is needed.
   const CLAUDE_SESSION_PREFIX='claude-session/',CLAUDE_EVENT_PREFIX='claude-event/',CLAUDE_FINDING_PREFIX='claude-finding/';
-  const CLAUDE_LIVE_WORKING_MS=2*60*1000,CLAUDE_LIVE_WINDOW_MS=30*60*1000,CLAUDE_LIVE_SCAN_EVENTS=500,CLAUDE_STOP_TITLE='Finished responding';
+  const CLAUDE_LIVE_WORKING_MS=2*60*1000,CLAUDE_LIVE_SCAN_EVENTS=500,CLAUDE_STOP_TITLE='Finished responding';
   const CLAUDE_MAX_EVENTS=3000,CLAUDE_MAX_FINDINGS=1000;
   const CLAUDE_SEVERITY_WEIGHT={high:30,medium:15,low:5};
   const CLAUDE_STATUS={proposed:{label:'Proposed',boost:0},approved:{label:'Approved',boost:20},in_progress:{label:'In progress',boost:25},deferred:{label:'Deferred',boost:-25},rejected:{label:'Rejected',boost:-100},fixed:{label:'Fixed',boost:-200}};
@@ -578,6 +604,8 @@ function createChanges(ctx) {
   function claudeScore(f){const votes=(f.votes?.up||0)-(f.votes?.down||0);return (CLAUDE_SEVERITY_WEIGHT[f.severity]||10)+votes*6+(CLAUDE_STATUS[f.status]?.boost||0)+(Number(f.priorityBoost)||0)}
   function claudeRanked(findings){return findings.map(f=>({...f,score:claudeScore(f)})).sort((a,b)=>b.score-a.score||String(a.createdAt).localeCompare(String(b.createdAt))).map((f,i)=>({...f,rank:i+1}))}
   function claudeFindings(){return storage.listSettings(CLAUDE_FINDING_PREFIX,{limit:CLAUDE_MAX_FINDINGS})}
+  // Session keys are ids, not times, so storage.pruneSettings (which keeps the highest keys) can't rank them.
+  function claudePruneSessions(){const {drop}=claudeKeptSessions(storage.listSettings(CLAUDE_SESSION_PREFIX),claudeFindings());for(const s of drop)storage.deleteSetting(CLAUDE_SESSION_PREFIX+s.id);return drop.length}
   // ===== IMPROVE (roadmap sub-project 4): the board's findings are the backlog; see app/improve.js =====
   const IMPROVE_FIELDS=['source','signalId','changeId','handedToClaude','handedAt','shipped'];
   // Everything automatic (promote signals, resolve, ship applied changes, stamp the release, link old changes) in one
@@ -753,20 +781,21 @@ function createChanges(ctx) {
   const claudeLiveNow=()=>claudeLive(storage.listSettings(CLAUDE_SESSION_PREFIX),storage.listSettings(CLAUDE_EVENT_PREFIX,{limit:CLAUDE_LIVE_SCAN_EVENTS}),Date.now());
   async function apiClaudeBoard(req,res,urlObj){
     const sessionId=urlObj.searchParams.get('session')||'';const limit=Math.max(1,Math.min(500,Number(urlObj.searchParams.get('events'))||150));
-    const sessions=storage.listSettings(CLAUDE_SESSION_PREFIX).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    const now=Date.now(),allFindings=claudeFindings();
+    const sessions=claudeKeptSessions(storage.listSettings(CLAUDE_SESSION_PREFIX),allFindings).keep.map(s=>claudeSessionView(s,now));
     if(urlObj.searchParams.get('only')==='sessions')return json(res,200,{sessions}); // Improve's In progress: no events or findings
     const events=storage.listSettings(CLAUDE_EVENT_PREFIX,{limit:sessionId?2000:limit,...(sessionId?{where:{sessionId}}:{})}).slice(0,limit);
-    const findings=claudeRanked(claudeFindings().filter(f=>!sessionId||f.sessionId===sessionId));
+    const findings=claudeRanked(allFindings.filter(f=>!sessionId||f.sessionId===sessionId));
     const byStatus={},byCategory={};
     for(const f of findings){byStatus[f.status]=(byStatus[f.status]||0)+1;const c=byCategory[f.category]||(byCategory[f.category]={high:0,medium:0,low:0,open:0,total:0});c[f.severity]++;c.total++;if(!['fixed','rejected'].includes(f.status))c.open++}
-    const live=claudeLive(sessions,storage.listSettings(CLAUDE_EVENT_PREFIX,{limit:CLAUDE_LIVE_SCAN_EVENTS}),Date.now());
+    const live=claudeLive(sessions,storage.listSettings(CLAUDE_EVENT_PREFIX,{limit:CLAUDE_LIVE_SCAN_EVENTS}),now);
     json(res,200,{sessions,events,live,findings,summary:{total:findings.length,byStatus,byCategory},statuses:Object.fromEntries(Object.entries(CLAUDE_STATUS).map(([k,v])=>[k,v.label]))});
   }
   async function apiClaudeEvents(req,res){
     try{const b=await readBody(req,512*1024);const list=Array.isArray(b.events)?b.events.slice(0,200):[b];const at=nowIso();
       storage.transaction(()=>{const touched=new Map();for(const raw of list){const e=claudeNormalizeEvent({...raw,sessionId:raw.sessionId||b.sessionId},at);storage.writeSetting(CLAUDE_EVENT_PREFIX+claudeTimeKey(),e);touched.set(e.sessionId,(touched.get(e.sessionId)||0)+1)}
-        for(const [id,count] of touched){const s=claudeSaveSession({...b,sessionId:id},at);s.eventCount=(s.eventCount||0)+count;s.lastEvent=list.at(-1)?.title||'';storage.writeSetting(CLAUDE_SESSION_PREFIX+id,s)}
-        storage.pruneSettings(CLAUDE_EVENT_PREFIX,CLAUDE_MAX_EVENTS)});
+        for(const [id,count] of touched){const s=claudeSaveSession({...b,sessionId:id},at);s.eventCount=(s.eventCount||0)+count;s.lastEvent=list.at(-1)?.title||'';s.lastEventAt=at;storage.writeSetting(CLAUDE_SESSION_PREFIX+id,s)}
+        storage.pruneSettings(CLAUDE_EVENT_PREFIX,CLAUDE_MAX_EVENTS);claudePruneSessions()});
       json(res,201,{ok:true,accepted:list.length})}catch(e){storageError(res,e,400)}
   }
   async function apiClaudeFindings(req,res){
@@ -776,7 +805,8 @@ function createChanges(ctx) {
         if(/^(signal|idea)-/.test(id)&&!prev)continue;
         // A new finding with no id that repeats one filed minutes ago (same title) updates that one; a finding with an id is matched by it.
         const dupe=!prev&&!id?improve.recentDuplicate(claudeFindings(),{title:raw.title,source:'claude'},at):null;
-        const f=claudeNormalizeFinding({...raw,id:dupe?dupe.id:raw.id,sessionId:raw.sessionId||b.sessionId},prev||dupe,at);delete f.ownerTyped;/* Claude's words now, not only the owner's */storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f);if(!prev&&!dupe&&f.status==='proposed')fresh.push(f)}});
+        const f=claudeNormalizeFinding({...raw,id:dupe?dupe.id:raw.id,sessionId:raw.sessionId||b.sessionId},prev||dupe,at);delete f.ownerTyped;/* Claude's words now, not only the owner's */storage.writeSetting(CLAUDE_FINDING_PREFIX+f.id,f);saved.push(f);if(!prev&&!dupe&&f.status==='proposed')fresh.push(f)}
+        if(b.sessionId)claudePruneSessions()});
       // A new finding waiting for the owner's decision reaches the phone; re-posts of the same id don't.
       for(const f of fresh)notifier.notify({kind:'needs-you',title:'Claude needs your decision',body:f.title,url:'/?open=backlog',tag:`finding:${f.id}`});
       json(res,201,{ok:true,items:claudeRanked(saved)})}catch(e){storageError(res,e,400)}
@@ -817,4 +847,4 @@ function createChanges(ctx) {
   return { claudeLiveNow, apiChangeApprove, apiChangeCapabilities, apiChangeDeployResult, apiChangePlan, apiChangeRequestApply, apiChangeStage, apiChanges, apiClaudeBoard, apiClaudeDecision, apiClaudeEvents, apiClaudeFindings, apiClaudePriorities, apiClaudeVote, apiEngineeringRun, apiEngineeringRuns, apiEngineeringStart, apiImproveHandoff, apiImproveIdea, apiImproveItem, apiImproveItems, apiImproveSignal, changeStore, claudeFindings, decideChange, duplicateHtmlIds, duplicateTopLevelFunctions, effectiveEngineeringRuns, engineeringRunStore, generatePatchPlan, publicChange, retireChangesOfClosedItems, runImproveReconcile, runProcess, saveChanges, shipQueuedSelfChanges };
 }
 
-module.exports = { createChanges };
+module.exports = { createChanges, CLAUDE_LIVE_WINDOW_MS, CLAUDE_MAX_SESSIONS, claudeKeptSessions, claudeSessionView };
