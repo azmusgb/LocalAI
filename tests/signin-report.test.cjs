@@ -169,10 +169,10 @@ test('whoami renews a paired device cookie for all of Local AI; an unpaired one 
   const base = await start(t);
   const cookie = await pair(base);
   const r = await fetch(`${base}/api/claude/chat/whoami`, { headers: { Cookie: cookie, 'X-Forwarded-Proto': 'https' } });
-  assert.deepEqual(await r.json(), { paired: true });
+  assert.deepEqual(await r.json(), { paired: true, signedIn: true, mode: 'report' });
   assert.equal(r.headers.get('set-cookie'), `${cookie}; HttpOnly; SameSite=Lax; Path=/; Max-Age=15552000; Secure`);
   const none = await fetch(`${base}/api/claude/chat/whoami`, { headers: { Cookie: 'localai_chat_device=dev-000000000000.nope' } });
-  assert.deepEqual(await none.json(), { paired: false });
+  assert.deepEqual(await none.json(), { paired: false, signedIn: true, mode: 'report' }, 'the host itself is signed in without a device');
   assert.equal(none.headers.get('set-cookie'), null);
 });
 
@@ -268,9 +268,13 @@ test('every pairing hint names Improve › Claude Code, the area the page list p
   const reg = fs.readFileSync(path.join(__dirname, '..', 'app', 'public', 'view-registry.js'), 'utf8');
   assert.match(reg, /\{id:'claude',[^}]*domain:'improve'[^}]*label:'Claude Code'/);
   assert.match(reg, /\{id:'improve',label:'Improve'/);
-  for (const f of ['server.js', 'public/answer-feedback.js', 'public/owner-facts.js']) {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'app', f), 'utf8');
-    assert.doesNotMatch(src, /Build › Claude Code/, f);
-    assert.match(src, /Improve › Claude Code/, f);
+  const src = f => fs.readFileSync(path.join(__dirname, '..', 'app', f), 'utf8');
+  assert.doesNotMatch(src('server.js'), /Build › Claude Code/);
+  assert.match(src('server.js'), /Improve › Claude Code/);
+  // The pages say it once, through signin-report.js: "Pair this browser", a link to that page (#claude).
+  assert.match(src('public/signin-report.js'), /<a class="ui-btn" href="#claude" data-signin-pair>Pair this browser<\/a>/);
+  for (const f of ['public/answer-feedback.js', 'public/owner-facts.js', 'public/improve.js', 'public/app.js', 'public/components.js']) {
+    assert.doesNotMatch(src(f), /Build › Claude Code|sign in on this device/i, f);
+    assert.match(src(f), /LocalAISignIn/, f);
   }
 });

@@ -539,11 +539,21 @@ test('pairing POSTs: cross-origin is 403, non-JSON is 415', async t => {
   assert.equal((await approve(url, { code: 'AAAAAA' }, { 'X-LocalAI-Mac-Key': KEY, Origin: 'http://evil.example' })).status, 403);
 });
 
-test('whoami answers 200 either way and reports whether the device cookie is paired', async t => {
+test('whoami answers 200 either way and reports whether the device cookie is paired and whether the caller is signed in', async t => {
   const url = await startServer(t);
   const who = async headers => { const r = await fetch(`${url}/api/claude/chat/whoami`, { headers }); assert.equal(r.status, 200); return r.json(); };
-  assert.deepEqual(await who({}), { paired: false });
-  assert.deepEqual(await who({ Cookie: 'localai_chat_device=dev-aaaaaaaaaaaa.forged' }), { paired: false });
+  // The host itself (no X-Forwarded-For, from loopback) is signed in without a device (sign-in A4); chat still needs one.
+  assert.deepEqual(await who({}), { paired: false, signedIn: true, mode: 'report' });
+  // Through Caddy (X-Forwarded-For): only a paired device is signed in.
+  const lan = { 'X-Forwarded-For': '10.0.0.37' };
+  assert.deepEqual(await who(lan), { paired: false, signedIn: false, mode: 'report' });
+  assert.deepEqual(await who({ ...lan, Cookie: 'localai_chat_device=dev-aaaaaaaaaaaa.forged' }), { paired: false, signedIn: false, mode: 'report' });
   const a = await pairDevice(url, 'Phone');
-  assert.deepEqual(await who({ Cookie: a.cookie }), { paired: true });
+  assert.deepEqual(await who({ ...lan, Cookie: a.cookie }), { paired: true, signedIn: true, mode: 'report' });
+});
+
+test('whoami says when sign-in is required for every route (LOCALAI_SIGN_IN=required)', async t => {
+  const url = await startServer(t, { LOCALAI_SIGN_IN: 'required' });
+  const r = await fetch(`${url}/api/claude/chat/whoami`, { headers: { 'X-Forwarded-For': '10.0.0.37' } });
+  assert.deepEqual(await r.json(), { paired: false, signedIn: false, mode: 'required' });
 });
