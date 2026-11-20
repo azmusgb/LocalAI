@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { DatabaseSync } = require('node:sqlite');
-const { createResearchStore } = require('../../app/research/store');
-const { createResearchRoutes } = require('../../app/server/research');
+const { createResearchStore } = require('../app/research/store');
+const { createResearchRoutes } = require('../app/server/research');
 
 test('research step 2 routes: findings, decide, promote, and outcomes', async () => {
   const db = new DatabaseSync(':memory:');
@@ -54,7 +54,13 @@ test('research step 2 routes: findings, decide, promote, and outcomes', async ()
   assert.equal(resList.body.findings.length, 1);
   assert.equal(resList.body.findings[0].id, finding.id);
 
-  // 3. POST /api/research/findings/promote
+  // 3. POST /api/research/findings/decide
+  const resDecide = {};
+  await routes.apiResearchFindingDecide({ body: { id: finding.id, status: 'kept' } }, resDecide);
+  assert.equal(resDecide.statusCode, 200);
+  assert.equal(resDecide.body.finding.status, 'kept');
+
+  // 4. POST /api/research/findings/promote
   const resPromote = {};
   await routes.apiResearchFindingPromote({ body: { id: finding.id } }, resPromote);
   assert.equal(resPromote.statusCode, 200);

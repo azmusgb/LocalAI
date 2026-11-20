@@ -1,5 +1,8 @@
 'use strict';
 
+const net = require('node:net');
+const dns = require('node:dns');
+
 // Workbench: browse, search and edit mounted folders, fetch web pages, check URLs, inspect repos and run allow-listed commands (with a filtered environment).
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.

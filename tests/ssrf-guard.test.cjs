@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 // Extract and test the validation logic
-const workbenchSrc = fs.readFileSync(path.join(__dirname, '../../app/server/workbench.js'), 'utf8');
+const workbenchSrc = fs.readFileSync(path.join(__dirname, '../app/server/workbench.js'), 'utf8');
 
 // Test via evaluating isolated functions
 const net = require('net');
@@ -12,7 +12,7 @@ const dns = require('dns');
 
 test('validateExternalUrl blocks loopback, private RFC1918, and tailnet addresses', async () => {
   // Extract isPrivateIp and validateExternalUrl
-  const fnMatch = workbenchSrc.match(/function isPrivateIp[\s\S]*?async function validateExternalUrl[\s\S]*?\n  \}/);
+  const fnMatch = workbenchSrc.match(/function isPrivateIp[\s\S]*?async function validateExternalUrl[\s\S]*?\n {2}\}/);
   assert.ok(fnMatch, 'Found validation functions');
   
   const evalScope = new Function('net', 'dns', `${fnMatch[0]}; return { isPrivateIp, validateExternalUrl };`);

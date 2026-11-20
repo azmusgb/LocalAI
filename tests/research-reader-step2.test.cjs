@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildReaderPrompt, validateFindingOutput } = require('../../app/research/reader');
+const { buildReaderPrompt, validateFindingOutput } = require('../app/research/reader');
 
 test('reader prompt builder sandboxes untrusted documents', () => {
   const doc = {
