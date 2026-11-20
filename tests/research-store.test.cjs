@@ -152,7 +152,10 @@ test('retention keeps 2,000 documents (and their FTS rows) and 50 fetch rows', (
   assert.equal(count(storage, 'research_documents'), 2000);
   for (let i = 0; i < 5; i++) assert.deepEqual(store.listDocuments({ q: title(i) }), []);
   assert.equal(store.listDocuments({ q: title(2004) }).length, 1);
-  for (let i = 0; i < 60; i++) store.recordFetch(s.id, { ok: true, status: 200 });
+  T = Date.parse('2026-11-19T15:00:00Z');
+  for (let i = 0; i < 30; i++) store.recordFetch(s.id, { ok: true, status: 200 });
+  T += 24 * 60 * MIN; // rows of today are never trimmed, so spread the 60 over two days
+  for (let i = 0; i < 30; i++) store.recordFetch(s.id, { ok: true, status: 200 });
   assert.equal(count(storage, 'research_fetches'), 50);
   assert.equal(store.listFetches(s.id, 500).length, 50);
 });
@@ -180,4 +183,100 @@ test('a second store on the same database sees the same sources', () => {
   const s = src(store);
   const again = createResearchStore({ db: storage.db, now: () => T, timeZone: 'America/New_York' });
   assert.deepEqual(again.listSources().map(x => x.id), [s.id]);
+});
+
+test('the daily fetch count survives trimming', () => {
+  T = Date.parse('2026-11-19T15:00:00Z');
+  const { storage, store } = open();
+  const s = src(store);
+  for (let i = 0; i < 60; i++) store.recordFetch(s.id, { ok: true, status: 200 });
+  assert.equal(store.fetchesToday(), 60);
+  T += 24 * 60 * MIN;
+  store.recordFetch(s.id, { ok: true, status: 200 });
+  assert.equal(storage.db.prepare('SELECT count(*) AS n FROM research_fetches WHERE source_id = ?').get(s.id).n, 50);
+  assert.equal(store.fetchesToday(), 1);
+});
+
+test('leaving quarantine through paused still resets failures and the due time', () => {
+  const { store } = open();
+  const s = src(store);
+  for (let i = 0; i < 5; i++) store.recordFetch(s.id, { ok: false, reason: 'x', code: 'c' });
+  let r = store.updateSource(s.id, { status: 'paused' });
+  assert.equal(r.status, 'paused');
+  assert.equal(r.failures, 5);
+  r = store.updateSource(s.id, { status: 'active' });
+  assert.equal(r.status, 'active');
+  assert.equal(r.failures, 0);
+  assert.equal(r.nextDueAt, '');
+  const q = src(store, { url: 'https://example.com/other.atom' });
+  for (let i = 0; i < 5; i++) store.recordFetch(q.id, { ok: false, reason: 'x', code: 'c' });
+  assert.equal(store.updateSource(q.id, { status: 'retired' }).failures, 5);
+});
+
+test('listDocuments pages with a cursor and an unknown cursor gives nothing', () => {
+  const { store } = open();
+  const s = src(store);
+  store.saveEntries(s.id, Array.from({ length: 5 }, (_, i) => e('p' + i)));
+  const one = store.listDocuments({ sourceId: s.id, limit: 3 });
+  const two = store.listDocuments({ sourceId: s.id, limit: 3, before: one[2].id });
+  assert.deepEqual(one.map(d => d.ref.split(':')[1]), ['p4', 'p3', 'p2']);
+  assert.deepEqual(two.map(d => d.ref.split(':')[1]), ['p1', 'p0']);
+  assert.deepEqual(store.listDocuments({ sourceId: s.id, before: 'doc-000000000000' }), []);
+});
+
+test('search does not match a superseded revision', () => {
+  const { store } = open();
+  const s = src(store);
+  store.saveEntries(s.id, [e('a', 'T', 'oldwording')]);
+  store.saveEntries(s.id, [e('a', 'T', 'newwording')]);
+  assert.deepEqual(store.listDocuments({ q: 'oldwording' }), []);
+  assert.equal(store.listDocuments({ q: 'newwording' }).length, 1);
+});
+
+test('the same id twice in one batch', () => {
+  const { storage, store } = open();
+  const s = src(store);
+  assert.deepEqual(store.saveEntries(s.id, [e('a'), e('a')]), { added: 1, revised: 0 });
+  assert.deepEqual(store.saveEntries(s.id, [e('b', 'T', 'one'), e('b', 'T', 'two')]), { added: 1, revised: 1 });
+  assert.equal(count(storage, 'research_documents'), 3);
+});
+
+test('a throw part-way through saveEntries leaves nothing from the batch', () => {
+  const { storage, store } = open();
+  const s = src(store);
+  const bad = { id: 'bad', url: 'https://example.com/bad', get title() { throw new Error('boom'); }, text: 'x', published: '' };
+  assert.throws(() => store.saveEntries(s.id, [e('a'), e('b'), bad]), /boom/);
+  assert.equal(count(storage, 'research_documents'), 0);
+  assert.equal(store.listDocuments({ q: 'body' }).length, 0);
+  assert.deepEqual(store.saveEntries(s.id, [e('a')]), { added: 1, revised: 0 });
+});
+
+test('listDocuments clamps the limit to 1..200', () => {
+  const { store } = open();
+  const s = src(store);
+  store.saveEntries(s.id, Array.from({ length: 250 }, (_, i) => e('l' + i)));
+  assert.equal(store.listDocuments({ limit: 0 }).length, 1);
+  assert.equal(store.listDocuments({ limit: 999 }).length, 200);
+});
+
+test('a failed fetch leaves documents and lastOkAt alone', () => {
+  T = Date.parse('2026-11-19T15:00:00Z');
+  const { storage, store } = open();
+  const s = src(store);
+  store.saveEntries(s.id, [e('a'), e('b')]);
+  const ok = store.recordFetch(s.id, { ok: true, status: 200 });
+  T += 400 * MIN;
+  const r = store.recordFetch(s.id, { ok: false, reason: 'boom', code: 'net' });
+  assert.equal(count(storage, 'research_documents'), 2);
+  assert.equal(r.lastOkAt, ok.lastOkAt);
+  assert.equal(r.documents, 2);
+});
+
+test('fetch code and document published are clamped to 40 characters', () => {
+  const { store } = open();
+  const s = src(store);
+  store.recordFetch(s.id, { ok: false, reason: 'x', code: 'c'.repeat(100) });
+  assert.equal(store.listFetches(s.id)[0].code.length, 40);
+  store.saveEntries(s.id, [{ ...e('a'), published: 'p'.repeat(100) }]);
+  assert.equal(store.listDocuments({ sourceId: s.id })[0].published.length, 40);
 });

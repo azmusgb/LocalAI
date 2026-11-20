@@ -11,6 +11,7 @@ const { checkUrl } = require('./net-guard');
 const NAME_MAX = 120, TITLE_MAX = 300, TEXT_MAX = 20000, LIMIT_MAX = 200;
 const SCHEDULE_MIN = 60, SCHEDULE_MAX = 10080, SCHEDULE_DEFAULT = 360;
 const KEEP_DOCUMENTS = 2000, KEEP_FETCHES = 50, QUARANTINE_AFTER = 5, BACKOFF_CAP_MIN = 24 * 60;
+const CODE_MAX = 40, PUBLISHED_MAX = 40;
 const TOPICS_MAX = 20, TOPIC_MAX = 60;
 const TRUST = ['official', 'primary', 'secondary', 'unrated'];
 const SETTABLE_STATUS = ['active', 'paused', 'retired'];
@@ -89,7 +90,8 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     dueSources: db.prepare(`SELECT s.*, (SELECT count(*) FROM research_documents d WHERE d.source_id = s.id) AS documents FROM research_sources s
       WHERE s.status = 'active' AND (s.next_due_at = '' OR s.next_due_at <= ?) ORDER BY s.next_due_at, s.created_at LIMIT ?`),
     insertFetch: db.prepare('INSERT INTO research_fetches (source_id, at, day, ok, status, code, reason, bytes, added, revised, ms) VALUES (?,?,?,?,?,?,?,?,?,?,?)'),
-    trimFetches: db.prepare(`DELETE FROM research_fetches WHERE source_id = ? AND seq <= COALESCE((SELECT seq FROM research_fetches WHERE source_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?), 0)`),
+    // Keeps the newest 50 rows, and never deletes a row of today: the daily cap counts these rows.
+    trimFetches: db.prepare(`DELETE FROM research_fetches WHERE source_id = ? AND day <> ? AND seq <= COALESCE((SELECT seq FROM research_fetches WHERE source_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?), 0)`),
     fetchesToday: db.prepare('SELECT count(*) AS n FROM research_fetches WHERE day = ?'),
     listFetches: db.prepare('SELECT * FROM research_fetches WHERE source_id = ? ORDER BY seq DESC LIMIT ?'),
     newest: db.prepare('SELECT revision, hash FROM research_documents WHERE ref = ? ORDER BY revision DESC LIMIT 1'),
@@ -149,7 +151,7 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     if ('status' in p) {
       if (!SETTABLE_STATUS.includes(p.status)) throw fail(400, `status must be one of ${SETTABLE_STATUS.join(', ')}`);
       set('status', p.status);
-      if (p.status === 'active' && cur.status === 'quarantined') { set('failures', 0); set('next_due_at', ''); }
+      if (p.status === 'active' && (cur.status === 'quarantined' || cur.failures >= QUARANTINE_AFTER)) { set('failures', 0); set('next_due_at', ''); }
     }
     if (sets.length) {
       try { db.prepare(`UPDATE research_sources SET ${sets.join(', ')} WHERE id = ?`).run(...args, cur.id); }
@@ -166,8 +168,9 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     if (!cur) throw fail(404, 'unknown source');
     const at = nowIso(), num = v => (Number.isFinite(v) ? Math.trunc(v) : 0);
     return tx(() => {
-      st.insertFetch.run(cur.id, at, localDay(now(), timeZone), ok ? 1 : 0, num(status), String(code), redact(reason, 300), num(bytes), num(added), num(revised), num(ms));
-      st.trimFetches.run(cur.id, cur.id, KEEP_FETCHES);
+      const day = localDay(now(), timeZone);
+      st.insertFetch.run(cur.id, at, day, ok ? 1 : 0, num(status), String(code).slice(0, CODE_MAX), redact(reason, 300), num(bytes), num(added), num(revised), num(ms));
+      st.trimFetches.run(cur.id, day, cur.id, KEEP_FETCHES);
       if (ok) {
         const sets = ['failures = 0', 'last_error = ?', 'last_ok_at = ?', 'last_fetch_at = ?', 'next_due_at = ?'];
         const args = ['', at, at, new Date(now() + cur.scheduleMinutes * 60000).toISOString()];
@@ -200,7 +203,7 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
         const hash = sha256(`${title}\n${text}`);
         const newest = st.newest.get(ref);
         if (newest && newest.hash === hash) continue;
-        st.insertDoc.run(newId('doc'), cur.id, ref, newest ? newest.revision + 1 : 1, String(entry.url ?? '').slice(0, 2000), title, text, String(entry.published ?? ''), at, hash);
+        st.insertDoc.run(newId('doc'), cur.id, ref, newest ? newest.revision + 1 : 1, String(entry.url ?? '').slice(0, 2000), title, text, String(entry.published ?? '').slice(0, PUBLISHED_MAX), at, hash);
         if (newest) revised++; else added++;
       }
       st.trimDocs.run(cur.id, cur.id, KEEP_DOCUMENTS);
@@ -208,9 +211,10 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     });
   }
 
-  // before: a document id; returns documents saved earlier than it (the cursor for the next page).
+  // before: a document id; returns documents saved earlier than it (the next page). An id that is gone gives [].
   function listDocuments({ sourceId, q, limit = 50, before } = {}) {
-    const n = Math.max(1, Math.min(LIMIT_MAX, Number.parseInt(limit, 10) || 50));
+    const asked = Number.parseInt(limit, 10);
+    const n = Math.max(1, Math.min(LIMIT_MAX, Number.isFinite(asked) ? asked : 50));
     const where = ['d.revision = (SELECT max(x.revision) FROM research_documents x WHERE x.ref = d.ref)'], args = [];
     let from = 'research_documents d';
     if (String(q ?? '').trim()) {
@@ -222,7 +226,8 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     if (sourceId) { where.push('d.source_id = ?'); args.push(String(sourceId)); }
     if (before) {
       const row = st.docSeq.get(String(before));
-      if (row) { where.push('d.seq < ?'); args.push(row.seq); }
+      if (!row) return [];
+      where.push('d.seq < ?'); args.push(row.seq);
     }
     return db.prepare(`SELECT d.* FROM ${from} WHERE ${where.join(' AND ')} ORDER BY d.seq DESC LIMIT ?`).all(...args, n).map(hydrateDoc);
   }
