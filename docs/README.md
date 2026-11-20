@@ -47,4 +47,5 @@ kept up to date; the guides above describe what exists now.
 - [Phone redesign design](superpowers/specs/2026-10-15-phone-redesign-design.md) and [plan](superpowers/plans/2026-10-15-phone-redesign.md)
 - [Agent World design](superpowers/specs/2026-10-17-agent-world-design.md): the Missions page redesigned around the city; phone sheet, story rail, plain words
 - [Web critique](superpowers/specs/2026-10-16-web-critique.md) and [web polish plan](superpowers/plans/2026-10-16-web-polish.md): what the 16 October review of every page found, what was fixed, and the owner's decisions
+- [Knowledge loop design](superpowers/specs/2026-11-19-knowledge-loop-design.md): research intake, the first step: owner-registered feeds read on a schedule, off unless `LOCALAI_RESEARCH=on` (see Research intake in SECURITY)
 - [Improve design](superpowers/specs/2026-10-15-improve-design.md) and [plan](superpowers/plans/2026-10-15-improve.md): roadmap sub-project 4, one pipeline for changing Local AI
