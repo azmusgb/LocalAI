@@ -1,9 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { DatabaseSync } = require('node:sqlite');
-const { createResearchStore } = require('../../app/research/store');
-const { createResearchRoutes } = require('../../app/server/research');
-const { validateFindingOutput } = require('../../app/research/reader');
+const { createResearchStore } = require('../app/research/store');
+const { createResearchRoutes } = require('../app/server/research');
+const { validateFindingOutput } = require('../app/research/reader');
 
 test('knowledge loop e2e integration flow (Task 5)', async () => {
   // 1. Initialize In-Memory Store

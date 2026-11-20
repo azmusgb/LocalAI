@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { DatabaseSync } = require('node:sqlite');
-const { createResearchStore } = require('../../app/research/store');
+const { createResearchStore } = require('../app/research/store');
 
 test('research store findings and outcomes lifecycle', () => {
   const db = new DatabaseSync(':memory:');
