@@ -29,6 +29,8 @@ const GUARDED = [
   // Reporting to that board: the Mac's hooks and Claude sessions send the Mac key. An unsigned finding would reach
   // /api/claude/priorities and the phone, or pre-plant an id a session later updates.
   /^\/api\/claude\/(findings|events)$/,
+  // Reading that board: session titles and folders, findings, handed-over requests and the owner's notes.
+  /^\/api\/claude\/(board|priorities)$/, /^\/api\/improve\/items$/,
 ];
 // Refused without a device when they change something (any method but GET/HEAD): starting agent runs, writing
 // workbooks through the GridCraft bridge, importing or deleting library data, and the display's alert settings.
