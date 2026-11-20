@@ -6,6 +6,7 @@
 
 const net = require('node:net');
 const dns = require('node:dns');
+const { domainToASCII } = require('node:url');
 
 class GuardError extends Error {
   constructor(code, message) {
@@ -43,9 +44,8 @@ const dotted = (b, at) => b.slice(at, at + 4).join('.');
 function isBlockedV6(ip) {
   const b = v6Bytes(ip);
   if (!b) return true;
-  if (zero(b, 0, 15) && b[15] <= 1) return true; // :: and ::1
   if (zero(b, 0, 10) && b[10] === 255 && b[11] === 255) return BLOCKED.check(dotted(b, 12), 'ipv4'); // mapped
-  if (zero(b, 0, 12)) return BLOCKED.check(dotted(b, 12), 'ipv4'); // IPv4-compatible
+  if (zero(b, 0, 12)) return true; // IPv4-compatible (::/96), deprecated
   if (zero(b, 0, 8) && b[8] === 255 && b[9] === 255 && b[10] === 0 && b[11] === 0) return BLOCKED.check(dotted(b, 12), 'ipv4'); // translated
   if (b[0] === 0 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b && zero(b, 4, 12)) return BLOCKED.check(dotted(b, 12), 'ipv4'); // NAT64
   if (b[0] === 0x20 && b[1] === 0x02) return BLOCKED.check(dotted(b, 2), 'ipv4'); // 6to4
@@ -64,6 +64,9 @@ function isBlockedAddress(ip) {
   }
 }
 
+// An allow-list entry the way the URL parser writes a host: punycode, lower case, one trailing dot removed.
+const normaliseHost = h => (typeof h === 'string' ? domainToASCII(h).toLowerCase().replace(/\.$/, '') : '');
+
 function checkUrl(url, { allowHosts } = {}) {
   let u;
   try { u = new URL(url); } catch { throw new GuardError('bad_url', 'not a valid URL'); }
@@ -72,7 +75,7 @@ function checkUrl(url, { allowHosts } = {}) {
   if (u.port && u.port !== '443') throw new GuardError('bad_port', 'only port 443 is allowed');
   if (net.isIP(u.hostname.replace(/^\[|\]$/g, '')) !== 0) throw new GuardError('ip_literal', 'an IP address is not a host name');
   u.hostname = u.hostname.toLowerCase().replace(/\.$/, '');
-  const allowed = Array.isArray(allowHosts) ? allowHosts.map(h => String(h).toLowerCase().replace(/\.$/, '')) : [];
+  const allowed = Array.isArray(allowHosts) ? allowHosts.map(normaliseHost).filter(Boolean) : [];
   if (!u.hostname || !allowed.includes(u.hostname)) throw new GuardError('host_not_allowed', 'host is not on the allow list');
   return u;
 }
@@ -82,7 +85,7 @@ async function vetHost(hostname, { lookup = host => dns.promises.lookup(host, { 
   try { results = await lookup(hostname, { all: true }); } catch { throw new GuardError('dns_failed', 'host did not resolve'); }
   if (!Array.isArray(results) || !results.length) throw new GuardError('dns_failed', 'host did not resolve');
   if (results.some(r => !r || isBlockedAddress(r.address))) throw new GuardError('blocked_address', 'host resolves to a blocked address');
-  return results.map(r => ({ address: r.address, family: r.family }));
+  return results.map(r => ({ address: r.address, family: net.isIP(r.address) }));
 }
 
 module.exports = { GuardError, isBlockedAddress, checkUrl, vetHost };

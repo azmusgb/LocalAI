@@ -45,3 +45,25 @@ test('IPv6 forms that embed or hide an IPv4', () => {
   for (const ip of ['2606:4700::1111', '2001:4860:4860::8888', '::ffff:1.1.1.1', '::ffff:101:101', '64:ff9b::1.1.1.1', '2002:0101:0101::1'])
     assert.equal(isBlockedAddress(ip), false, ip);
 });
+test('IPv4-compatible IPv6 is blocked whole', () => {
+  for (const ip of ['::1.1.1.1', '::101:101']) assert.equal(isBlockedAddress(ip), true, ip);
+  for (const ip of ['::ffff:1.1.1.1', '64:ff9b::1.1.1.1', '2002:0101:0101::1']) assert.equal(isBlockedAddress(ip), false, ip);
+});
+test('vetHost derives family from the address', async () => {
+  assert.deepEqual(await vetHost('example.com', { lookup: async () => [{ address: '93.184.216.34', family: 6 }] }), [{ address: '93.184.216.34', family: 4 }]);
+  assert.deepEqual(await vetHost('example.com', { lookup: async () => [{ address: '2606:4700::1111', family: 4 }] }), [{ address: '2606:4700::1111', family: 6 }]);
+});
+test('checkUrl normalises allowHosts like the URL parser', () => {
+  assert.equal(checkUrl('https://bücher.de/feed', { allowHosts: ['bücher.de'] }).hostname, 'xn--bcher-kva.de');
+  assert.equal(checkUrl('https://example.com/feed', { allowHosts: ['Example.COM.'] }).hostname, 'example.com');
+  assert.equal(code(() => checkUrl('https://example.com/feed', { allowHosts: [42, null, '', '.'] })), 'host_not_allowed');
+});
+test('fail-closed branches', async () => {
+  await assert.rejects(vetHost('example.com', { lookup: async () => 'nope' }), e => e.code === 'dns_failed');
+  await assert.rejects(vetHost('example.com', { lookup: async () => [null] }), e => e.code === 'blocked_address');
+  await assert.rejects(vetHost('example.com', { lookup: async () => [{ address: 'example.org', family: 4 }] }), e => e.code === 'blocked_address');
+  assert.equal(code(() => checkUrl('https://example.com/feed', {})), 'host_not_allowed');
+  assert.equal(code(() => checkUrl('https://example.com/feed', { allowHosts: 'example.com' })), 'host_not_allowed');
+  for (const ip of ['1fff::1', '4000::1']) assert.equal(isBlockedAddress(ip), true, ip);
+  for (const ip of ['2000::', '3fff:ffff::1']) assert.equal(isBlockedAddress(ip), false, ip);
+});
