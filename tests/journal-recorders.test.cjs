@@ -25,6 +25,16 @@ test('failed runs keep the error; unfinished runs are not recorded', () => {
   assert.equal(runEntry(null), null);
 });
 
+// A reply that stalled keeps what arrived on its run (output {text, stalled: true}, app/server/chat.js) so the run view can
+// show it cut off. That text is not an answer: Past work would cite it as one. Its entry says what went wrong, as a failed
+// run with no text does.
+test("a stalled run's entry is its error, never the partial text", () => {
+  const cut = run({ status: 'failed', summary: '', error: 'No reply after 180 s', output: { text: 'A mutex ', stalled: true } });
+  assert.equal(runEntry(cut).body, 'No reply after 180 s');
+  assert.equal(runEntry({ ...cut, summary: 'A mutex' }).body, 'No reply after 180 s', 'nor a summary made from it');
+  assert.equal(runEntry(cut).ref, 'run:run-1:failed');
+});
+
 test('PowerShell runs are recorded by title only', () => {
   assert.equal(runEntry(run({ type: 'powershell' })).body, '');
   assert.equal(runEntry(run({ meta: { powershell: true } })).body, '');
