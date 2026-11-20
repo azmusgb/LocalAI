@@ -51,6 +51,26 @@ test('a server error or a timeout is thrown (the coordinator tries the next mode
   await assert.rejects(d.chat({ provider: 'cerebras', model: 'm', messages: [] }), /timed out|TIMEOUT/i);
 });
 
+// The coordinator records each try's outcome (app/model-coordinator.js attempts) from the error's own mark.
+test('each failure carries its outcome: timeout, rate limit with and without retry-after, malformed body, server error', async t => {
+  const env = url => ({ LOCALAI_GROQ_API_KEY: 'gsk_secret', LOCALAI_GROQ_URL: url });
+  const outcome = async (handler, opts = {}) => {
+    const f = await fake(t, handler);
+    const c = createCloudModels({ env: env(f.url), ...opts });
+    let err = null;
+    try { await c.chat({ provider: 'groq', model: 'm', messages: [] }); } catch (e) { err = e; }
+    assert.ok(err, 'it threw');
+    return err.outcome;
+  };
+  assert.equal(await outcome(() => {}, { timeoutMs: 200 }), 'timeout');
+  assert.equal(await outcome((req, res) => reply(res, 429, {}, { 'retry-after': '30' })), 'rate_limited');
+  assert.equal(await outcome((req, res) => reply(res, 429, {})), 'rate_limited');
+  assert.equal(await outcome((req, res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end('{not json'); }), 'error');
+  assert.equal(await outcome((req, res) => reply(res, 503, { error: 'down' })), 'error');
+  const off = createCloudModels({ env: { LOCALAI_GROQ_API_KEY: 'gsk_secret', LOCALAI_GROQ_URL: 'http://127.0.0.1:9' } });
+  await assert.rejects(off.chat({ provider: 'groq', model: 'm', messages: [] }), e => e.outcome === 'error' && /unreachable/.test(e.message));
+});
+
 test('no key: refused before any request', async () => {
   const c = createCloudModels({ env: {} });
   await assert.rejects(c.chat({ provider: 'groq', model: 'm', messages: [] }), /no key/i);
