@@ -191,6 +191,10 @@ const KB = 1024;
 // 2026-11-20: 371 → 372 KB (app.js 40 → 40.5 KB, run-bodies.js 11.3 → 12.5 KB) for PR #588 chat cancel timeouts
 // and retry controls (+0.8 KB across run-bodies and app.js). 380,264 bytes measured.
 // 2026-11-20: 372 → 375 KB (run-bodies.js 12.5 → 14 KB) for Amendment A30 Phase 4 action cards and hand-off links.
+// 2026-11-21: within 375 KB: home.js 14.5 → 14.8 KB and index.html 17 → 17.1 KB for Home saying when Improve or the approvals
+// can't be read (A28): their sources parts, one notice, and no count from a failed read (home.js +234 bytes after sharing
+// one sources helper with the runs and Pi Hub parts; index.html +29 bytes). main had home.js 14,811 and index.html 17,406;
+// 377,288 bytes measured, home.js 15,045, index.html 17,435.
 const TOTAL = 375 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
@@ -231,7 +235,7 @@ const TOTAL = 375 * KB;
 // 2026-11-19: ui.js 117 → 118 KB for the Claude Code page's sign-in state (its board api() marks .signIn; Activity says
 // to pair, the live chip says "not read") and the pairing card's words: +134 bytes over main's 119,797 (11 under 117 KB);
 // 119,931 measured. The shell total stays within 370 KB (378,849 bytes).
-const PER_FILE = { 'ui.js': 118 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40.5 * KB, 'index.html': 17 * KB, 'home.js': 14.5 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 14 * KB };
+const PER_FILE = { 'ui.js': 118 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40.5 * KB, 'index.html': 17.1 * KB, 'home.js': 14.8 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 14 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
