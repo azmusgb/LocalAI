@@ -224,7 +224,10 @@ const TOTAL = 369 * KB;
 // timer (the server's chatTimeoutMs + 10%, then "No reply after N s", never "Thinking…" for good; app.js +222 bytes)
 // and the run view saying so on the turn with Retry (run-bodies.js +57 bytes). main had app.js 40,782 (178 under) and
 // run-bodies.js 11,556 (15 under); 41,004 and 11,613 measured. The shell total stays within 369 KB (377,322 bytes).
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40.1 * KB, 'index.html': 17 * KB, 'home.js': 14.5 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.4 * KB };
+// Same day, run-bodies.js 11.4 → 11.7 KB for the UI review of that state: the stalled turn keeps what arrived with its
+// own "No reply after N s" and Try again (one message, not a notice too), focus kept on Try again, and a cut-off turn
+// left out of what a reply sends (+320 bytes). 11,933 measured, app.js 41,012; shell 377,668 bytes, within 369 KB.
+const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40.1 * KB, 'index.html': 17 * KB, 'home.js': 14.5 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.7 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
