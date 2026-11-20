@@ -73,6 +73,9 @@ test('cloud on but failing: the Coordinator on this PC writes the summary', asyn
   assert.match(m.answer, /Summary on this PC/);
   assert.equal(m.route.provider, 'ollama');
   assert.equal(coordinatorCalls(local).length, 1);
+  // The mission says the cloud was tried and why this PC wrote it, not the plan's "Not private" reason.
+  assert.equal(m.route.why, "Cloud models didn't answer (Groq: failed), so this PC answered");
+  assert.deepEqual(m.route.attempts.map(a => [a.provider, a.outcome]), [['groq', 'error']]);
 });
 
 // Security review: the summary may go out only when everything the workers read is known to be public (web results,

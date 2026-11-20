@@ -35,7 +35,8 @@ function createCloudModels({ env = process.env, timeoutMs = 60000, fetchImpl = m
     if (!p) throw new Error(`Unknown cloud provider ${provider}`);
     const key = keyOf(provider);
     if (!key) throw new Error(`${p.name}: no key set`);
-    const fail = (message) => { lastError[provider] = { at: new Date(now()).toISOString(), message: scrub(message).slice(0, 200) }; return new Error(lastError[provider].message); };
+    // outcome: what the coordinator records for this try (timeout, rate_limited or error).
+    const fail = (message, outcome = 'error') => { lastError[provider] = { at: new Date(now()).toISOString(), message: scrub(message).slice(0, 200) }; return Object.assign(new Error(lastError[provider].message), { outcome }); };
     let r;
     try {
       r = await fetchImpl(`${env[p.urlEnv] || p.url}/chat/completions`, {
@@ -44,13 +45,14 @@ function createCloudModels({ env = process.env, timeoutMs = 60000, fetchImpl = m
         body: JSON.stringify({ model, messages, max_tokens: maxTokens, stream: false }),
       }, timeoutMs);
     } catch (e) {
-      throw fail(`${p.name}: ${/timeout|timed out/i.test(String(e?.code || e?.message)) ? 'timed out' : 'unreachable'}`);
+      const late = /timeout|timed out/i.test(String(e?.code || e?.message));
+      throw fail(`${p.name}: ${late ? 'timed out' : 'unreachable'}`, late ? 'timeout' : 'error');
     }
     const raw = await r.text();
     if (r.status === 429) {
       const after = Number(r.headers?.get?.('retry-after'));
       parkedUntil[provider] = now() + (Number.isFinite(after) && after > 0 ? after * 1000 : HOUR);
-      throw fail(`${p.name}: rate limit reached, resting until ${new Date(parkedUntil[provider]).toLocaleTimeString('en-US')}`);
+      throw fail(`${p.name}: rate limit reached, resting until ${new Date(parkedUntil[provider]).toLocaleTimeString('en-US')}`, 'rate_limited');
     }
     if (!r.ok) throw fail(`${p.name}: HTTP ${r.status}`);
     let content = '';
