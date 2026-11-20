@@ -55,7 +55,7 @@ function rowFor(it){
  // In Select mode a tap picks the row instead of opening it, and the row carries its checkbox.
  const row=window.LocalAIUI.runCard({...it,card:c},{onOpen:x=>st.selecting?pick(key(x),!st.picked.has(key(x))):openRun(x),rowOpen:true,stale:st.stale});
  const act=row.querySelector('.run-card__action');
- if(act){if(!st.selecting&&/^(Review|Retry)$/i.test(act.textContent.trim()))act.className='btn-outline work-secondary';else act.remove()}
+ if(act){if(!st.selecting&&/^(Review|Try again)$/i.test(act.textContent.trim()))act.className='btn-outline work-secondary';else act.remove()}
  if(st.selecting){
   const box=document.createElement('input');box.type='checkbox';box.className='work-pick';box.dataset.key=key(it);box.checked=st.picked.has(key(it));
   box.setAttribute('aria-label',`Select ${c.title||it.title||'this'}`);box.addEventListener('click',e=>e.stopPropagation());

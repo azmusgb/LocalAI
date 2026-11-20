@@ -50,7 +50,7 @@ test('agent and automation runs', () => {
   assert.equal(u.icon, 'refresh');
   assert.equal(u.view, 'automationStudio');
   assert.equal(u.preview, null);
-  assert.deepEqual(u.action, { label: 'Retry' });
+  assert.deepEqual(u.action, { label: 'Try again' });
   assert.deepEqual(u.badge, { label: 'Failed', tone: 'bad' });
 });
 

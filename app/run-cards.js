@@ -80,7 +80,7 @@ function runCard(run, { approvalFor, changeFor, feedbackFor } = {}) {
     const ch = meta.changeId && changeFor ? changeFor(meta.changeId) : null, files = ch && Array.isArray(ch.files) ? fileStats(ch) : null;
     // No file list: still being prepared while it runs or waits for approval; once finished (failed, cancelled, done) there's nothing to show.
     preview = files || ['running', 'queued', 'awaiting_approval'].includes(run.status) ? { type: 'diff', changeId: meta.changeId || null, files } : null; }
-  const action = { label: run.status === 'awaiting_approval' ? 'Review' : run.status === 'failed' && run.retryable ? 'Retry' : 'Open' };
+  const action = { label: run.status === 'awaiting_approval' ? 'Review' : run.status === 'failed' && run.retryable ? 'Try again' : 'Open' };
   let approval = null;
   if (approvalFor) { const a = approvalFor(run); if (a) approval = { id: a.id, title: a.title, detail: a.detail, risk: a.risk } }
   // Where the answer came from (the model coordinator): "Answered by Llama 3.3 70B · Groq" or "Answered on this PC", and
