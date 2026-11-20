@@ -263,12 +263,13 @@ await check('failed read: says it couldn\'t read the suggestions (never "none"),
   await page.context().close();
 });
 
-await check('a device that isn\'t paired is told where suggestions show, as plain text; none pending shows nothing', async () => {
+await check('a device that isn\'t paired is told to sign in, as plain text with the way to pairing; none pending shows nothing', async () => {
   let page = await open(desk, { suggestions: [sug('fs-1', PLA)], fail: { read: 401 } });
   const n = page.locator('#ownerSuggestState');
   await n.waitFor(T);
-  assert.equal((await n.textContent()).trim(), 'Suggested facts show on a paired device: pair this one under Improve › Claude Code.');
+  assert.equal((await n.textContent()).trim(), 'Sign in on this device to see suggested facts.');
   assert.doesNotMatch(await n.getAttribute('class'), /ui-notice/);
+  assert.equal(await page.locator('#ownerFacts a[data-signin-pair][href="#claude"]').innerText(), 'Pair this browser');
   await page.context().close();
   page = await open(desk, { suggestions: [] });
   await page.waitForFunction(() => document.getElementById('ownerFactsToggle'));

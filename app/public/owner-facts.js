@@ -114,7 +114,7 @@
   // Suggested by Local AI, first in the unfolded group: what needs a decision comes before the saved list. Loading and
   // none: nothing. A failed read is a warning drawn with the page (no alert), with Try again.
   function suggestions(full) {
-    if (sg.state === 'signin') return '<div class="owner-facts__suggest"><p class="owner-facts__rule" id="ownerSuggestState">Suggested facts show on a paired device: pair this one under Improve › Claude Code.</p></div>';
+    if (sg.state === 'signin') return `<div class="owner-facts__suggest"><p class="owner-facts__rule" id="ownerSuggestState">Sign in on this device to see suggested facts.</p>${window.LocalAISignIn?.pair || ''}</div>`;
     if (sg.state === 'error') return `<div class="owner-facts__suggest"><p class="ui-notice ui-notice--warn" id="ownerSuggestState">${esc(sg.error)}</p><button type="button" class="ui-btn" id="ownerSuggestRetry">Try again</button></div>`;
     if (!sg.items.length) return '';
     return `<div class="owner-facts__suggest"><h3 id="ownerSuggestTitle">Suggested by Local AI</h3><p class="owner-facts__rule" id="ownerSuggestNote">From chats answered on this PC. Nothing is saved until you choose Save.</p>

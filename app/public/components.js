@@ -1,11 +1,11 @@
 // Shared front-end components. One object, window.LocalAIUI, that later tasks extend (ask, runCard, registerRunBody).
 (function(){
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  // JSON in, JSON out: rejects on a non-2xx or non-JSON reply with the server's own `error` text.
+  // JSON in, JSON out: rejects on a non-2xx or non-JSON reply with the server's own `error` text (.signIn: refused for sign-in).
   async function fetchJson(url,opt){
     const r=await fetch(url,opt);let j=null,bad=false;
     try{j=await r.json()}catch{bad=true}
-    if(!r.ok)throw new Error((j&&j.error)||`HTTP ${r.status}`);
+    if(!r.ok)throw Object.assign(new Error((j&&j.error)||`HTTP ${r.status}`),{signIn:r.status===401&&j?.signIn===true});
     if(bad||j===null||typeof j!=='object')throw new Error('The server sent an unreadable reply');
     return j;
   }
@@ -20,8 +20,9 @@
       return data;
     }).catch(err=>{
       clearTimeout(timer);
-      container.innerHTML=`<div class="state-error empty-state" role="alert"><div class="empty-state__title">Couldn't load ${esc(what)}.</div><div>${esc(err&&err.message||String(err))}</div><button type="button" class="btn-outline">Retry</button></div>`;
-      container.querySelector('.state-error button').addEventListener('click',()=>{loadInto(container,load,{render,empty,what}).catch(()=>{})});
+      const S=err?.signIn&&window.LocalAISignIn;
+      container.innerHTML=S?S.state(what):`<div class="state-error empty-state" role="alert"><div class="empty-state__title">Couldn't load ${esc(what)}.</div><div>${esc(err?.message||String(err))}</div><button type="button" class="btn-outline">Retry</button></div>`;
+      S||container.querySelector('.state-error button').addEventListener('click',()=>{loadInto(container,load,{render,empty,what}).catch(()=>{})});
       throw err;
     });
   }
