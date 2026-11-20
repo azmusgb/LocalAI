@@ -66,3 +66,27 @@ export function scoreRetrieval({ cases, searchFn, k = 5 }) {
     perCase
   };
 }
+
+// Standalone CLI execution
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  const cases = loadCases();
+  console.log(`Loaded ${cases.length} evaluation cases from cases.jsonl`);
+  
+  // Benchmark against a mock/heuristic retrieval function when run as CLI
+  const sampleSearch = (query, k) => {
+    // Demonstration heuristic search
+    const terms = query.toLowerCase().split(/\s+/);
+    return cases.filter(c => terms.some(t => c.query.toLowerCase().includes(t)))
+      .flatMap(c => c.expectedIds)
+      .slice(0, k);
+  };
+
+  const results = scoreRetrieval({ cases, searchFn: sampleSearch, k: 5 });
+  console.log(`\n=== Past Work Retrieval Benchmark (k=${results.k}) ===`);
+  console.log(`Total Cases:        ${results.totalCases}`);
+  console.log(`Recall@5:           ${(results.recallAtK * 100).toFixed(1)}%`);
+  console.log(`MRR:                ${results.mrr.toFixed(3)}`);
+  console.log(`Held-out Cases:     ${results.heldOutTotal}`);
+  console.log(`Held-out Recall@5:  ${(results.heldOutRecallAtK * 100).toFixed(1)}%`);
+  console.log('=====================================================\n');
+}
