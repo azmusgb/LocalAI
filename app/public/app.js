@@ -936,7 +936,7 @@ function commandPalette(){
   function pastHtml(){
     const body=journal.state==='loading'?`<div class="cmdk-item cmdk-item--wait" aria-hidden="true" data-cmd-journal-loading><span class="ui-skeleton"></span><span class="ui-skeleton"></span></div>`
       :journal.state==='error'?`<div class="ui-notice ui-notice--warn cmdk-notice" data-cmd-journal-error><span>Couldn't search past work.</span><button type="button" class="btn-outline" data-cmd-journal-retry>Try again</button></div>`
-      :journal.state==='signin'?window.LocalAISignIn?.say('Sign in on this device to see past work.','cmdk-notice')||'':'';
+      :journal.state==='signin'?window.LocalAISignIn?.say(void 0,'cmdk-notice')||'':'';
     return body&&`<div class="cmdk-group__label">Past work</div>${body}`;
   }
   function render(keep=false){
@@ -958,7 +958,7 @@ function commandPalette(){
     if(empty){empty.innerHTML=none?`<p>No pages match “${esc(typed)}”.</p><button type="button" class="btn-outline" data-cmd-work>Search your work for “${esc(typed)}”</button>`:'';empty.hidden=!none}
     if(past){past.innerHTML=pastHtml();past.hidden=!past.innerHTML}
     shown=shown.concat(hits.map(e=>({id:'journal:'+e.id,link:e.link})));
-    {const c=$('cmdkCount'),t=found-pages;if(c)c.textContent=(found?(pages?`${pages} page${pages===1?'':'s'}`:'')+(pages&&t?', ':'')+(t?`${t} tool${t===1?'':'s'}`:''):'No pages match')+(hits.length?`, ${hits.length} from past work`:'')+(journal.state==='error'?"; couldn't search past work":journal.state==='signin'?'; sign in to see past work':'')} // a screen reader hears the count
+    {const c=$('cmdkCount'),t=found-pages;if(c)c.textContent=(found?(pages?`${pages} page${pages===1?'':'s'}`:'')+(pages&&t?', ':'')+(t?`${t} tool${t===1?'':'s'}`:''):'No pages match')+(hits.length?`, ${hits.length} from past work`:'')+(journal.state==='error'?"; couldn't search past work":journal.state==='signin'?'; pair this browser to see past work':'')} // a screen reader hears the count
     list.querySelectorAll('[data-cmd-view]').forEach(b=>b.onclick=()=>go(b.dataset.cmdView));
     list.querySelectorAll('[data-cmd-journal]').forEach(b=>b.onclick=()=>follow(b.dataset.cmdJournal));
     past?.querySelector('[data-cmd-journal-retry]')?.addEventListener('click',()=>{journal.q='';askJournal();render(true);input.focus()});

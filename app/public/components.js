@@ -21,7 +21,7 @@
     }).catch(err=>{
       clearTimeout(timer);
       const S=err?.signIn&&window.LocalAISignIn;
-      container.innerHTML=S?S.state(what):`<div class="state-error empty-state" role="alert"><div class="empty-state__title">Couldn't load ${esc(what)}.</div><div>${esc(err?.message||String(err))}</div><button type="button" class="btn-outline">Retry</button></div>`;
+      container.innerHTML=S?S.state():`<div class="state-error empty-state" role="alert"><div class="empty-state__title">Couldn't load ${esc(what)}.</div><div>${esc(err?.message||String(err))}</div><button type="button" class="btn-outline">Retry</button></div>`;
       S||container.querySelector('.state-error button').addEventListener('click',()=>{loadInto(container,load,{render,empty,what}).catch(()=>{})});
       throw err;
     });

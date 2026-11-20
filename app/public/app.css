@@ -1808,7 +1808,7 @@ h2.run-drawer-title{margin:0;letter-spacing:normal}
 .cmdk-notice{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--ui-s-2);padding:var(--ui-s-2) var(--ui-s-3);font-size:var(--ui-fs-2)}
 /* Not signed in (signin-report.js): the kit's notice under the strip, its action beside the words; the action is
    outlined (3:1) so it reads as a control on the notice's own fill. Not on Claude Code, the pairing page itself. */
-.signin-notice{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--ui-s-2) var(--ui-s-3);margin-block:var(--ui-s-3)}
+.signin-line{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--ui-s-2) var(--ui-s-3)}.signin-notice{margin-block:var(--ui-s-3)}
 [data-signin-pair]{border-color:var(--ui-field-line)}.ui-notice [data-signin-pair]{background:var(--ui-surface)}
 body[data-view="claude"] #signinNotice{display:none}
 

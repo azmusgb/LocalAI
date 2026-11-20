@@ -2216,7 +2216,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     const r = await fetch(url, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { cache: 'no-store' });
     let j = {};
     try { j = await r.json(); } catch {}
-    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    if (!r.ok) throw Object.assign(new Error(j.error || `HTTP ${r.status}`), { signIn: r.status === 401 && j.signIn === true });
     return j;
   }
 
@@ -2229,8 +2229,11 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
       $('claudeLive').textContent = 'live';
       render();
     } catch (e) {
-      $('claudeLive').className = 'claude-live off';
-      $('claudeLive').textContent = 'offline';
+      // Refused for sign-in, not offline; the pairing card is on this page.
+      const S = e.signIn && window.LocalAISignIn;
+      $('claudeLive').className = S ? 'claude-live' : 'claude-live off';
+      $('claudeLive').textContent = S ? 'not read' : 'offline';
+      if (S) $('claudeTimeline').innerHTML = S.state(false);
       $('claudeFindings').innerHTML = `<div class="empty-state">Claude board unavailable: ${esc(e.message)}</div>`;
     } finally { view.busy = false; }
   }
@@ -2712,7 +2715,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     root.dataset.mode = 'pair';
     const box = el('div', 'claude-chat-pair');
     box.id = 'claudeChatPair';
-    box.append(el('h2', null, 'Chat with Claude Code'), el('p', 'meta', 'Pair this device once to message your Mac sessions from here.'));
+    box.append(el('h2', null, 'Chat with Claude Code'), el('p', 'meta', `Pair this browser once: it signs it in to all of ${window.LocalAISignIn?.name() || 'Local AI'}, not only this chat. Approve the code on your Mac.`));
     if (st.pairError) {
       box.append(el('p', 'claude-chat-error', st.pairError));
       const retry = el('button', 'btn-outline', 'Try again'); retry.type = 'button'; retry.dataset.chatAction = 'pair';

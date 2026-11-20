@@ -40,11 +40,15 @@ function backlogRow(it){
  row.querySelectorAll('[data-vote]').forEach(b=>b.onclick=async()=>{b.disabled=true;rowError(row,'');try{await post('/api/claude/findings/vote',{id:it.id,delta:Number(b.dataset.vote)});await refresh()}catch(e){b.disabled=false;rowError(row,`Couldn't save your vote: ${e.message}`)}});
  return row;
 }
+// Refused for sign-in: New idea disabled, its reason beside it.
+function newIdeaOff(off){const b=$('improveNewIdea');if(!b)return;b.disabled=off;let w=$('improveNewIdeaWhy');
+ if(off&&!w){w=document.createElement('span');w.id='improveNewIdeaWhy';w.className='meta';b.after(w);b.setAttribute('aria-describedby',w.id)}
+ if(w){w.textContent=off?'Pair this browser to add ideas.':'';w.hidden=!off}}
 // Backlog's faceplate (Pi Hub A7 P1, L2b): how many items, the top one, and where they came from. A failed read shows no
-// count; one refused for sign-in says so, and its source isn't drawn as down.
+// count; one refused for sign-in leaves the words to the list, and its source isn't down.
 function backlogPlate(items,signIn){
- const ui=root.LocalAIUI;if(!ui?.plate)return;
- if(!items){ui.plate('backlogPlate',{readout:'—'});const t=$('backlogTop');if(t)t.textContent=signIn?'Sign in on this device to see the Backlog.':"Couldn't read the Backlog.";const r=$('backlogReadings');if(r)r.hidden=true;ui.sources('backlogSources',"Local AI's improve board",signIn?'unknown':'bad');return}
+ const ui=root.LocalAIUI;if(!ui?.plate)return;newIdeaOff(!items&&!!signIn);
+ if(!items){ui.plate('backlogPlate',{readout:'—'});const t=$('backlogTop');if(t)t.textContent=signIn?'':"Couldn't read the Backlog.";const r=$('backlogReadings');if(r)r.hidden=true;ui.sources('backlogSources',"Local AI's improve board",signIn?'unknown':'bad');return}
  ui.plate('backlogPlate',{readout:items.length?items.length:'Empty',unit:items.length?(items.length===1?'item':'items'):''});
  const t=$('backlogTop');if(t)t.textContent=items.length?`Top: ${plain(items[0].title)}`:'Add an idea, or promote a Signal.';
  const r=$('backlogReadings');if(r){r.hidden=!items.length;r.querySelectorAll('[data-count]').forEach(d=>{d.textContent=String(items.filter(i=>i.source===d.dataset.count).length)})}
@@ -208,27 +212,31 @@ const showSheet=(d,onClosed)=>root.LocalAIUI.showSheet(d,onClosed);
 // once handed to Claude, or null if closed unsaved. `from` names where the owner typed it, for Claude.
 function openIdea(text,{from='improve'}={}){st.ideaFrom=from;
  const d=$('improveIdeaSheet');if(!d)return Promise.resolve(null);
- $('improveIdeaText').value=typeof text==='string'?text:'';$('improveIdeaError').hidden=true;
+ $('improveIdeaText').value=typeof text==='string'?text:'';ideaFail($('improveIdeaError'));
  // Closed unsaved (or opened again at once): the waiting promise resolves null.
  showSheet(d,()=>{const r=st.ideaDone;st.ideaDone=null;r?.(null)});$('improveIdeaText').focus();
  return new Promise(res=>{st.ideaDone=res});
 }
+// Refused for sign-in: the Pair line (signin-report.js) beside the error line.
+function ideaFail(err,e){const S=e?.signIn&&root.LocalAISignIn;let n=$('improveIdeaSignIn');
+ if(!n){n=document.createElement('div');n.id='improveIdeaSignIn';n.setAttribute('role','alert');err.after(n)}
+ n.innerHTML=S?S.say(S.act):'';err.textContent=S?'':e?.message||'';err.hidden=!!S||!e}
 async function submitIdea(start,btn){
- const text=$('improveIdeaText').value,err=$('improveIdeaError');
+ const text=$('improveIdeaText').value,err=$('improveIdeaError');ideaFail(err);
  if(!text.trim()){err.textContent='Describe the change first.';err.hidden=false;return}
  btn.disabled=true;
  try{const r=await post('/api/improve/idea',{text,start});const done=st.ideaDone;st.ideaDone=null;await refresh();if(r.error){err.textContent=r.error;err.hidden=false;done?.({start,error:r.error})}else{done?.({start});$('improveIdeaSheet').close()}}
- catch(e){err.textContent=e.message;err.hidden=false}
+ catch(e){ideaFail(err,e)}
  finally{btn.disabled=false}
 }
 // Hand to Claude straight from the sheet: an idea item handed over at once (In progress), for a Claude session to do.
 async function handIdea(btn){
- const text=$('improveIdeaText').value,err=$('improveIdeaError');
+ const text=$('improveIdeaText').value,err=$('improveIdeaError');ideaFail(err);
  if(!text.trim()){err.textContent='Describe the change first.';err.hidden=false;return}
  btn.disabled=true;
  try{await post('/api/improve/handoff',{text,from:st.ideaFrom||'improve'});const done=st.ideaDone;st.ideaDone=null;done?.({handed:true});$('improveIdeaSheet').close();
   root.LocalAIUI.toast?.('Handed to Claude Code — it appears in Improve › In progress');await refresh()}
- catch(e){err.textContent=e.message;err.hidden=false}
+ catch(e){ideaFail(err,e)}
  finally{btn.disabled=false}
 }
 async function runChecks(btn){if(btn)btn.disabled=true;checksError('');try{await post('/api/issues/scan',{});await refresh();loadDetails()}catch(e){checksError(`Couldn't run the checks: ${e.message}`)}finally{if(btn)btn.disabled=false}}
