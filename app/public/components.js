@@ -43,12 +43,12 @@
   }
   // A failed refresh (DESIGN: stale), in the kit's words. since: last good read (Date), true (none yet) or null (clear).
   // Written only on a change, so the status region isn't announced again on each failed poll.
-  const clockOf=d=>d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
-  function staleNotice(id,{name='Local AI',what='runs',missing='',since=null}={}){
+  // A fixed time, never a running age (the region would be announced again each minute); another day's adds the day.
+  const clockOf=d=>(d.toDateString()===new Date().toDateString()?'':d.toLocaleDateString([],{weekday:'short'})+' ')+d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  function staleNotice(id,{name="Local AI's run list",what='runs',missing='',since=null}={}){
     const el=document.getElementById(id);if(!el)return;
     const K=window.ApplianceNeeds,down=(K?.PHRASES?.source_down||"{name} isn't answering").replace('{name}',name);
-    const age=since instanceof Date?K?.ago?.((Date.now()-since)/1000):null; // "now" and over an hour: the time
-    const text=!since?'':since instanceof Date?`${down}. Showing ${what} from ${age&&age!=='now'?age:clockOf(since)}.`:`${down}, so ${missing} may be incomplete.`;
+    const text=!since?'':since instanceof Date?`${down}. Showing ${what} from ${clockOf(since)}.`:`${down}, so ${missing} may be incomplete.`;
     if(el.textContent!==text)el.textContent=text;el.hidden=!text;
   }
   // The one approval sheet for risky actions. ask({title,effect,confirmLabel,tone,typed,input}) -> {ok,value?}.

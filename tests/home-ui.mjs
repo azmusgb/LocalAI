@@ -226,17 +226,17 @@ await check('a failed Recent refresh keeps the rows but says they are stale; the
   await page.waitForSelector('#homeRecent2 .run-card', T);
   const notice = page.locator('#homeRunsNotice'), row = page.locator(`#homeRecent2 [data-run-id="${live.id}"]`);
   assert.equal(await notice.isHidden(), true, 'no notice while the reads are good');
-  assert.match(await page.locator('#homeSrcRuns').innerText(), /^Local AI's runs:\s+Answering\s+read /);
+  assert.match(await page.locator('#homeSrcRuns').innerText(), /^Local AI's run list:\s+Answering\s+read /);
   assert.equal(await row.locator('[role="progressbar"]').count(), 1);
   const dead = u => u.pathname === '/api/runs' && !!u.searchParams.get('threads');
   await page.route(dead, r => r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"Server blew up"}' }));
   await page.evaluate(() => window.LocalAIHome.refresh());
   await notice.waitFor(T);
   // One notice on Home for one failed source, in the kit's words; the sources line says which source and when.
-  assert.match(await notice.innerText(), /^Local AI isn't answering\. Showing runs from (\d+ min ago|\d{1,2}:\d{2}\s?[AP]M)\.$/);
+  assert.match(await notice.innerText(), /^Local AI's run list isn't answering\. Showing runs from \d{1,2}:\d{2}\s?[AP]M\.$/);
   assert.equal(await notice.getAttribute('role'), 'status');
   assert.equal(await page.locator('#home .ui-notice--warn:visible').count(), 1, 'one notice, not one per list');
-  assert.match(await page.locator('#homeSrcRuns').innerText(), /^Local AI's runs:\s+Not answering\s+last read /);
+  assert.match(await page.locator('#homeSrcRuns').innerText(), /^Local AI's run list:\s+Not answering\s+last read /);
   assert.equal(await page.locator('#homeRecent2 .run-card').count(), 6, 'the last rows stay on screen');
   assert.equal((await row.locator('.list-row__trail').innerText()).trim(), 'Unknown', 'a stale running row is not shown as Working');
   assert.equal(await row.locator('[role="progressbar"]').count(), 0);
@@ -279,7 +279,8 @@ await check('the bell says checking until Needs you is read, couldn\'t check whe
   assert.equal(await badge.innerText(), '?');
   assert.equal(await badge.isVisible(), true, 'the badge says the count is unknown');
   await notice.waitFor(T);
-  assert.equal(await notice.innerText(), "Local AI isn't answering, so Needs you may be incomplete.");
+  assert.equal(await notice.innerText(), "Local AI's run list isn't answering, so Needs you may be incomplete.");
+  assert.equal(await page.locator('#homeNeedsCount').textContent(), '', 'no number on Needs you while the faceplate says couldn\'t check');
   assert.match((await page.locator('#homePlate .ui-readout').innerText()).trim(), /^—\s*couldn't check$/, 'no count on the faceplate, and why');
   mode = 'ok';
   await page.evaluate(() => window.LocalAIHome.refresh());
@@ -290,8 +291,9 @@ await check('the bell says checking until Needs you is read, couldn\'t check whe
   mode = 'fail';
   await page.evaluate(() => window.LocalAIHome.refresh());
   await notice.waitFor(T);
-  assert.match(await notice.innerText(), /^Local AI isn't answering\. Showing runs from (\d+ min ago|\d{1,2}:\d{2}\s?[AP]M)\.$/);
+  assert.match(await notice.innerText(), /^Local AI's run list isn't answering\. Showing runs from \d{1,2}:\d{2}\s?[AP]M\.$/);
   assert.equal(await page.locator('#homeNeedsList .ui-need').count(), n, 'the last rows stay');
+  assert.equal(await page.locator('#homeNeedsCount').textContent(), '', 'stale rows are not counted');
   assert.equal(await bell.getAttribute('aria-label'), "Needs you, couldn't check");
   await ctx.close();
 });

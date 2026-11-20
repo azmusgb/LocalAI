@@ -265,12 +265,14 @@ await check('a failed refresh keeps the list but says it is stale; the next good
   assert.equal(await live.locator('[role="progressbar"]').count(), 1);
   await page.waitForSelector('#workNotice:not([hidden])', T);
   // The kit's words: source_down with the one name "Local AI", and the age.
-  assert.match(await page.locator('#workNotice').innerText(), /^Local AI isn't answering\. Showing runs from (\d+ min ago|\d{1,2}:\d{2}\s?[AP]M)\.$/);
+  assert.match(await page.locator('#workNotice').innerText(), /^Local AI's run list isn't answering\. Showing runs from \d{1,2}:\d{2}\s?[AP]M\.$/);
   assert.equal(await page.locator('#workNotice').getAttribute('role'), 'status');
   assert.equal(await rows(page).count(), 8, 'the last list stays on screen');
   assert.equal(await page.locator('#workPlate [data-plate-lamp]').innerText(), 'Unknown', 'a stale running count is not shown as Running');
   assert.equal(await page.locator('#workPlate .ui-readout').innerText(), '—');
-  assert.match(await page.locator('#workSources').innerText(), /Not answering\s+last read /);
+  assert.match(await page.locator('#workSources').innerText(), /Local AI's run list:\s+Not answering\s+last read /);
+  // A fixed time, never a running age (no re-announcement each minute); another day's read names the day.
+  assert.match(await page.evaluate(() => { const p = document.createElement('p'); p.id = 'staleProbe'; document.body.append(p); window.LocalAIUI.staleNotice('staleProbe', { name: 'X', since: new Date(Date.now() - 864e5) }); const t = p.textContent; p.remove(); return t; }), /^X isn't answering\. Showing runs from [A-Z][a-z]{2} \d{1,2}:\d{2}\s?[AP]M\.$/);
   // A run read as running before the failure is not known to be running now: the unknown chip, no progress bar.
   assert.equal((await live.locator('.list-row__trail').innerText()).trim(), 'Unknown');
   assert.equal(await live.locator('.list-row__trail .ui-chip--unknown').count(), 1);

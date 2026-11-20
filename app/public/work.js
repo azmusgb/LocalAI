@@ -106,13 +106,13 @@ function readOk(){st.readAt=new Date();clearStale()}
 function readFailed(){st.stale=true;window.LocalAIUI?.staleNotice?.('workNotice',{since:st.readAt||new Date()});paint()}
 function plate(failed){
  const ui=window.LocalAIUI;if(!ui?.plate)return;const latest=$('workLatest'),readings=$('workReadings');
- if(failed){ui.plate('workPlate',{lamp:['unknown','Unknown'],readout:'—'});if(latest)latest.textContent="Couldn't read your work.";if(readings)readings.hidden=true;ui.sources('workSources',"Local AI's runs",'bad');return}
- if(st.stale){ui.plate('workPlate',{lamp:['unknown','Unknown'],readout:'—'});if(readings)readings.hidden=true;ui.sources('workSources',"Local AI's runs",'bad',st.readAt?`last read ${clock(st.readAt)}`:'');return}
+ if(failed){ui.plate('workPlate',{lamp:['unknown','Unknown'],readout:'—'});if(latest)latest.textContent="Couldn't read your work.";if(readings)readings.hidden=true;ui.sources('workSources',"Local AI's run list",'bad');return}
+ if(st.stale){ui.plate('workPlate',{lamp:['unknown','Unknown'],readout:'—'});if(readings)readings.hidden=true;ui.sources('workSources',"Local AI's run list",'bad',st.readAt?`last read ${clock(st.readAt)}`:'');return}
  const running=st.items.filter(it=>LIVE.has(it.status)).length,top=st.items[0],filter=st.kind!=='all'?` · ${KIND_WORD[st.kind]}`:'';
  ui.plate('workPlate',{lamp:running?['ok','Running']:['unknown','Idle'],readout:running||'Nothing',unit:running?'running':'running now'});
  if(latest)latest.textContent=top?`Latest${filter}: ${top.card?.title||top.title||'Untitled'}`:st.kind==='all'?'Nothing yet. Start something from Home.':`No ${KIND_WORD[st.kind].toLowerCase()} yet.`;
  if(readings){readings.hidden=!st.items.length;$('workToday').textContent=String(st.items.filter(it=>groupOf(it)===0).length);$('workWeek').textContent=String(st.items.filter(it=>groupOf(it)<=2).length)}
- ui.sources('workSources',"Local AI's runs",'ok',st.readAt?`read ${clock(st.readAt)}`:'');
+ ui.sources('workSources',"Local AI's run list",'ok',st.readAt?`read ${clock(st.readAt)}`:'');
 }
 function paint(){
  const box=$('workList'),list=visible();plate();

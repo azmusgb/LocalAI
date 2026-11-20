@@ -198,7 +198,7 @@ function paintNeeds(){
  inShell(ul);
  [...ul.querySelectorAll('.ui-need')].forEach((li,i)=>{const e=entries[i];Object.assign(li.dataset,e.data);if(e.go)rowGo.set(li,e.go);const d=li.querySelector('.ui-need__detail');if(d&&e.item.detail)d.title=e.item.detail}); // the clamped detail keeps its full text on hover and long-press
  box.replaceChildren(ul);
- $('homeNeedsCount').textContent=n+covered?'· '+(n+covered):''; // the same number as the bell and the readout
+ $('homeNeedsCount').textContent=n+covered&&!needsFailed?'· '+(n+covered):''; // the bell's and the readout's number; none when unread
  sec.hidden=!n;
 }
 // Home's faceplate readout (A7 P1): how many things need you; its lamp and caption are Local AI's status (app.js).
@@ -255,7 +255,7 @@ async function loadNeeds(){
 function paintRuns(){
  const U=root.LocalAIUI,bad=needsFailed||recentFailed&&recentReadAt,at=[needsFailed&&needsRead,recentFailed&&recentReadAt].filter(Boolean),since=at.length?new Date(Math.min(...at)):null,last=bad?since:new Date(Math.max(needsRead,recentReadAt));
  U?.staleNotice?.('homeRunsNotice',{since:bad?needsFailed&&!needsRead||since||true:null,missing:'Needs you'});
- if(needsRead||recentReadAt||bad)U?.sources?.('homeSrcRuns',"Local AI's runs",bad?'bad':'ok',last?(bad?'last read ':'read ')+last.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'');
+ if(needsRead||recentReadAt||bad)U?.sources?.('homeSrcRuns',"Local AI's run list",bad?'bad':'ok',last?(bad?'last read ':'read ')+last.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'');
 }
 function recentRead(ok){if(ok)recentReadAt=new Date();recentFailed=!ok;paintRuns();if(!ok&&lastRecent?.box.isConnected&&!lastRecent.box.querySelector(':scope > .state-loading,:scope > .state-error'))paintRecent(lastRecent.box,lastRecent.data)}
 let inflight=null;
