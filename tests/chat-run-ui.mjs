@@ -28,7 +28,8 @@ const run = (n, prompt, text, o = {}) => ({
 const three = () => [run(3, 'third question', 'third answer'), run(1, 'first question', 'first answer'), run(2, 'second question', 'second answer')];
 
 // db.runs: every ledger run the stub knows (a test can push into it); db.library: Library items.
-async function open(viewport, hash, { runs = [], library = [], answers = {}, storage = {}, stream = 'live' } = {}) {
+// chatTimeoutMs: the server's stall limit as /api/config reports it (app.js streamChat waits 10% longer before it says the reply stalled).
+async function open(viewport, hash, { runs = [], library = [], answers = {}, storage = {}, stream = 'live', chatTimeoutMs } = {}) {
   const db = { runs, library, answers, keeps: [] };
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
   await ctx.addInitScript(s => { try { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); for (const [k, v] of Object.entries(s)) localStorage.setItem(k, v); } } catch {} }, { 'localai.devTools': '1', 'localai.firstRun.done': '1', ...storage });
@@ -70,8 +71,11 @@ async function open(viewport, hash, { runs = [], library = [], answers = {}, sto
     if (q.get('threadId')) return json(r, { items: all.filter(x => x.threadId === q.get('threadId')), summary: {} });
     json(r, { items: all, summary: {} });
   });
+  if (chatTimeoutMs) await page.route(u => u.pathname === '/api/config', async r => { const real = await (await r.fetch()).json(); await json(r, { ...real, chatTimeoutMs }); page.configServed = (page.configServed || 0) + 1; });
   await page.goto(base + '/' + hash, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIRouter && window.LocalAIHome && window.LocalAIChat && location.hash, null, { timeout: 8000 });
+  // app.js reads it once at start (loadReleaseConfig): wait until it was served, and a moment for the page to take it.
+  if (chatTimeoutMs) { for (let i = 0; i < 80 && !page.configServed; i++) await page.waitForTimeout(100); assert.ok(page.configServed, '/api/config was served'); await page.waitForTimeout(200); }
   return page;
 }
 // A turn's words, without the Good answer / Not right control under a finished answer (answer-feedback.js).
@@ -438,6 +442,59 @@ await check('a failed reply with an empty box puts the text back', async () => {
   await page.evaluate(() => window.__failReq());
   await page.locator('#runDrawer .chat-body__error').waitFor(T);
   assert.equal(await page.locator('#runReply').inputValue(), 'first try');
+  await page.context().close();
+});
+
+// A stream that goes quiet (headers sent, then nothing) never leaves "Thinking…" up for good: past the server's stall
+// limit plus 10% the view says "No reply after N s" and offers Retry, and never shows an answer.
+await check('a stream that stalls after the run starts says "No reply after N s" and Retry asks again', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'ask' }, chatTimeoutMs: 1000 });
+  await page.locator('#commandInput').fill('What is a mutex');
+  await page.locator('#commandGo').click();
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  const body = (await reqs(page))[0];
+  const r = run(1, 'What is a mutex', '', { id: 'run-stall-1', threadId: body.threadId, status: 'running' }); r.output = null;
+  page.db.runs.push(r);
+  await page.evaluate(() => window.__streams[0].push('meta', { model: 'm', sources: [], runId: 'run-stall-1' }));
+  await page.waitForFunction(() => location.hash === '#run/run-stall-1', null, T);
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Thinking…' }).waitFor(T);
+  // 1 s limit + 10%: the turn and the notice say so, the stream was let go, and nothing claims an answer.
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'No reply after 1 s' }).waitFor(T);
+  assert.equal(await page.evaluate(() => window.__aborted), 1, 'the stalled stream was let go');
+  assert.match(await page.locator('#runDrawer .chat-body__error').innerText(), /No reply after 1 s/);
+  assert.equal(await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Thinking…' }).count(), 0);
+  await page.locator('#runDrawer .chat-body__retry').click();
+  await page.waitForFunction(() => window.__reqs.length === 2, null, T);
+  assert.equal((await reqs(page))[1].messages.at(-1).content, 'What is a mutex');
+  assert.equal(page.errors.length, 0, page.errors.join('|'));
+  await page.context().close();
+});
+
+await check('a stream that never starts says "No reply after N s" in the pending view, with Try again', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'ask' }, chatTimeoutMs: 1000 });
+  await page.locator('#commandInput').fill('What is a mutex');
+  await page.locator('#commandGo').click();
+  await page.waitForFunction(() => location.hash === '#run/pending', null, T);
+  await page.locator('#runDrawer .status-error', { hasText: 'No reply after 1 s' }).waitFor(T);
+  assert.equal(await page.locator('#commandInput').inputValue(), 'What is a mutex');
+  await page.locator('#runDrawer button', { hasText: 'Try again' }).click();
+  await page.waitForFunction(() => window.__reqs.length === 2, null, T);
+  assert.equal(page.errors.length, 0, page.errors.join('|'));
+  await page.context().close();
+});
+
+// The server's own stall error (event: error, stalled) reads the same and offers Retry too.
+await check("the server's stall error says so and offers Retry on a reply", async () => {
+  const page = await open(desk, '#home', { runs: three() });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  await page.locator('#runReply').fill('fourth question'); await page.locator('#runReply').press('Enter');
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  await page.evaluate(() => { window.__streams[0].push('meta', { model: 'm', sources: [], runId: 'run-stall-2' }); window.__streams[0].push('error', { error: 'No reply after 180 s', stalled: true, runId: 'run-stall-2' }); });
+  await page.locator('#runDrawer .chat-body__error', { hasText: 'No reply after 180 s' }).waitFor(T);
+  assert.ok(!/could not be sent/.test(await page.locator('#runDrawer .chat-body__error').innerText()));
+  await page.locator('#runDrawer .chat-body__retry').click();
+  await page.waitForFunction(() => window.__reqs.length === 2, null, T);
+  assert.equal((await reqs(page))[1].messages.at(-1).content, 'fourth question');
   await page.context().close();
 });
 

@@ -87,13 +87,14 @@
       if (o && o.truncated) { answer = c.lib.get(r.id) || previewText(o.preview); if (!answer) { answer = 'This answer was too long to keep here.'; lost = true; } }
       else answer = typeof o === 'string' ? o : o?.text || '';
       if (!answer && lv) answer = lv.text;
-      if (r.status === 'failed' && !answer) { answer = r.error || 'This answer could not be written.'; kind = 'error'; }
+      if (!answer && lv?.err) { answer = lv.err; kind = 'error'; }
+      else if (r.status === 'failed' && !answer) { answer = r.error || 'This answer could not be written.'; kind = 'error'; }
       else if (r.status === 'cancelled' && !answer) { answer = 'Stopped.'; kind = 'error'; }
       else if (!answer) { answer = 'Thinking…'; kind = 'wait'; }
       else if (lv?.streaming) kind = 'live';
       out.push({ key: r.id, prompt, answer, kind, lost, sources: Array.isArray(o?.sources) ? o.sources : [], route: RB.routeText(r), memory: r.card?.memory || null, facts: r.card?.facts || null, run: r });
     }
-    if (live && !(live.runId && runs.some(r => r.id === live.runId))) out.push({ key: 'live', prompt: live.prompt, answer: live.text || (live.err ? '' : 'Thinking…'), kind: live.err ? 'error' : live.text ? 'live' : 'wait', sources: [] });
+    if (live && !(live.runId && runs.some(r => r.id === live.runId))) out.push({ key: 'live', prompt: live.prompt, answer: live.text || live.err || 'Thinking…', kind: live.err ? 'error' : live.text ? 'live' : 'wait', sources: [] });
     return out;
   }
   // The conversation so far as chat messages (answers that exist only), for a reply. A lost answer (the placeholder) is not the model's words: leave it out.
@@ -182,10 +183,10 @@
     } catch (e) {
       if (e.name !== 'AbortError') {
         live.err = e.message || 'The reply could not be sent.';
-        const unsent = !live.text && !live.runId;
-        // A reply that never started goes back to the box, unless the person has typed something new meanwhile: then Retry offers it.
-        if (unsent && !c.input.value.trim()) { c.input.value = text; grow(c); showError(c, `The reply could not be sent: ${live.err}`); }
-        else showError(c, `The reply could not be sent: ${live.err}`, unsent ? text : '');
+        const unsent = !live.text && !live.runId, said = e.stalled ? live.err : `The reply could not be sent: ${live.err}`;
+        // A reply that never started goes back to the box (a stall: Retry), unless the person has typed something new meanwhile: then Retry offers it.
+        if (unsent && !e.stalled && !c.input.value.trim()) { c.input.value = text; grow(c); showError(c, said); }
+        else showError(c, said, unsent || e.stalled ? text : '');
         if (unsent) c.live = null;
       }
     } finally {
@@ -243,6 +244,7 @@
         live.streaming = false;
         if (!resolved) { threads.delete(threadId); pending?.fail(e.message || 'Something went wrong.'); throw e; }
         if (e.name !== 'AbortError') live.err = e.message;
+        if (e.stalled) showError(c, e.message, text);
       } finally {
         live.streaming = false;
         if (resolved) {

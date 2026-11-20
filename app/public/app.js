@@ -292,14 +292,18 @@ async function submitEngineeringIntent(request,{assistantIndex=null,navigate=fal
   pollEngineeringIntent(run.id,msg);return run;
 }
 // One streamed /api/chat/stream turn (#ask, the run view): {runId, content}; rejects on errors. bigger/keepLocal: Home's toggles.
+// Silent past the server's limit (chatTimeoutMs) +10%: lost; throws stalled.
 async function streamChat({messages,webSearch=false,model,threadId,title,bigger,keepLocal,onOpen,onToken,onMeta,onDone,signal}){
-  const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,webSearch,model,threadId,title,bigger,keepLocal}),signal});
+  const ac=new AbortController(),ms=(releaseState.config?.chatTimeoutMs||18e4)*1.1;let t,late;const arm=()=>{clearTimeout(t);t=setTimeout(()=>{late=1;ac.abort()},ms)};
+  signal?.aborted?ac.abort():signal?.addEventListener('abort',()=>ac.abort());arm();
+  try{
+  const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,webSearch,model,threadId,title,bigger,keepLocal}),signal:ac.signal});
   if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||`HTTP ${r.status}`);}
   onOpen?.();
   const reader=r.body.getReader(),decoder=new TextDecoder();
   let buf='',runId='',content='';
   while(true){
-    const packet=await reader.read();
+    const packet=await reader.read();arm();
     if(packet.done) break;
     buf+=decoder.decode(packet.value,{stream:true});
     while(true){
@@ -314,10 +318,11 @@ async function streamChat({messages,webSearch=false,model,threadId,title,bigger,
       if(event==='token'){content+=data.text||'';onToken?.(data.text||'',content);}
       else if(event==='meta'){runId=data.runId||runId;onMeta?.(data);}
       else if(event==='done'){runId=data.runId||runId;onDone?.(data);}
-      else if(event==='error') throw new Error(data.error||'Streaming failed');
+      else if(event==='error') throw Object.assign(new Error(data.error||'Streaming failed'),{stalled:data.stalled});
     }
   }
   return {runId,content};
+  }catch(e){throw late?Object.assign(new Error(`No reply after ${Math.round(ms/1e3)} s`),{stalled:1}):e}finally{clearTimeout(t)}
 }
 window.LocalAIChatCore={streamChat,newThreadId};
 async function sendChat(){
