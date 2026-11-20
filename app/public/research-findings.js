@@ -17,7 +17,11 @@ export function renderResearchFindings(container, { findings = [], onPromote, on
   const listHtml = findings.map((f, idx) => `
     <div class="research-finding-card ui-card ${idx === 0 ? 'is-selected' : ''}" data-id="${f.id}">
       <div class="ui-row ui-row--between">
-        <span class="ui-badge">${f.targetProject}</span>
+        <div class="ui-row">
+          <span class="ui-badge">${f.targetProject}</span>
+          <span class="ui-badge ui-badge--subtle">Value: ${f.value || 'High'}</span>
+          <span class="ui-badge ui-badge--subtle">Readiness: ${f.readiness || 'Ready'}</span>
+        </div>
         <span class="ui-muted">${f.relevance}</span>
       </div>
       <h4>${f.claim}</h4>

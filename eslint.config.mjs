@@ -39,7 +39,7 @@ export default [
   { linterOptions: { reportUnusedDisableDirectives: 'error' } },
   {
     // Server, CLIs and Node tests.
-    files: ['app/*.js', 'app/server/*.js', 'app/research/*.js', 'deploy/**/*.js', '**/*.cjs'],
+    files: ['app/*.js', 'app/server/*.js', 'app/research/*.js', 'scripts/*.js', 'deploy/**/*.js', '**/*.cjs'],
     languageOptions: { ecmaVersion: 2024, sourceType: 'commonjs', globals: { ...globals.node } },
     rules: correctness,
   },

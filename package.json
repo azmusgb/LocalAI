@@ -12,6 +12,7 @@
     "test:browser": "node tests/run-browser.mjs",
     "ci": "node scripts/local-ci.mjs",
     "ship": "node scripts/local-ci.mjs --merge",
+    "eval:retrieval": "node evals/past-work-retrieval/scorer.mjs",
     "lint": "eslint .",
     "lint:css": "stylelint \"app/public/**/*.css\"",
     "prepare": "git config core.hooksPath .githooks || true"
