@@ -59,7 +59,7 @@
 
     // Refused for sign-in: the shared words and Pair action (signin-report.js), not "Try again".
     const S = window.LocalAISignIn;
-    const showFail = e => { fail.textContent = e?.signIn && S ? S.act : "Couldn't save that. Try again."; if (e?.signIn && S) fail.insertAdjacentHTML('beforeend', ` ${S.pair}`); fail.hidden = false; };
+    const showFail = e => { fail.textContent = e?.signIn && S ? S.words('act') : "Couldn't save that. Try again."; if (e?.signIn && S) fail.insertAdjacentHTML('beforeend', ` ${S.pair}`); fail.hidden = false; };
     // Saving: the pressed state stays what it was until the server has it; the control says it is saving.
     const busy = (on, b) => { st.busy = on; for (const x of [buttons.good, buttons.bad, save]) { x.setAttribute('aria-disabled', String(on)); x.removeAttribute('aria-busy'); } if (on) b.setAttribute('aria-busy', 'true'); state.textContent = on ? 'Saving…' : ''; };
     for (const v of ['good', 'bad']) buttons[v].addEventListener('click', async () => {

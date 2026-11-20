@@ -31,12 +31,18 @@ function init(){
 // .signIn). Only when sign-in is required for every route does one notice sit under the strip on every page.
 let who=null,mode='';
 const name=()=>root.LocalAIFramed?.active?.()?'the Assistant':'Local AI';
-const MAC='Approve the code on your Mac.',text=`Pair this browser to see this. ${MAC}`,act=`Pair this browser to do this. ${MAC}`;
+const MAC='Approve the code on your Mac.',W={see:'Pair this browser to see this.',act:'Pair this browser to do this.'};
 const PAIR='<a class="ui-btn" href="#claude" data-signin-pair>Pair this browser</a>';
-// The one Pair action on a screen. pair=false where the pairing card, or another Pair, is on the screen already.
-const say=(t=text,cls='',pair=true)=>`<div class="ui-notice ui-notice--warn signin-line ${cls}"><span>${esc(t)}</span>${pair?PAIR:''}</div>`;
-const state=(pair=true)=>`<div class="state-error empty-state" data-signin-state><div class="empty-state__title">Pair this browser to see this.</div><div>${MAC}</div>${pair?PAIR:''}</div>`;
-function paint(){const n=$('signinNotice'),on=who==='out'&&mode==='required';if(n&&!!n.firstChild!==on)n.innerHTML=on?say(`Pair this browser to use ${name()}. ${MAC}`,'signin-notice'):''}
+// Sign-in required: the notice under the strip offers the Mac step and Pair; a page's own line says neither.
+const req=()=>who==='out'&&mode==='required';
+const words=k=>req()?W[k]:`${W[k]} ${MAC}`;
+// k: 'see' (a refused read) or 'act' (a save). pair=false where the screen has a Pair already.
+const say=(k='see',cls='',pair=true)=>`<div class="ui-notice ui-notice--warn signin-line ${cls}"><span data-signin-words="${k}">${words(k)}</span>${pair&&!req()?PAIR:''}</div>`;
+const state=(pair=true)=>`<div class="state-error empty-state" data-signin-state><div class="empty-state__title">${W.see}</div>${req()?'':`<div data-signin-mac>${MAC}</div>${pair?PAIR:''}`}</div>`;
+function paint(){const n=$('signinNotice'),on=req();if(!n||!!n.firstChild===on)return;
+ n.innerHTML=on?`<div class="ui-notice ui-notice--warn signin-line signin-notice"><span>Pair this browser to use ${name()}. ${MAC}</span>${PAIR}</div>`:'';
+ // Drawn before whoami answered: take them back out.
+ if(on)document.querySelectorAll('[data-signin-pair],[data-signin-mac],[data-signin-words]').forEach(e=>{if(n.contains(e))return;if(e.dataset.signinWords)e.textContent=W[e.dataset.signinWords];else e.remove()})}
 // At load, and on each page change until signed in (always while sign-in is required).
 function ask(){if(who!=='in'||mode==='required')fetch('/api/claude/chat/whoami',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(j=>{if(typeof j?.signedIn!=='boolean')return;who=j.signedIn?'in':'out';mode=j.mode==='required'?'required':'report';paint()},()=>{})}
 function mount(){const m=document.querySelector('main');if(!m||$('signinNotice'))return;const n=document.createElement('div');n.id='signinNotice';n.setAttribute('aria-live','polite');const at=$('uxPageStrip')||$('uxContextBar');at?at.after(n):m.prepend(n);paint();ask();root.addEventListener('hashchange',ask)}
@@ -45,5 +51,5 @@ document.addEventListener('click',e=>{const d=e.target.closest?.('[data-signin-p
 const start=()=>{init();mount()};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start();
 root.LocalAISignInReport={load};
-root.LocalAISignIn={state,say,text,act,name,pair:PAIR,get:()=>who,mode:()=>mode};
+root.LocalAISignIn={state,say,words,name,get pair(){return req()?'':PAIR},get:()=>who,mode:()=>mode};
 })(window);

@@ -936,7 +936,7 @@ function commandPalette(){
   function pastHtml(){
     const body=journal.state==='loading'?`<div class="cmdk-item cmdk-item--wait" aria-hidden="true" data-cmd-journal-loading><span class="ui-skeleton"></span><span class="ui-skeleton"></span></div>`
       :journal.state==='error'?`<div class="ui-notice ui-notice--warn cmdk-notice" data-cmd-journal-error><span>Couldn't search past work.</span><button type="button" class="btn-outline" data-cmd-journal-retry>Try again</button></div>`
-      :journal.state==='signin'?window.LocalAISignIn?.say(void 0,'cmdk-notice')||'':'';
+      :journal.state==='signin'?window.LocalAISignIn?.say('see','cmdk-notice')||'':'';
     return body&&`<div class="cmdk-group__label">Past work</div>${body}`;
   }
   function render(keep=false){
