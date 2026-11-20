@@ -157,6 +157,8 @@ await check('Claude Code, board read refused: its activity says to pair (no seco
   assert.equal((await state.innerText()).replace(/\s+/g, ' ').trim(), SEE);
   assert.equal(await page.locator('#claudeTimeline [data-signin-pair]').count(), 0, 'the pairing card is the one way to pair here');
   assert.doesNotMatch(await page.locator('#claudeTimeline').innerText(), /Loading/);
+  assert.equal((await page.locator('#claudeFindings').textContent()).trim(), SEE, 'the findings line in the same words, no raw refusal');
+  assert.equal(await page.locator('#claudeFindings [data-signin-pair]').count(), 0);
   assert.equal((await page.locator('#claudeLive').innerText()).trim(), 'not read');
   assert.doesNotMatch(await page.locator('#claudeLive').getAttribute('class'), /\boff\b/, 'unknown, not offline');
   await page.locator('#claudeChatPair').waitFor(T);

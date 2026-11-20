@@ -231,8 +231,9 @@ test('sibling routes are guarded too: the display sign-in code, run control, del
   }
 });
 
-// The pairing hint names where pairing is: Claude Code is in the Improve area (view-registry.js), not "Build".
-test('every pairing hint names Improve › Claude Code, the area the page list puts it in', () => {
+// Where pairing is: the server's refusal names Improve › Claude Code (view-registry.js puts it there, not "Build"), and
+// the pages take their words and the Pair link to #claude from signin-report.js instead of writing their own.
+test("the server's refusal names Improve › Claude Code; pages pair through signin-report.js's one link to it", () => {
   const reg = fs.readFileSync(path.join(__dirname, '..', 'app', 'public', 'view-registry.js'), 'utf8');
   assert.match(reg, /\{id:'claude',[^}]*domain:'improve'[^}]*label:'Claude Code'/);
   assert.match(reg, /\{id:'improve',label:'Improve'/);

@@ -2234,7 +2234,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
       $('claudeLive').className = S ? 'claude-live' : 'claude-live off';
       $('claudeLive').textContent = S ? 'not read' : 'offline';
       if (S) $('claudeTimeline').innerHTML = S.state(false);
-      $('claudeFindings').innerHTML = `<div class="empty-state">Claude board unavailable: ${esc(e.message)}</div>`;
+      $('claudeFindings').innerHTML = `<div class="empty-state">${S ? S.words('see') : `Claude board unavailable: ${esc(e.message)}`}</div>`;
     } finally { view.busy = false; }
   }
 

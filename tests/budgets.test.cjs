@@ -183,12 +183,11 @@ const KB = 1024;
 // 368 KB, home.js 155 bytes over 14.3 KB): one notice and a "Local AI's runs" sources part for Needs you and Recent, a stale
 // running row drawn Unknown without its bar (components.js runCard), the kit's age words, and a caption on the faceplate's
 // "—". 376,970 bytes measured, home.js 14,798, components.js 11,675.
-// 2026-11-19: 369 → 370 KB for this browser's sign-in (sign-in A2): signin-report.js +923 bytes (whoami at load, the
-// one notice under the strip, the fetch watcher for 401 {signIn:true}, the "Sign in on this device to see …" state),
-// components.js +74 (fetchJson's .signIn, loadInto's sign-in state), app.js +18 (⌘K's Past work state, its own whoami
-// dropped), improve.js +75, app.css +155. main had 377,025 bytes (831 under 369 KB); 378,270 bytes (369.4 KB) measured.
-// After the UI review (the notice only when sign-in is required, the words where a read was refused, Changes' New idea,
-// Claude Code's state): 378,849 bytes (370.0 KB, 31 under), ui.js 119,931 (its own 118 KB below).
+// 2026-11-19: 369 → 370 KB for this browser's sign-in (sign-in A2): signin-report.js (whoami at load; the notice under
+// the strip, only while sign-in is required; "Pair this browser to see this. Approve the code on your Mac." and the one
+// Pair action where a read or save was refused), components.js (fetchJson's .signIn, loadInto's sign-in state), app.js
+// (⌘K's Past work state, its own whoami dropped), improve.js and app.css. main had 377,025 bytes (831 under 369 KB);
+// 378,849 bytes (370.0 KB, 31 under) after the UI review, ui.js 119,931 (its own 118 KB below).
 // 2026-11-19: 370 → 371 KB for the UI re-gate: sign-in required leaves a page's Pair and Mac step to the notice (and
 // trims lines drawn before whoami answered), Changes puts its sentence and one Pair in the panel with the list stepping
 // aside, and the idea sheet focuses Pair: signin-report.js +224, improve.js +160, app.js -2. 379,231 bytes measured
