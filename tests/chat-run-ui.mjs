@@ -570,6 +570,42 @@ await check('a stalled run opened later shows what arrived, the stall and Try ag
   await page.context().close();
 });
 
+// The browser names its wait in the request (stallMs), so when it gives up the server records a stall with what arrived
+// (tests/chat-cancel.test.cjs), not a cancel. Here the stub plays that server: a reload still shows the stall, with Try
+// again until a later turn asks the same question, and the Work card says Try again.
+await check('a stall the browser gave up on survives a reload; once tried again, Try again is gone', async () => {
+  const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'ask' }, chatTimeoutMs: 1000 });
+  await page.locator('#commandInput').fill('What is a mutex');
+  await page.locator('#commandGo').click();
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  const body = (await reqs(page))[0];
+  assert.equal(body.stallMs, 1000, 'the request names the wait');
+  const r = run(1, 'What is a mutex', '', { id: 'run-reload-1', threadId: body.threadId, status: 'running' }); r.output = null;
+  page.db.runs.push(r);
+  await page.evaluate(() => { window.__streams[0].push('meta', { model: 'm', sources: [], runId: 'run-reload-1' }); window.__streams[0].push('token', { text: 'A mutex ' }); });
+  await cut(page).waitFor(T);
+  Object.assign(r, { status: 'failed', error: 'No reply after 1 s', output: { text: 'A mutex ', stalled: true }, retryable: true });
+  const reopen = async () => {
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof window.showView === 'function' && window.LocalAIRuns && window.LocalAIChat, null, { timeout: 8000 });
+    await page.evaluate(id => window.LocalAIRuns.show(id), 'run-reload-1');
+    await cut(page).waitFor(T);
+  };
+  await reopen();
+  const turn = page.locator('#runDrawer .chat-turn--assistant', { has: page.locator('.chat-turn__cut') });
+  assert.match(await turn.innerText(), /^A mutex\s+No reply after 1 s Try again$/);
+  assert.equal(await cut(page).getByRole('button', { name: 'Try again' }).isEnabled(), true);
+  assert.equal(await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Stopped.' }).count(), 0);
+  // Tried again in another session: the thread has a later turn with the same question.
+  page.db.runs.push(run(2, 'What is a mutex', 'A mutex locks.', { id: 'run-reload-2', threadId: body.threadId }));
+  await reopen();
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'A mutex locks.' }).waitFor(T);
+  assert.equal(await cut(page).innerText(), 'No reply after 1 s');
+  assert.equal(await cut(page).getByRole('button').count(), 0, 'no Try again on a turn already tried again');
+  assert.equal(page.errors.length, 0, page.errors.join('|'));
+  await page.context().close();
+});
+
 // The server's own stall error (event: error, stalled) reads the same: on the turn, with Try again there.
 await check("the server's stall error marks the turn; Try again sends the question once", async () => {
   const page = await open(desk, '#home', { runs: three() });

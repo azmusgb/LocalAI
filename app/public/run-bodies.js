@@ -99,6 +99,8 @@
       out.push(stalled({ key: r.id, prompt, answer, kind, lost, sources: Array.isArray(o?.sources) ? o.sources : [], route: RB.routeText(r), memory: r.card?.memory || null, facts: r.card?.facts || null, run: r }, lv));
     }
     if (live && !(live.runId && runs.some(r => r.id === live.runId))) out.push(stalled({ key: 'live', prompt: live.prompt, answer: live.text || live.err || 'Thinking…', kind: live.err ? 'error' : live.text ? 'live' : 'wait', sources: [] }, live));
+    // A stalled turn already tried again (a later turn asks the same question) offers it no more, after a reload too.
+    out.forEach((t, i) => { if (t.cut) t.done = out.some((u, j) => j > i && u.prompt === t.prompt); });
     return out;
   }
   // The conversation so far as chat messages (answers that exist only), for a reply. A lost answer (the placeholder) is not the model's words: leave it out.
@@ -128,8 +130,8 @@
         if (who === 'assistant') { const want = t.route || '', rt = n.querySelector('.run-route'); if ((rt?.textContent || '') !== want) { rt?.remove(); if (want) n.appendChild(h('p', 'run-route', want)); } }
         if (who === 'assistant') { const want = [t.facts, t.memory].map(memoryLine).filter(Boolean), old = [...n.querySelectorAll('.run-memory')], sig = l => l.map(x => x.textContent).join('|'); if (sig(old) !== sig(want)) { old.forEach(x => x.remove()); n.append(...want); } }
         if (who === 'assistant') { n.dataset.srcs = ''; const ul = t.sources.length ? sourceLinks(t.sources) : null; const sig = ul ? ul.textContent : ''; if (n.dataset.srcSig !== sig) { n.dataset.srcSig = sig; n.querySelector('.chat-turn__sources')?.remove(); if (ul) n.appendChild(ul); } }
-        if (who === 'assistant') { const lv = t.cut, want = lv ? lv.err + (lv.retried ? '' : ' ') : '', el = n.querySelector('.chat-turn__cut');
-          if ((el?.dataset.t || '') !== want) { el?.remove(); if (want) { const p = h('p', 'chat-turn__cut', want); p.dataset.t = want; if (!lv.retried) p.append(againBtn(c, lv.prompt, () => { lv.retried = 1; })); n.appendChild(p); } } }
+        if (who === 'assistant') { const lv = t.cut, want = lv ? lv.err + (t.done ? '' : ' ') : '', el = n.querySelector('.chat-turn__cut');
+          if ((el?.dataset.t || '') !== want) { el?.remove(); if (want) { const p = h('p', 'chat-turn__cut', want); p.dataset.t = want; if (!t.done) p.append(againBtn(c, lv.prompt)); n.appendChild(p); } } }
         if (who === 'assistant') window.LocalAIUI.rateAnswer(n, t.run);
         rows.push(n);
       }
@@ -169,7 +171,7 @@
   }
 
   // Focus to the box first: the repaint drops the button.
-  function againBtn(c, text, then) { const b = h('button', 'btn-outline chat-body__retry', 'Try again'); b.type = 'button'; b.addEventListener('click', () => { then?.(); c.input.focus(); sendReply(c, text); }); return b; }
+  function againBtn(c, text) { const b = h('button', 'btn-outline chat-body__retry', 'Try again'); b.type = 'button'; b.addEventListener('click', () => { c.input.focus(); sendReply(c, text); }); return b; }
   function showError(c, message, retryText) {
     c.err.replaceChildren(document.createTextNode(message || ''));
     if (message && retryText) c.err.appendChild(againBtn(c, retryText));
