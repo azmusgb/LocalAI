@@ -292,9 +292,9 @@ async function submitEngineeringIntent(request,{assistantIndex=null,navigate=fal
   pollEngineeringIntent(run.id,msg);return run;
 }
 // One streamed /api/chat/stream turn (#ask, the run view): {runId, content}; rejects on errors. bigger/keepLocal: Home's toggles.
-// Silent past the server's limit (chatTimeoutMs) +10%: lost; throws stalled.
+// Silent past the server's limit (chatTimeoutMs) +10%: lost; throws stalled, naming that limit.
 async function streamChat({messages,webSearch=false,model,threadId,title,bigger,keepLocal,onOpen,onToken,onMeta,onDone,signal}){
-  const ac=new AbortController(),ms=(releaseState.config?.chatTimeoutMs||18e4)*1.1;let t,late;const arm=()=>{clearTimeout(t);t=setTimeout(()=>{late=1;ac.abort()},ms)};
+  const ac=new AbortController(),lim=releaseState.config?.chatTimeoutMs||18e4,ms=lim*1.1;let t,late;const arm=()=>{clearTimeout(t);t=setTimeout(()=>{late=1;ac.abort()},ms)};
   signal?.aborted?ac.abort():signal?.addEventListener('abort',()=>ac.abort());arm();
   try{
   const r=await fetch('/api/chat/stream',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,webSearch,model,threadId,title,bigger,keepLocal}),signal:ac.signal});
@@ -322,7 +322,7 @@ async function streamChat({messages,webSearch=false,model,threadId,title,bigger,
     }
   }
   return {runId,content};
-  }catch(e){throw late?Object.assign(new Error(`No reply after ${Math.round(ms/1e3)} s`),{stalled:1}):e}finally{clearTimeout(t)}
+  }catch(e){throw late?Object.assign(new Error(`No reply after ${Math.round(lim/1e3)} s`),{stalled:1}):e}finally{clearTimeout(t)}
 }
 window.LocalAIChatCore={streamChat,newThreadId};
 async function sendChat(){

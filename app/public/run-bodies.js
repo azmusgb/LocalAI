@@ -52,7 +52,7 @@
   function controllerFor(threadId) {
     let c = threads.get(threadId);
     if (c) return c;
-    c = { threadId, runs: [], lib: new Map(), libTried: new Set(), live: null, run: null, loading: false, hadFocus: false, scroll: { top: 0, near: true }, nodes: new Map(), frame: 0 };
+    c = { threadId, runs: [], lib: new Map(), libTried: new Set(), live: null, cut: new Map(), run: null, loading: false, hadFocus: false, scroll: { top: 0, near: true }, nodes: new Map(), frame: 0 };
     c.root = h('div', 'chat-body');
     c.turns = h('div', 'chat-body__turns'); c.turns.setAttribute('role', 'group'); c.turns.setAttribute('aria-label', 'Conversation');
     c.form = h('form', 'chat-body__reply'); c.form.noValidate = true;
@@ -76,6 +76,8 @@
 
   // The ledger keeps a too-long output as {truncated, preview}, where preview is the output as JSON text cut short: its text if it still parses, else nothing (never the raw JSON).
   const previewText = p => { try { const v = JSON.parse(p); const t = typeof v === 'string' ? v : v?.text; return typeof t === 'string' ? t : ''; } catch { return ''; } };
+  // A stalled reply (c.cut by run id) keeps what came and is marked cut off, with Try again.
+  const stalled = (t, lv) => lv?.stall ? { ...t, answer: lv.text, kind: lv.text ? '' : 'error', cut: lv } : t;
   // Every run of the thread, oldest first, as turns: {key, prompt, answer, kind}. kind: '' | 'wait' | 'error' | 'live'.
   function turnsOf(c) {
     const runs = c.runs.some(r => r.id === c.run?.id) || !c.run ? c.runs : [...c.runs, c.run];
@@ -83,7 +85,7 @@
     for (const r of sortRuns(runs)) {
       const prompt = r.input?.prompt || r.title || '';
       let answer = '', kind = '', lost = false;
-      const o = r.output, lv = live && live.runId === r.id ? live : null;
+      const o = r.output, lv = live && live.runId === r.id ? live : c.cut.get(r.id);
       if (o && o.truncated) { answer = c.lib.get(r.id) || previewText(o.preview); if (!answer) { answer = 'This answer was too long to keep here.'; lost = true; } }
       else answer = typeof o === 'string' ? o : o?.text || '';
       if (!answer && lv) answer = lv.text;
@@ -92,13 +94,14 @@
       else if (r.status === 'cancelled' && !answer) { answer = 'Stopped.'; kind = 'error'; }
       else if (!answer) { answer = 'Thinking…'; kind = 'wait'; }
       else if (lv?.streaming) kind = 'live';
-      out.push({ key: r.id, prompt, answer, kind, lost, sources: Array.isArray(o?.sources) ? o.sources : [], route: RB.routeText(r), memory: r.card?.memory || null, facts: r.card?.facts || null, run: r });
+      out.push(stalled({ key: r.id, prompt, answer, kind, lost, sources: Array.isArray(o?.sources) ? o.sources : [], route: RB.routeText(r), memory: r.card?.memory || null, facts: r.card?.facts || null, run: r }, lv));
     }
-    if (live && !(live.runId && runs.some(r => r.id === live.runId))) out.push({ key: 'live', prompt: live.prompt, answer: live.text || live.err || 'Thinking…', kind: live.err ? 'error' : live.text ? 'live' : 'wait', sources: [] });
+    if (live && !(live.runId && runs.some(r => r.id === live.runId))) out.push(stalled({ key: 'live', prompt: live.prompt, answer: live.text || live.err || 'Thinking…', kind: live.err ? 'error' : live.text ? 'live' : 'wait', sources: [] }, live));
     return out;
   }
   // The conversation so far as chat messages (answers that exist only), for a reply. A lost answer (the placeholder) is not the model's words: leave it out.
-  const history = c => turnsOf(c).flatMap(t => [{ role: 'user', content: t.prompt }, ...((t.kind === '' || t.kind === 'live') && !t.lost ? [{ role: 'assistant', content: t.answer }] : [])]).filter(m => m.content);
+  // Nor a cut-off turn: Try again asks its question again.
+  const history = c => turnsOf(c).filter(t => !t.cut).flatMap(t => [{ role: 'user', content: t.prompt }, ...((t.kind === '' || t.kind === 'live') && !t.lost ? [{ role: 'assistant', content: t.answer }] : [])]).filter(m => m.content);
 
   const sourceLinks = sources => {
     const ul = h('ul', 'chat-turn__sources');
@@ -123,6 +126,8 @@
         if (who === 'assistant') { const want = t.route || '', rt = n.querySelector('.run-route'); if ((rt?.textContent || '') !== want) { rt?.remove(); if (want) n.appendChild(h('p', 'run-route', want)); } }
         if (who === 'assistant') { const want = [t.facts, t.memory].map(memoryLine).filter(Boolean), old = [...n.querySelectorAll('.run-memory')], sig = l => l.map(x => x.textContent).join('|'); if (sig(old) !== sig(want)) { old.forEach(x => x.remove()); n.append(...want); } }
         if (who === 'assistant') { n.dataset.srcs = ''; const ul = t.sources.length ? sourceLinks(t.sources) : null; const sig = ul ? ul.textContent : ''; if (n.dataset.srcSig !== sig) { n.dataset.srcSig = sig; n.querySelector('.chat-turn__sources')?.remove(); if (ul) n.appendChild(ul); } }
+        if (who === 'assistant') { const lv = t.cut, want = lv ? lv.err + (lv.retried ? '' : ' ') : '', el = n.querySelector('.chat-turn__cut');
+          if ((el?.dataset.t || '') !== want) { el?.remove(); if (want) { const p = h('p', 'chat-turn__cut', want); p.dataset.t = want; if (!lv.retried) p.append(againBtn(c, lv.prompt, () => { lv.retried = 1; })); n.appendChild(p); } } }
         if (who === 'assistant') window.LocalAIUI.rateAnswer(n, t.run);
         rows.push(n);
       }
@@ -161,9 +166,11 @@
     } catch {} finally { c.loading = false; schedule(c); }
   }
 
+  // Focus to the box first: the repaint drops the button.
+  function againBtn(c, text, then) { const b = h('button', 'btn-outline chat-body__retry', 'Try again'); b.type = 'button'; b.addEventListener('click', () => { then?.(); c.input.focus(); sendReply(c, text); }); return b; }
   function showError(c, message, retryText) {
     c.err.replaceChildren(document.createTextNode(message || ''));
-    if (message && retryText) { const b = h('button', 'btn-outline chat-body__retry', 'Retry'); b.type = 'button'; b.addEventListener('click', () => sendReply(c, retryText)); c.err.appendChild(b); }
+    if (message && retryText) c.err.appendChild(againBtn(c, retryText));
     c.err.hidden = !message;
   }
   function stop(c) { c.live?.controller.abort(); }
@@ -184,16 +191,17 @@
       if (e.name !== 'AbortError') {
         live.err = e.message || 'The reply could not be sent.';
         const unsent = !live.text && !live.runId, said = e.stalled ? live.err : `The reply could not be sent: ${live.err}`;
-        // A reply that never started goes back to the box (a stall: Retry), unless the person has typed something new meanwhile: then Retry offers it.
-        if (unsent && !e.stalled && !c.input.value.trim()) { c.input.value = text; grow(c); showError(c, said); }
-        else showError(c, said, unsent || e.stalled ? text : '');
+        // A started reply that stalled is marked on its turn. One that never started goes back to the box, unless the person has typed something new meanwhile: then Try again offers it.
+        if (e.stalled && live.runId) { live.stall = 1; c.cut.set(live.runId, live); }
+        else if (unsent && !c.input.value.trim()) { c.input.value = text; grow(c); showError(c, said); }
+        else showError(c, said, unsent ? text : '');
         if (unsent) c.live = null;
       }
     } finally {
       live.streaming = false; paint(c);
       if (c.live === live && !live.text && !live.runId) c.live = null;
       await loadThread(c);
-      document.getElementById('runLiveRegion')?.replaceChildren(document.createTextNode(live.err ? 'The reply failed.' : 'Reply ready.'));
+      document.getElementById('runLiveRegion')?.replaceChildren(document.createTextNode(live.stall ? live.err : live.err ? 'The reply failed.' : 'Reply ready.'));
     }
   }
 
@@ -244,13 +252,13 @@
         live.streaming = false;
         if (!resolved) { threads.delete(threadId); pending?.fail(e.message || 'Something went wrong.'); throw e; }
         if (e.name !== 'AbortError') live.err = e.message;
-        if (e.stalled) showError(c, e.message, text);
+        if (e.stalled) { live.stall = 1; c.cut.set(live.runId, live); }
       } finally {
         live.streaming = false;
         if (resolved) {
           paint(c); loadThread(c);
           // A screen reader hears nothing when the text stops growing: say the answer is ready (a failed start already said why; Stop says nothing new).
-          if (!live.controller.signal.aborted) document.getElementById('runLiveRegion')?.replaceChildren(document.createTextNode(live.err ? 'The answer failed.' : 'Answer ready.'));
+          if (!live.controller.signal.aborted) document.getElementById('runLiveRegion')?.replaceChildren(document.createTextNode(live.stall ? live.err : live.err ? 'The answer failed.' : 'Answer ready.'));
         }
       }
     }

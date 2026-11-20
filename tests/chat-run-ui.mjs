@@ -447,7 +447,8 @@ await check('a failed reply with an empty box puts the text back', async () => {
 
 // A stream that goes quiet (headers sent, then nothing) never leaves "Thinking…" up for good: past the server's stall
 // limit plus 10% the view says "No reply after N s" and offers Retry, and never shows an answer.
-await check('a stream that stalls after the run starts says "No reply after N s" and Retry asks again', async () => {
+const cut = page => page.locator('#runDrawer .chat-turn__cut');
+await check('a reply cut off by a stall keeps its text and mark; Try again focuses the box and asks the question once', async () => {
   const page = await open(desk, '#home', { storage: { 'localai.home.mode': 'ask' }, chatTimeoutMs: 1000 });
   await page.locator('#commandInput').fill('What is a mutex');
   await page.locator('#commandGo').click();
@@ -455,17 +456,28 @@ await check('a stream that stalls after the run starts says "No reply after N s"
   const body = (await reqs(page))[0];
   const r = run(1, 'What is a mutex', '', { id: 'run-stall-1', threadId: body.threadId, status: 'running' }); r.output = null;
   page.db.runs.push(r);
-  await page.evaluate(() => window.__streams[0].push('meta', { model: 'm', sources: [], runId: 'run-stall-1' }));
+  await page.evaluate(() => { window.__streams[0].push('meta', { model: 'm', sources: [], runId: 'run-stall-1' }); window.__streams[0].push('token', { text: 'A mutex ' }); });
   await page.waitForFunction(() => location.hash === '#run/run-stall-1', null, T);
-  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Thinking…' }).waitFor(T);
-  // 1 s limit + 10%: the turn and the notice say so, the stream was let go, and nothing claims an answer.
-  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'No reply after 1 s' }).waitFor(T);
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'A mutex' }).waitFor(T);
+  // 1 s limit + 10%: the turn keeps what came and says it was cut off, naming the server's limit; the stream was let go.
+  await cut(page).waitFor(T);
+  r.status = 'cancelled'; // what the server makes of the closed stream
+  assert.equal(await cut(page).innerText(), 'No reply after 1 s Try again');
   assert.equal(await page.evaluate(() => window.__aborted), 1, 'the stalled stream was let go');
-  assert.match(await page.locator('#runDrawer .chat-body__error').innerText(), /No reply after 1 s/);
+  assert.equal(await page.locator('#runDrawer .chat-body__error').isVisible(), false, 'one message: on the turn, not below');
   assert.equal(await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Thinking…' }).count(), 0);
-  await page.locator('#runDrawer .chat-body__retry').click();
+  assert.match(await page.locator('#runLiveRegion').textContent(), /No reply after 1 s/);
+  await cut(page).getByRole('button', { name: 'Try again' }).click();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'runReply', 'focus goes to the reply box');
   await page.waitForFunction(() => window.__reqs.length === 2, null, T);
-  assert.equal((await reqs(page))[1].messages.at(-1).content, 'What is a mutex');
+  assert.deepEqual((await reqs(page))[1].messages, [{ role: 'user', content: 'What is a mutex' }], 'the question once, and no part answer');
+  // The cut-off turn stays as it was, without its Try again, and the new turn waits below it.
+  await page.waitForFunction(() => !document.querySelector('#runDrawer .chat-turn__cut button'), null, T);
+  const old = page.locator('#runDrawer .chat-turn--assistant', { has: page.locator('.chat-turn__cut') });
+  assert.equal(await old.count(), 1);
+  assert.match(await old.innerText(), /^A mutex\s+No reply after 1 s$/);
+  await page.locator('#runDrawer .chat-turn--assistant', { hasText: 'Thinking…' }).waitFor(T);
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'runReply');
   assert.equal(page.errors.length, 0, page.errors.join('|'));
   await page.context().close();
 });
@@ -483,18 +495,36 @@ await check('a stream that never starts says "No reply after N s" in the pending
   await page.context().close();
 });
 
-// The server's own stall error (event: error, stalled) reads the same and offers Retry too.
-await check("the server's stall error says so and offers Retry on a reply", async () => {
+await check('a reply that stalls before it starts goes back to the box with the stall message', async () => {
+  const page = await open(desk, '#home', { runs: three(), chatTimeoutMs: 1000 });
+  await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
+  await page.locator('#runReply').fill('fourth question'); await page.locator('#runReply').press('Enter');
+  await page.waitForFunction(() => window.__reqs.length === 1, null, T);
+  await page.locator('#runDrawer .chat-body__error', { hasText: 'No reply after 1 s' }).waitFor(T);
+  assert.equal(await page.locator('#runReply').inputValue(), 'fourth question');
+  assert.equal(await page.locator('#runDrawer .chat-body__error').innerText(), 'No reply after 1 s');
+  assert.equal(await page.locator('#runDrawer .chat-turn--user', { hasText: 'fourth question' }).count(), 0);
+  assert.equal(page.errors.length, 0, page.errors.join('|'));
+  await page.context().close();
+});
+
+// The server's own stall error (event: error, stalled) reads the same: on the turn, with Try again there.
+await check("the server's stall error marks the turn; Try again sends the question once", async () => {
   const page = await open(desk, '#home', { runs: three() });
   await page.evaluate(id => window.LocalAIRuns.show(id), page.db.runs[0].id);
   await page.locator('#runReply').fill('fourth question'); await page.locator('#runReply').press('Enter');
   await page.waitForFunction(() => window.__reqs.length === 1, null, T);
   await page.evaluate(() => { window.__streams[0].push('meta', { model: 'm', sources: [], runId: 'run-stall-2' }); window.__streams[0].push('error', { error: 'No reply after 180 s', stalled: true, runId: 'run-stall-2' }); });
-  await page.locator('#runDrawer .chat-body__error', { hasText: 'No reply after 180 s' }).waitFor(T);
-  assert.ok(!/could not be sent/.test(await page.locator('#runDrawer .chat-body__error').innerText()));
-  await page.locator('#runDrawer .chat-body__retry').click();
+  await cut(page).waitFor(T);
+  assert.equal(await cut(page).innerText(), 'No reply after 180 s Try again');
+  assert.equal(await page.locator('#runDrawer .chat-body__error').isVisible(), false);
+  await cut(page).getByRole('button', { name: 'Try again' }).click();
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'runReply');
   await page.waitForFunction(() => window.__reqs.length === 2, null, T);
-  assert.equal((await reqs(page))[1].messages.at(-1).content, 'fourth question');
+  const sent = (await reqs(page))[1].messages;
+  assert.equal(sent.filter(m => m.content === 'fourth question').length, 1, JSON.stringify(sent));
+  assert.deepEqual(sent.at(-1), { role: 'user', content: 'fourth question' });
+  assert.equal(sent.length, 7, 'three answered turns and the question');
   await page.context().close();
 });
 
