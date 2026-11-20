@@ -224,7 +224,10 @@ const TOTAL = 370 * KB;
 // app.css +0.1 KB, its Atlas section rewritten in one pass without the layered overrides; 321.8 KB measured).
 // 2026-11-02: index.html 16 → 17 KB for the navigation update: the Settings and Tools pages, the Spreadsheets chip and
 // mode, and Home's On Pi Hub line (16.1 KB measured).
-const PER_FILE = { 'ui.js': 117 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40 * KB, 'index.html': 17 * KB, 'home.js': 14.5 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.3 * KB };
+// 2026-11-19: ui.js 117 → 118 KB for the Claude Code page's sign-in state (its board api() marks .signIn; Activity says
+// to pair, the live chip says "not read") and the pairing card's words: +134 bytes over main's 119,797 (11 under 117 KB);
+// 119,931 measured. The shell total stays within 370 KB (378,849 bytes).
+const PER_FILE = { 'ui.js': 118 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40 * KB, 'index.html': 17 * KB, 'home.js': 14.5 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 11.3 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
