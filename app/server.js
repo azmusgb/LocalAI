@@ -792,6 +792,8 @@ try { repairRunTextOnce(); } catch (e) { console.error(`${nowIso()} Run text rep
 try { repairImageSummariesOnce(); } catch (e) { console.error(`${nowIso()} Image summary repair failed:`, e); }
 try { repairLibraryThreadsOnce(); } catch (e) { console.error(`${nowIso()} Library thread repair failed:`, e); }
 try { repairLibraryKeptOnce(); } catch (e) { console.error(`${nowIso()} Library kept-only repair failed:`, e); }
+// One time: Past work entries named after the instructions a House question was wrapped in get the question (app/journal-repair.js).
+try { const r = require('./journal-repair').repairPromptTitles({ storage, journal, runLedger, now: nowIso }); if (r.retitled) console.log(`${nowIso()} Retitled Past work entries by their question: ${r.retitled}`); } catch (e) { console.error(`${nowIso()} Past work title repair failed:`, e); }
 
 server.listen(PORT, '0.0.0.0', () => {
   warmText();

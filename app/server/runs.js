@@ -4,9 +4,12 @@
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
 const { stickyPrivate } = require('../model-router');
+const { wrappedQuestion } = require('../prompt-title');
 function createRuns(ctx) {
   const { AUTOMATION_RUNS_STORE, MODEL, RUNS_STORE, WORK_CHIPS, activeRunControllers, agentRunStore, answerFeedback, approvalStore, automationRunStore, changeStore, cleanRunId, effectiveEngineeringRuns, fetchWithTimeout, gridcraftRuns, json, keptMarker, listenPort, needsYou, nowIso, projectStore, readBody, recordActivity, runCard, runLedger, sanitizeMessages, saveStore, seenRuns, storageError, titleFromText, withSeen, workKind } = ctx;
   function createChatExecution(body,streaming){
+    // Named by the owner's question: the last user message, or the question it wraps in instructions (Pi Hub's House
+    // question). sanitizeMessages keeps only user and assistant turns, so a system message never names a run.
     const messages=sanitizeMessages(body?.messages);const prompt=[...messages].reverse().find(m=>m.role==='user')?.content||'Chat';
     const model=typeof body?.model==='string'&&body.model.trim()?body.model.trim():MODEL;
     // eslint-disable-next-line no-control-regex -- control characters are what it removes
@@ -17,7 +20,7 @@ function createRuns(ctx) {
     // A request that names a project (project Memory in chat, D1) is filed under it, if that project exists.
     // A failed project read files nothing; the chat itself still runs (and says the notes couldn't be read).
     let projectId;try{projectId=typeof body?.projectId==='string'&&cleanRunId(body.projectId)&&projectStore().some(p=>p.id===body.projectId)?body.projectId:undefined}catch{projectId=undefined}
-    return runLedger.create({type:body?.webSearch===true?'research':'chat',title:label||titleFromText(prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,projectId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(label?{label}:{}),...(body?.voice===true||body?.voiceRun===true?{voice:true}:{})}});
+    return runLedger.create({type:body?.webSearch===true?'research':'chat',title:label||titleFromText(wrappedQuestion(prompt)||prompt,body?.webSearch===true?'Research':'Chat'),input:{prompt:prompt.slice(0,4000),model,webSearch:body?.webSearch===true,messageCount:messages.length},cancellable:streaming===true,threadId:body?.threadId,projectId,retryRequest:{path:'/api/chat',body:retryBody},meta:{streaming:streaming===true,...(label?{label}:{}),...(body?.voice===true||body?.voiceRun===true?{voice:true}:{})}});
   }
   function normalizedExecutionStatus(value){
     const s=String(value||'').toLowerCase();

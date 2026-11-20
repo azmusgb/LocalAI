@@ -68,6 +68,9 @@ const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const DATE_WORDS = new RegExp(String.raw`\s*\b(?:(?:on|in|during|from|for)\s+)?(?:(?:last|this)\s+(?:week|month)|today|yesterday|(?:last\s+)?(?:${DAYS.join('|')})|(?:${MONTHS.join('|')}))\b`, 'i');
 
+const cleanTitle = t => redact(String(t ?? '').slice(0, TITLE_MAX * 2).replace(/\s+/g, ' ').trim()).slice(0, TITLE_MAX) || 'Untitled';
+const cleanBody = b => redact(b, BODY_MAX * 2).slice(0, BODY_MAX);
+
 function createJournal({ db, now = Date.now, timeZone = 'UTC', log = console.error } = {}) {
   if (!db || typeof db.exec !== 'function') throw new TypeError('db is required');
   let insert, tomb;
@@ -79,7 +82,7 @@ function createJournal({ db, now = Date.now, timeZone = 'UTC', log = console.err
     // Without the journal Local AI still works; it just remembers nothing.
     log(`${new Date().toISOString()} Journal unavailable:`, error);
     const none = () => null;
-    return { disabled: true, record: none, remove: () => false, search: () => ({ items: [], next: null }), get: none, countSince: () => 0, runTitles: () => [], dayOf: iso => String(iso).slice(0, 10), window: text => ({ from: null, to: null, rest: String(text ?? '').trim() }) };
+    return { disabled: true, record: none, remove: () => false, search: () => ({ items: [], next: null }), get: none, countSince: () => 0, runTitles: () => [], promptEntries: () => [], rewrite: () => false, dayOf: iso => String(iso).slice(0, 10), window: text => ({ from: null, to: null, rest: String(text ?? '').trim() }) };
   }
   let lastMs = 0, seq = 0, lastLog = 0;
 
@@ -98,8 +101,7 @@ function createJournal({ db, now = Date.now, timeZone = 'UTC', log = console.err
       if (tomb.get(ref)) return null;
       const atMs = Date.parse(e.at);
       const at = new Date(Number.isFinite(atMs) ? atMs : now()).toISOString();
-      const title = redact(String(e.title ?? '').slice(0, TITLE_MAX * 2).replace(/\s+/g, ' ').trim()).slice(0, TITLE_MAX) || 'Untitled';
-      const body = redact(e.body, BODY_MAX * 2).slice(0, BODY_MAX);
+      const title = cleanTitle(e.title), body = cleanBody(e.body);
       const link = typeof e.link === 'string' && e.link ? e.link.slice(0, 300) : null;
       let meta = '{}';
       try { meta = JSON.stringify(e.meta && typeof e.meta === 'object' ? e.meta : {}); if (meta.length > 8192) meta = '{}'; } catch {}
@@ -186,8 +188,28 @@ function createJournal({ db, now = Date.now, timeZone = 'UTC', log = console.err
   const get = id => hydrate(db.prepare('SELECT * FROM journal WHERE id = ?').get(String(id || '')));
   // Every run entry's time and title, for the import's duplicate check (a few hundred rows; no bodies).
   const runTitles = () => db.prepare("SELECT at, title FROM journal WHERE source = 'run'").all().map(r => ({ at: r.at, title: r.title }));
+  // Run entries that may hold a prompt (app/journal-repair.js): id, ref, title and body of those whose body quotes what
+  // was asked ("Asked: …", runText) or whose title reads like instructions ("You are …").
+  const promptEntries = () => db.prepare(`SELECT id, ref, title, body FROM journal WHERE source = 'run'
+    AND (instr(body, 'Asked: ') > 0 OR lower(substr(title, 1, 8)) = 'you are ')`).all();
+  // A new title and body for an entry, cleaned as record() cleans them. The search index has no update trigger (journal_fts
+  // is external content), so its row is removed with the old text and added with the new. Synchronous; true if it changed.
+  function rewrite(id, { title, body }) {
+    const row = db.prepare('SELECT seq, title, body FROM journal WHERE id = ?').get(String(id || ''));
+    if (!row) return false;
+    const t = cleanTitle(title), b = cleanBody(body);
+    if (t === row.title && b === row.body) return false;
+    db.exec('SAVEPOINT journal_rewrite');
+    try {
+      db.prepare("INSERT INTO journal_fts(journal_fts, rowid, title, body) VALUES ('delete', ?, ?, ?)").run(row.seq, row.title, row.body);
+      db.prepare('UPDATE journal SET title = ?, body = ? WHERE seq = ?').run(t, b, row.seq);
+      db.prepare('INSERT INTO journal_fts(rowid, title, body) VALUES (?, ?, ?)').run(row.seq, t, b);
+      db.exec('RELEASE journal_rewrite');
+    } catch (error) { db.exec('ROLLBACK TO journal_rewrite; RELEASE journal_rewrite'); throw error; }
+    return true;
+  }
   const countSince = iso => db.prepare('SELECT count(*) AS n FROM journal WHERE at >= ?').get(String(iso)).n;
-  return { record, remove, search, get, countSince, runTitles, dayOf, window };
+  return { record, remove, search, get, countSince, runTitles, promptEntries, rewrite, dayOf, window };
 }
 
 module.exports = { createJournal, redact, ftsQuery };

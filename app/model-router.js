@@ -104,4 +104,4 @@ function label(used) {
   return `Answered by ${named ? named[1] : model || 'a cloud model'} · ${provider}`;
 }
 
-module.exports = { route, table, label, personal, stickyPrivate, KINDS, CLOUD };
+module.exports = { route, table, label, personal, stickyPrivate, KINDS, CLOUD, PROVIDER_NAMES };
