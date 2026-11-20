@@ -40,15 +40,17 @@ function backlogRow(it){
  row.querySelectorAll('[data-vote]').forEach(b=>b.onclick=async()=>{b.disabled=true;rowError(row,'');try{await post('/api/claude/findings/vote',{id:it.id,delta:Number(b.dataset.vote)});await refresh()}catch(e){b.disabled=false;rowError(row,`Couldn't save your vote: ${e.message}`)}});
  return row;
 }
-// Refused for sign-in: New idea disabled, its reason beside it.
+// Refused for sign-in: the screen's one Pair in the panel, New idea disabled with its reason; the list steps aside.
 function newIdeaOff(off){const b=$('improveNewIdea');if(!b)return;b.disabled=off;let w=$('improveNewIdeaWhy');
+ b.parentElement.querySelector('[data-signin-pair]')?.remove();if(off)b.insertAdjacentHTML('beforebegin',root.LocalAISignIn?.pair||'');
  if(off&&!w){w=document.createElement('span');w.id='improveNewIdeaWhy';w.className='meta';b.after(w);b.setAttribute('aria-describedby',w.id)}
- if(w){w.textContent=off?'Pair this browser to add ideas.':'';w.hidden=!off}}
+ if(w){w.textContent=off?'Available once this browser is paired.':'';w.hidden=!off}
+ const l=$('backlogList')?.closest('section');if(l)l.hidden=off}
 // Backlog's faceplate (Pi Hub A7 P1, L2b): how many items, the top one, and where they came from. A failed read shows no
-// count; one refused for sign-in leaves the words to the list, and its source isn't down.
+// count; one refused for sign-in says to pair, and its source isn't down.
 function backlogPlate(items,signIn){
  const ui=root.LocalAIUI;if(!ui?.plate)return;newIdeaOff(!items&&!!signIn);
- if(!items){ui.plate('backlogPlate',{readout:'—'});const t=$('backlogTop');if(t)t.textContent=signIn?'':"Couldn't read the Backlog.";const r=$('backlogReadings');if(r)r.hidden=true;ui.sources('backlogSources',"Local AI's improve board",signIn?'unknown':'bad');return}
+ if(!items){ui.plate('backlogPlate',{readout:'—'});const t=$('backlogTop');if(t){t.textContent=signIn?root.LocalAISignIn?.words('see')||'':"Couldn't read the Backlog.";signIn?t.dataset.signinWords='see':delete t.dataset.signinWords}const r=$('backlogReadings');if(r)r.hidden=true;ui.sources('backlogSources',"Local AI's improve board",signIn?'unknown':'bad');return}
  ui.plate('backlogPlate',{readout:items.length?items.length:'Empty',unit:items.length?(items.length===1?'item':'items'):''});
  const t=$('backlogTop');if(t)t.textContent=items.length?`Top: ${plain(items[0].title)}`:'Add an idea, or promote a Signal.';
  const r=$('backlogReadings');if(r){r.hidden=!items.length;r.querySelectorAll('[data-count]').forEach(d=>{d.textContent=String(items.filter(i=>i.source===d.dataset.count).length)})}
@@ -217,10 +219,11 @@ function openIdea(text,{from='improve'}={}){st.ideaFrom=from;
  showSheet(d,()=>{const r=st.ideaDone;st.ideaDone=null;r?.(null)});$('improveIdeaText').focus();
  return new Promise(res=>{st.ideaDone=res});
 }
-// Refused for sign-in: the Pair line (signin-report.js) beside the error line.
+// Refused for sign-in: the Pair line beside the error, focused (the pressed button is disabled while saving).
 function ideaFail(err,e){const S=e?.signIn&&root.LocalAISignIn;let n=$('improveIdeaSignIn');
  if(!n){n=document.createElement('div');n.id='improveIdeaSignIn';n.setAttribute('role','alert');err.after(n)}
- n.innerHTML=S?S.say(S.act):'';err.textContent=S?'':e?.message||'';err.hidden=!!S||!e}
+ n.innerHTML=S?S.say('act'):'';err.textContent=S?'':e?.message||'';err.hidden=!!S||!e;
+ if(S)(n.querySelector('[data-signin-pair]')||$('improveIdeaText'))?.focus()}
 async function submitIdea(start,btn){
  const text=$('improveIdeaText').value,err=$('improveIdeaError');ideaFail(err);
  if(!text.trim()){err.textContent='Describe the change first.';err.hidden=false;return}

@@ -36,7 +36,7 @@ async function open({ who = null, reads = false, viewport = DESK, colorScheme = 
   const page = await context.newPage();
   page.errors = []; page.on('pageerror', e => page.errors.push(e.message));
   page.whoami = 0;
-  await page.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  await page.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); sessionStorage.setItem('localai.ownerFacts.expanded', '1'); } catch {} });
   if (who !== null) await page.route('**/api/claude/chat/whoami', route => {
     page.whoami++;
     return typeof who === 'number' ? route.fulfill({ status: who, contentType: 'application/json', body: '{"error":"down"}' })
@@ -89,22 +89,44 @@ await check('sign-in required: one notice under the page strip, read politely, w
   await page.context().close();
 });
 
-await check('Changes, items read refused: the sentence and one Pair in the list, New idea disabled with its reason', async () => {
+await check('Changes, items read refused: the sentence and the one Pair in the panel, New idea disabled with its reason', async () => {
   const page = await open({ who: OUT, reads: true, hash: '#backlog' });
-  const state = page.locator('#backlogList [data-signin-state]');
-  await state.waitFor(T);
-  assert.equal((await state.innerText()).replace(/\s+/g, ' ').trim(), `${SEE} Pair this browser`);
+  const pair = page.locator('#backlogPlate .ui-faceplate__actions a[data-signin-pair]');
+  await pair.waitFor(T);
+  assert.equal((await page.locator('#backlogTop').innerText()).trim(), SEE, 'the faceplate says it, not only "—"');
   assert.equal(await visiblePairs(page, '#backlog'), 1, 'one Pair button on the screen');
-  assert.equal(await page.locator('#backlogList [role="alert"], #backlogList button', { hasText: 'Retry' }).count(), 0, 'no error to retry');
+  assert.equal(await page.locator('#backlogList').isVisible(), false, 'the list, which would only say it again, steps aside');
+  assert.equal(await page.locator('#backlog [role="alert"], #backlog button', { hasText: 'Retry' }).count(), 0, 'no error to retry');
   const idea = page.locator('#improveNewIdea');
   assert.equal(await idea.isDisabled(), true);
-  assert.equal((await page.locator('#improveNewIdeaWhy').innerText()).trim(), 'Pair this browser to add ideas.');
+  assert.equal((await page.locator('#improveNewIdeaWhy').innerText()).trim(), 'Available once this browser is paired.');
   assert.equal(await idea.getAttribute('aria-describedby'), 'improveNewIdeaWhy');
   assert.doesNotMatch(await page.locator('#backlogSources').innerText(), /Not answering/, 'a refused read is not a source that is down');
   assert.equal(await notice(page).count(), 0, 'no app-wide notice in report mode');
   assert.deepEqual(await axe(page, '#backlog'), []);
   assert.deepEqual(page.errors, []);
   await shot(page, 'changes-desktop-dark');
+  await page.context().close();
+});
+
+await check('sign-in required, Changes and suggested facts: the notice is the one Pair and the one Mac step', async () => {
+  const page = await open({ who: REQUIRED, reads: true, hash: '#backlog' });
+  await notice(page).waitFor(T);
+  await page.waitForFunction(() => document.getElementById('improveNewIdea')?.disabled, null, T);
+  await settle(page);
+  assert.equal(await visiblePairs(page, 'main'), 1, 'exactly one visible Pair on Changes');
+  assert.equal(await page.locator('#signinNotice [data-signin-pair]').count(), 1, "and it is the notice's");
+  assert.equal((await page.locator('#backlogTop').innerText()).trim(), 'Pair this browser to see this.', 'no second Mac step');
+  assert.equal(await page.locator('main').getByText('Approve the code on your Mac.', { exact: false }).count(), 1);
+  await shot(page, 'required-changes-desktop-dark');
+  await page.evaluate(() => window.showView('memory'));
+  const facts = page.locator('#ownerSuggestState');
+  await facts.waitFor(T);
+  assert.equal((await facts.innerText()).trim(), 'Pair this browser to see this.');
+  assert.equal(await visiblePairs(page, '#memory'), 0, 'suggested facts leave Pair to the notice');
+  assert.equal(await page.evaluate(() => window.LocalAISignIn.say('act')), '<div class="ui-notice ui-notice--warn signin-line "><span data-signin-words="act">Pair this browser to do this.</span></div>');
+  assert.equal(await page.evaluate(() => window.LocalAISignIn.pair), '');
+  assert.deepEqual(page.errors, []);
   await page.context().close();
 });
 
@@ -119,6 +141,7 @@ await check('the idea sheet: a save refused for sign-in says so with Pair, which
   assert.equal((await line.locator('span').innerText()).trim(), ACT);
   assert.equal(await page.locator('#improveIdeaError').isVisible(), false, 'not the raw error as well');
   assert.equal(await page.locator('#improveIdeaText').inputValue(), 'Remember my image size', 'what was typed is kept');
+  assert.equal(await page.evaluate(() => document.activeElement?.closest('#improveIdeaSignIn') && document.activeElement.hasAttribute('data-signin-pair')), true, 'focus on its Pair, not dropped to the page');
   await shot(page, 'idea-sheet-desktop-dark');
   await line.locator('[data-signin-pair]').click();
   await page.waitForSelector('#claude.active', T);
@@ -182,7 +205,7 @@ await check('a failed whoami decides nothing; a refused read still says to pair 
   const plain = await page.evaluate(() => window.LocalAIUI.fetchJson('/api/claude/chat/sessions').then(() => null, e => e.signIn));
   assert.equal(plain, false, 'a 401 without signIn is not a sign-in refusal');
   await page.evaluate(() => window.showView('backlog'));
-  await page.locator('#backlogList [data-signin-state]').waitFor(T);
+  await page.locator('#backlogPlate [data-signin-pair]').waitFor(T);
   assert.equal(await notice(page).count(), 0);
   assert.deepEqual(page.errors, []);
   await page.context().close();
@@ -225,11 +248,10 @@ await check('phone width, light and dark: the notice and Changes fit without ove
     if (colorScheme === 'light') { await page.setViewportSize(DESK); await shot(page, 'required-notice-desktop-light'); await page.setViewportSize(PHONE); }
     await page.context().close();
     const changes = await open({ who: OUT, reads: true, viewport: PHONE, colorScheme, hasTouch: true, hash: '#backlog' });
-    await changes.locator('#backlogList [data-signin-state]').waitFor(T);
+    await changes.locator('#backlogPlate [data-signin-pair]').waitFor(T);
+    assert.ok(await changes.locator('#backlogPlate [data-signin-pair]').evaluate(a => a.getBoundingClientRect().bottom <= innerHeight), 'Pair above the fold on a phone');
     assert.ok(await changes.evaluate(() => document.documentElement.scrollWidth - innerWidth) <= 0, 'Changes: no horizontal overflow');
     await shot(changes, `changes-phone-${colorScheme}`);
-    await changes.locator('#backlogList').scrollIntoViewIfNeeded();
-    await shot(changes, `changes-list-phone-${colorScheme}`);
     if (colorScheme === 'light') { await changes.setViewportSize(DESK); await shot(changes, 'changes-desktop-light'); }
     await changes.context().close();
   }
