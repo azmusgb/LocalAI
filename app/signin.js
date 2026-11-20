@@ -123,7 +123,7 @@ function createSignIn({ storage, signedIn, routeKeys = {}, required = process.en
         .map(c => ({ ip: c.ip, kind: c.kind, count: c.count, firstAt: new Date(c.firstAt).toISOString(), lastAt: new Date(c.lastAt).toISOString(), lastPath: c.lastPath, lastMethod: c.lastMethod })) });
   }
   function clear() { report.since = now(); report.callers.clear(); dirty = true; save(true); }
-  return { check, blocks, apiReport, clear, flush: () => save(true) };
+  return { check, blocks, apiReport, clear, flush: () => save(true), mode: required ? 'required' : 'report' };
 }
 
 module.exports = { createSignIn, kindOf, guarded, hostAddresses, defaultGateway, OPEN };

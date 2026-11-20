@@ -148,7 +148,7 @@ const runLedger = new RunLedger({ storage, onTransition: (run, previous) => {
   const entry = journalRecorders.runEntry(run); if (entry) journal.record(entry);
 } });
 const activeRunControllers = new Map();
-const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody, isHost: req => isHostReq(req) });
+const claudeChat = require('./claude-chat').createClaudeChat({ storage, dataDir: DATA_DIR, json, readBody, isHost: req => isHostReq(req), signInMode: () => signIn.mode });
 const hostAddrs = require('./signin').hostAddresses();
 const isHostReq = req => !req.headers['x-forwarded-for'] && hostAddrs.has(String(req.socket?.remoteAddress || '').replace(/^::ffff:/, ''));
 // Print lab: a read-only copy of the Mac's print-lab records; only the Mac (its key) writes. The live print
