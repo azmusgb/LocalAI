@@ -183,7 +183,11 @@ const KB = 1024;
 // 368 KB, home.js 155 bytes over 14.3 KB): one notice and a "Local AI's runs" sources part for Needs you and Recent, a stale
 // running row drawn Unknown without its bar (components.js runCard), the kit's age words, and a caption on the faceplate's
 // "—". 376,970 bytes measured, home.js 14,798, components.js 11,675.
-const TOTAL = 369 * KB;
+// 2026-11-19: 369 → 370 KB for this browser's sign-in (sign-in A2): signin-report.js +923 bytes (whoami at load, the
+// one notice under the strip, the fetch watcher for 401 {signIn:true}, the "Sign in on this device to see …" state),
+// components.js +74 (fetchJson's .signIn, loadInto's sign-in state), app.js +18 (⌘K's Past work state, its own whoami
+// dropped), improve.js +75, app.css +155. main had 377,025 bytes (831 under 369 KB); 378,270 bytes (369.4 KB) measured.
+const TOTAL = 370 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
