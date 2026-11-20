@@ -23,6 +23,8 @@ const GUARDED = [
   /^\/api\/facts\/suggestions(\/decide)?$/,
   // The owner's past work (A7 sign-in): reading, deleting or asking about journal entries.
   /^\/api\/journal(\/(delete|ask))?$/,
+  // Research intake: the source list and what was read show what the owner follows; the writes start outbound fetches.
+  /^\/api\/research\//,
   // Claude's queue: handing a request or an item to Claude, adding an idea, promoting a signal, or changing an item's
   // decision or votes. Each lands on the board a Claude session works from, so one left open would bypass the others.
   /^\/api\/improve\/(handoff|item|idea|signal)$/, /^\/api\/claude\/findings\/(decision|vote)$/,

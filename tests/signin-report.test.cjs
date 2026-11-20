@@ -121,6 +121,28 @@ test('past work and the Claude queue refuse a caller without a device; a paired 
   }
 });
 
+// Research intake: the source list and what was read show what the owner follows; the writes start outbound fetches.
+test('research intake routes refuse a caller without a device; a paired device and the Mac key get through', { timeout: 30000 }, async t => {
+  const base = await start(t);
+  const cookie = await pair(base);
+  const lan = viaCaddy('10.0.0.37', IPHONE);
+  const routes = [['GET', '/api/research/state'], ['POST', '/api/research/pause', { paused: true }], ['GET', '/api/research/sources'],
+    ['POST', '/api/research/sources', { name: 'x', url: 'https://example.com/f' }], ['POST', '/api/research/sources/update', { id: 'none' }],
+    ['POST', '/api/research/sources/fetch', { id: 'none' }], ['GET', '/api/research/documents']];
+  const send = (method, route, body, headers) => fetch(`${base}${route}`, method === 'GET' ? { headers } : { method, headers: { ...JSONH, ...headers }, body: JSON.stringify(body) });
+  const refused = { error: 'Sign in on this device first: pair it under Improve › Claude Code.', signIn: true };
+  const got = [];
+  for (const [method, route, body] of routes) {
+    const r = await send(method, route, body, lan);
+    got.push([`${method} ${route}`, r.status, await r.json().catch(() => null)]);
+  }
+  assert.deepEqual(got, routes.map(([method, route]) => [`${method} ${route}`, 401, refused]));
+  for (const [method, route, body] of routes.filter(([m]) => m === 'GET')) {
+    assert.equal((await send(method, route, body, viaCaddy('10.0.0.40', IPHONE, { Cookie: cookie }))).status, 200, `${route} paired`);
+    assert.equal((await send(method, route, body, viaCaddy('10.0.0.5', 'python-urllib/3.14', { 'X-LocalAI-Mac-Key': KEY }))).status, 200, `${route} with the Mac key`);
+  }
+});
+
 // Reporting to the Claude board: the Mac's hooks and Claude sessions send the Mac key; nobody else may file into the queue
 // (an unsigned finding reached /api/claude/priorities and the phone, and could pre-plant an id a session later updates).
 test('reporting to the Claude board needs the Mac key or a device', { timeout: 30000 }, async t => {
@@ -229,6 +251,16 @@ test('sibling routes are guarded too: the display sign-in code, run control, del
     assert.equal(guarded(p, 'POST'), true, p);
     assert.equal(guarded(p, 'GET'), false, `${p} reads stay report-only`);
   }
+});
+
+// The research routes are guarded by app/signin.js itself, so a narrowed pattern fails here before the end-to-end test.
+test('research intake routes are guarded for every method and path; a neighbouring path is not', () => {
+  const { guarded } = require('../app/signin');
+  for (const [method, p] of [['GET', '/api/research/state'], ['POST', '/api/research/pause'], ['GET', '/api/research/sources'],
+    ['POST', '/api/research/sources'], ['POST', '/api/research/sources/update'], ['POST', '/api/research/sources/fetch'],
+    ['GET', '/api/research/documents']]) assert.equal(guarded(p, method), true, `${method} ${p}`);
+  assert.equal(guarded('/api/research-notes', 'GET'), false, 'a neighbouring path is not guarded');
+  assert.equal(guarded('/api/health', 'GET'), false);
 });
 
 // The pairing hint names where pairing is: Claude Code is in the Improve area (view-registry.js), not "Build".
