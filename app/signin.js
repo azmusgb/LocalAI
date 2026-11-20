@@ -15,12 +15,20 @@ const OPEN = new Set(['/healthz', '/api/claude/chat/pair-request', '/api/claude/
 const GUARDED = [
   /^\/api\/workbench\//, /^\/api\/computer\//, /^\/api\/browser\/fetch$/, /^\/api\/actions\/http-check$/, /^\/api\/repo\/inspect$/,
   /^\/api\/changes(\/|$)/, /^\/api\/approvals\/(create|decide)$/, /^\/api\/display\/approvals\/decide$/, /^\/api\/display\/lab\/verdict$/,
-  /^\/api\/engineering\//, /^\/api\/issues\/prepare-change$/, /^\/api\/improve\/handoff$/, /^\/api\/powershell\//,
+  /^\/api\/engineering\//, /^\/api\/issues\/prepare-change$/, /^\/api\/powershell\//,
   /^\/api\/notifications\/(system|seed|update)$/, /^\/api\/signin\/report\/clear$/, /^\/api\/display\/notify$/,
   // It hands out the Workshop display's sign-in code.
   /^\/api\/workshop\/portal-code$/,
   // The owner's suggested facts: reading them shows what was said in chats; deciding writes a fact into memory.
   /^\/api\/facts\/suggestions(\/decide)?$/,
+  // The owner's past work (A7 sign-in): reading, deleting or asking about journal entries.
+  /^\/api\/journal(\/(delete|ask))?$/,
+  // Claude's queue: handing a request or an item to Claude, adding an idea, promoting a signal, or changing an item's
+  // decision or votes. Each lands on the board a Claude session works from, so one left open would bypass the others.
+  /^\/api\/improve\/(handoff|item|idea|signal)$/, /^\/api\/claude\/findings\/(decision|vote)$/,
+  // Reporting to that board: the Mac's hooks and Claude sessions send the Mac key. An unsigned finding would reach
+  // /api/claude/priorities and the phone, or pre-plant an id a session later updates.
+  /^\/api\/claude\/(findings|events)$/,
 ];
 // Refused without a device when they change something (any method but GET/HEAD): starting agent runs, writing
 // workbooks through the GridCraft bridge, importing or deleting library data, and the display's alert settings.
