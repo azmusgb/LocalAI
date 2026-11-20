@@ -189,7 +189,11 @@ const KB = 1024;
 // dropped), improve.js +75, app.css +155. main had 377,025 bytes (831 under 369 KB); 378,270 bytes (369.4 KB) measured.
 // After the UI review (the notice only when sign-in is required, the words where a read was refused, Changes' New idea,
 // Claude Code's state): 378,849 bytes (370.0 KB, 31 under), ui.js 119,931 (its own 118 KB below).
-const TOTAL = 370 * KB;
+// 2026-11-19: 370 → 371 KB for the UI re-gate: sign-in required leaves a page's Pair and Mac step to the notice (and
+// trims lines drawn before whoami answered), Changes puts its sentence and one Pair in the panel with the list stepping
+// aside, and the idea sheet focuses Pair: signin-report.js +224, improve.js +160, app.js -2. 379,231 bytes measured
+// (370.3 KB), from 378,849.
+const TOTAL = 371 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
