@@ -19,19 +19,20 @@ async function server(t, handler) {
 }
 const reply = (res, code, body) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
 
-async function start(t, groqHandler, { env = {}, local = 'Answered on this PC', seed } = {}) {
+async function start(t, groqHandler, { env = {}, local = 'Answered on this PC', seed, cerebras: cerebrasHandler } = {}) {
   const ollama = await server(t, (req, res) => {
     if (req.url === '/api/tags') return reply(res, 200, { models: [{ name: 'test-model' }] });
     if (req.url === '/api/ps') return reply(res, 200, { models: [] });
     reply(res, 200, { message: { content: local }, done: true });
   });
   const groq = await server(t, groqHandler || ((req, res) => reply(res, 200, { choices: [{ message: { content: 'Answered by Groq' } }] })));
+  const cerebras = cerebrasHandler ? await server(t, cerebrasHandler) : null;
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-route-'));
   if (seed) { const { Storage } = require('../app/storage'); const st = new Storage({ dataDir }); seed(st); st.close?.(); }
   const { child, ready } = spawnAppServer({ env: {
     DATA_DIR: dataDir, WORKSPACE_ROOT: dataDir, OLLAMA_URL: ollama.url, MODEL: 'test-model', SEARXNG_URL: 'http://127.0.0.1:9',
     COMFY_URL: 'http://127.0.0.1:9', N8N_URL: 'http://127.0.0.1:9', PROXY_URL: 'http://127.0.0.1:9',
-    LOCALAI_GROQ_API_KEY: 'gsk_test_secret', LOCALAI_GROQ_URL: groq.url, LOCALAI_CEREBRAS_API_KEY: '', ...env,
+    LOCALAI_GROQ_API_KEY: 'gsk_test_secret', LOCALAI_GROQ_URL: groq.url, LOCALAI_CEREBRAS_API_KEY: cerebras ? 'csk_test_secret' : '', ...(cerebras ? { LOCALAI_CEREBRAS_URL: cerebras.url } : {}), ...env,
   } });
   t.after(async () => { if (child.exitCode === null) { const d = once(child, 'exit'); child.kill('SIGTERM'); await d; } fs.rmSync(dataDir, { recursive: true, force: true }); });
   const base = await ready;
@@ -85,6 +86,41 @@ test('a failing cloud falls back to this PC', async t => {
   const r = await call('/api/chat', research('Compare PETG and ASA'));
   assert.equal(r.value.message.content, 'Answered on this PC');
   assert.equal(r.value.route.provider, 'ollama');
+});
+
+// After a fallback the run's route names who answered and why, and what was tried (never the text or a key).
+const groqDown = (req, res) => reply(res, 503, { error: 'down' });
+const cerebrasBusy = (req, res) => { res.writeHead(429, { 'Content-Type': 'application/json', 'retry-after': '60' }); res.end('{}'); };
+function fellBack(route) {
+  assert.equal(route.provider, 'ollama');
+  assert.equal(route.why, "Cloud models didn't answer (Groq: failed; Cerebras: busy), so this PC answered");
+  assert.deepEqual(route.attempts.map(a => [a.provider, a.outcome]), [['groq', 'error'], ['cerebras', 'rate_limited']]);
+  assert.ok(!/secret|PETG/.test(JSON.stringify(route)), JSON.stringify(route));
+}
+test('/api/chat: after every cloud model fails, the run records the fallback and what was tried', async t => {
+  const { call } = await start(t, groqDown, { cerebras: cerebrasBusy });
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const r = await call('/api/chat', research('Compare PETG and ASA for outdoor parts'));
+  assert.equal(r.value.message.content, 'Answered on this PC');
+  fellBack(r.value.route);
+  fellBack((await call(`/api/runs?id=${encodeURIComponent(r.value.runId)}`)).value.item.meta.route);
+});
+
+test('/api/chat/stream: after every cloud model fails, the run records the fallback and what was tried', async t => {
+  const { call, stream } = await start(t, groqDown, { cerebras: cerebrasBusy });
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const sse = await stream('/api/chat/stream', research('Compare PETG and ASA for outdoor parts'));
+  const done = JSON.parse(/event: done\ndata: (.*)\n/.exec(sse)[1]);
+  fellBack(done.route);
+  fellBack((await call(`/api/runs?id=${encodeURIComponent(done.runId)}`)).value.item.meta.route);
+});
+
+test('/api/chat: a local-only turn records no attempts', async t => {
+  const { call } = await start(t);
+  const r = await call('/api/chat', research('Compare PETG and ASA for outdoor parts'));
+  assert.equal(r.value.route.provider, 'ollama');
+  assert.equal(r.value.route.why, 'Cloud models are switched off');
+  assert.equal(r.value.route.attempts, undefined);
 });
 
 test('streaming chat: a cloud answer arrives whole, with the route in the meta event', async t => {
@@ -202,6 +238,18 @@ test('planner, cloud on but failing: planned on this PC', async t => {
   const r = await call('/api/changes/plan', { request: 'Make the models page clearer', target: 'self' });
   assert.equal(r.value.item.summary, 'Planned on this PC');
   assert.equal(r.value.item.route.provider, 'ollama');
+  assert.match(r.value.item.route.why, /^Cloud models didn't answer \(Groq: failed\)/);
+  assert.deepEqual(r.value.item.route.attempts.map(a => a.outcome), ['error']);
+});
+
+test('planner, cloud on but the plan is unreadable: planned on this PC, and the route says the cloud plan failed', async t => {
+  const { call } = await planner(t, (req, res) => reply(res, 200, { choices: [{ message: { content: 'not json' } }] }));
+  await call('/api/models/routing', { cloud: true }, 'PUT');
+  const r = await call('/api/changes/plan', { request: 'Make the models page clearer', target: 'self' });
+  assert.equal(r.value.item.summary, 'Planned on this PC');
+  assert.equal(r.value.item.route.provider, 'ollama');
+  assert.match(r.value.item.route.why, /^Cloud models didn't answer \(Groq: failed\)/);
+  assert.deepEqual(r.value.item.route.attempts.map(a => [a.provider, a.outcome]), [['groq', 'error']]);
 });
 
 // Security review: only plans whose whole input is what the owner typed plus Local AI's own code may go out. A health
