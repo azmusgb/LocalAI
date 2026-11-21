@@ -1,5 +1,8 @@
 'use strict';
 
+const { defuse } = require('../untrusted');
+const { createChatReaders } = require('../chat-readers');
+
 // Chat (/api/chat, /api/chat/stream), prompt construction and intent routing (/api/route).
 // Moved from server.js unchanged (the server split: docs/superpowers/specs/2026-10-18-server-split-design.md). ctx holds
 // what this code uses from the rest of the server.
@@ -15,7 +18,8 @@ const HUB_CONTEXT = /\n---\nContext \(page facts from a link/;
 // The home hub's prompt (Pi Hub's House questions), as app/run-cards.js readableTitle knows it.
 const HUB_PROMPT = /^you are the voice of a family's home hub\b/i;
 function createChat(ctx) {
-  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, factSuggestions, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, projectNotes, projectStore, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone } = ctx;
+  const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, factSuggestions, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, projectNotes, projectStore, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone, piHub } = ctx;
+  const chatReaders = piHub ? createChatReaders({ piHub }) : [];
 
   function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '', sourceHost = '') {
     return {
@@ -79,15 +83,17 @@ function createChat(ctx) {
     if (Array.isArray(body.presetSources) && body.presetSources.length) {
       // Voice "current facts": the sources were already fetched (and timed) by the caller.
       sources = body.presetSources.map(x => ({ title: String(x.title || ''), url: String(x.url || ''), content: String(x.content || '') }));
-      researchContext = sources.map((x, i) => `[${i + 1}] ${x.title}\n${x.content}\n${x.url}`).join('\n\n');
+      const rawPreset = sources.map((x, i) => `[${i + 1}] ${x.title}\n${x.content}\n${x.url}`).join('\n\n');
+      researchContext = `<<<UNTRUSTED_REQUEST\n${defuse(rawPreset)}\nUNTRUSTED_REQUEST>>>`;
     } else if (body.webSearch === true) {
       const lastUser = [...messages].reverse().find(m => m.role === 'user');
       if (lastUser) {
         sources = await searxSearch(lastUser.content, signal);
         throwIfAborted();
-        researchContext = sources.map((s, i) =>
+        const rawContext = sources.map((s, i) =>
           `[${i + 1}] ${s.title}\n${s.content}\n${s.url}`
         ).join('\n\n');
+        researchContext = `<<<UNTRUSTED_REQUEST\n${defuse(rawContext)}\nUNTRUSTED_REQUEST>>>`;
       }
     }
 
@@ -127,6 +133,7 @@ function createChat(ctx) {
       house: body.title === 'House question' || raw.some(m => HUB_PROMPT.test(String(m.content || '').trim()) || HUB_CONTEXT.test(String(m.content || ''))),
       attachments: (Array.isArray(body.images) && body.images.length) || raw.some(m => Array.isArray(m.images) && m.images.length),
       keepLocal: body.keepLocal === true || messages.some(m => isAboutLocalAi(m.content)),
+      readers: chatReaders,
       stay: memory.state === 'used' ? projectMemory.STAY : keptBefore ? 'This conversation was kept on this PC' : raw.some(m => m.role === 'system') ? 'Requests with their own instructions stay on this PC' : secretish(sent) ? 'Keys, passwords and setup stay on this PC' : '',
       bigger: body.bigger === true, localModel: model
     });
