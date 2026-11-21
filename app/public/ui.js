@@ -1075,8 +1075,8 @@ function renderPageStrip(d,page,view){
  const label=v=>REG.view(v)?.tab||REG.view(v)?.short||labelForView(v);
  const buttons=ids=>ids.map(v=>'<button type="button" data-strip-view="'+v+'" title="'+REG.description(v).replace(/"/g,'&quot;')+'">'+label(v)+'</button>').join('');
  if(strip.dataset.key!==key){strip.dataset.key=key;strip.innerHTML=buttons(views)}
- // Home's only other page, Inbox, already has a button in the top bar; a hidden page (Missions, Chat) is none of these.
- strip.hidden=views.length<2||d.id==='home'||REG.view(view)?.domain==='hidden';
+ // Every area has its strip, Home too; a hidden page (Missions, Chat) names itself in the top bar.
+ strip.hidden=views.length<2||REG.view(view)?.domain==='hidden';
  qa('[data-strip-view]',strip).forEach(b=>{const on=b.dataset.stripView===page;b.classList.toggle('active',on);if(on)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
  revealActive(strip);
  fadeStrip(strip);
