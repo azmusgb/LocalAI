@@ -9,13 +9,15 @@
 //   -> a registered, active topic for the document's source -> the topic's budget (budget.js) -> the model call.
 // A refusal leaves the cursor where it is, so the document stays queued and is read when the cap resets; intake keeps
 // collecting meanwhile. Only a document that was actually read (a finding, or a valid "nothing here") moves the cursor,
-// plus a document no topic covers (not read, counted) and a document that failed three times (counted, shown).
+// plus a document with too little text to quote and a document no topic covers (neither read, both counted) and a document that failed three times (counted, shown).
 
 const { buildReaderPrompt, validateFindingOutput } = require('./reader');
 
 const SYSTEM = 'You are a careful research analyst. You have no tools. Answer with one JSON object and nothing else.';
 const CURSOR = 'reader.cursor';
 const FAIL_LIMIT = 3, HOLD_MS = 15 * 60 * 1000;
+// A feed entry that carries a teaser or nothing has no evidence to quote; reading it only spends a model call.
+const MIN_TEXT_CHARS = 200;
 
 // The model's answer as an object, or null when it is not one JSON object (fences and surrounding talk are tolerated).
 function parseAnswer(text) {
@@ -26,7 +28,7 @@ function parseAnswer(text) {
 }
 
 function createReaderJob({ store, topics, budget, runModel, busy = () => ({ busy: false }), enabled = false, log = () => {},
-  now = Date.now, dailyFindings = 10, timeoutMs = 120000 } = {}) {
+  now = Date.now, dailyFindings = 10, timeoutMs = 120000, minTextChars = MIN_TEXT_CHARS } = {}) {
   if (!store || !topics || !budget || typeof runModel !== 'function') throw new Error('store, topics, budget and runModel are required');
   const isEnabled = () => (typeof enabled === 'function' ? !!enabled() : !!enabled);
   const isPaused = () => store.getMeta('paused') === '1';
@@ -34,7 +36,7 @@ function createReaderJob({ store, topics, budget, runModel, busy = () => ({ busy
 
   let running = false, lastTickAt = 0, last = { code: 'none', reason: 'has not run' };
   let holdUntil = 0, failing = { seq: 0, count: 0 };
-  const counts = { read: 0, findings: 0, outOfScope: 0, failed: 0 };
+  const counts = { read: 0, findings: 0, outOfScope: 0, failed: 0, tooThin: 0 };
 
   const result = (code, reason, extra = {}) => { last = { code, reason, at: new Date(now()).toISOString(), ...extra }; return last; };
 
@@ -66,6 +68,7 @@ function createReaderJob({ store, topics, budget, runModel, busy = () => ({ busy
       const seqBefore = cursor();
       const doc = store.nextDocumentAfter(seqBefore);
       if (!doc) return result('idle', 'nothing new to read');
+      if (String(doc.text || '').trim().length < minTextChars) { counts.tooThin++; advance(doc.seq); return result('too_thin', 'the document has too little text to hold a finding; not read', { documentId: doc.id }); }
       const source = store.getSource(doc.sourceId);
       const candidates = topicsFor(source);
       if (!candidates.length) { counts.outOfScope++; advance(doc.seq); return result('out_of_scope', 'no active topic covers this source', { documentId: doc.id }); }
