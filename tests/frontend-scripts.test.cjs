@@ -12,12 +12,14 @@ const NOT_PAGE_SCRIPTS = new Set(['sw.js']);
 const modules = fs.readdirSync(pub).filter(f => f.endsWith('.js') && !NOT_PAGE_SCRIPTS.has(f));
 
 // Loaded on first use, not on every page load (still precached by the service worker): each by the shell file named.
-const ON_DEMAND = new Map([['agent-world-watch.js', 'ui.js'], ['model-routing.js', 'ui.js'], ['answer-feedback.js', 'components.js'], ['owner-facts.js', 'ui.js'], ['fact-suggestion-line.js', 'answer-feedback.js'], ['research-findings.js', 'ui.js']]);
+const ON_DEMAND = new Map([['agent-world-watch.js', 'ui.js'], ['model-routing.js', 'ui.js'], ['answer-feedback.js', 'components.js'], ['owner-facts.js', 'ui.js'], ['fact-suggestion-line.js', 'answer-feedback.js'], ['research-page.js', 'ui.js']]);
+// Written for the findings inbox (plan 2026-11-20-research-findings-step-2) and not wired yet: an ES module that no page loads.
+const NOT_WIRED = new Set(['research-findings.js']);
 
 test('index.html loads every front-end module', () => {
   const html = fs.readFileSync(path.join(pub, 'index.html'), 'utf8');
   const loaded = new Set([...html.matchAll(/<script[^>]*\ssrc="\/([^"]+\.js)"/g)].map(m => m[1]));
-  assert.deepEqual(modules.filter(f => !loaded.has(f) && !ON_DEMAND.has(f)), []);
+  assert.deepEqual(modules.filter(f => !loaded.has(f) && !ON_DEMAND.has(f) && !NOT_WIRED.has(f)), []);
   for (const [f, by] of ON_DEMAND) assert.ok(fs.readFileSync(path.join(pub, by), 'utf8').includes(`'/${f}'`), `${by} loads ${f} on demand`);
   assert.deepEqual([...ON_DEMAND.keys()].filter(f => loaded.has(f)), [], 'an on-demand module is not in index.html');
 });

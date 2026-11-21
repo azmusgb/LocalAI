@@ -13,7 +13,7 @@ const app = fs.readFileSync(path.join(pub, 'app.js'), 'utf8');
 const sw = fs.readFileSync(path.join(pub, 'sw.js'), 'utf8');
 
 // Views whose section and nav button are created at runtime by another script.
-const INJECTED = { models: 'ui.js', runs: 'ui.js' };
+const INJECTED = { models: 'ui.js', runs: 'ui.js', research: 'research-page.js' }; // research: the section is in index.html, its heading is drawn by the page script
 // Registered ahead of its section: Task 3 of the navigation plan creates #work.
 const PENDING = new Set(['work']);
 
@@ -123,11 +123,11 @@ test('Tools lists the tools, System ones first, and nothing is hidden behind a s
   assert.deepEqual(registry.sections('system').map(s => s.label), ['Status', 'Tools', 'Settings', 'History']);
 });
 
-// Improve's strip is Changes · Signals · Claude Code · Atlas (navigation depth, D4): In progress and Shipped light Changes.
+// Improve's strip is Changes · Signals · Research · Claude Code · Atlas (navigation depth, D4): In progress and Shipped light Changes.
 // One name per thing (Pi Hub A22 8.1): the strip says Claude Code and Atlas, the same words as the page's title and ⌘K.
 test("Improve's strip uses each page's one name", () => {
   const ids = registry.sections('improve').flatMap(s => s.views);
-  assert.deepEqual(ids.filter(id => !registry.view(id).lights).map(id => registry.view(id).short || registry.label(id)), ['Changes', 'Signals', 'Claude Code', 'Atlas']);
+  assert.deepEqual(ids.filter(id => !registry.view(id).lights).map(id => registry.view(id).short || registry.label(id)), ['Changes', 'Signals', 'Research', 'Claude Code', 'Atlas']);
   for (const id of ['claude', 'architecture']) assert.equal(registry.view(id).short, undefined, `${id} has no second name`);
   assert.deepEqual(['inProgress', 'shipped'].map(id => registry.view(id).lights), ['backlog', 'backlog']);
   assert.equal(registry.label('backlog'), 'Changes');

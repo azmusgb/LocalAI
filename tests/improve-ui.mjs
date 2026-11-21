@@ -401,7 +401,7 @@ await check('the old pages land in Improve: #changes and #engineering on In prog
 });
 
 await check('Improve has its tabs (Deployments merged into Shipped and Architecture last as Atlas, 2 Nov), and the Claude Code page shows no second priorities list', async () => {
-  assert.deepEqual(await page.evaluate(() => window.LocalAIViews.sections('improve').flatMap(s => s.views)), ['backlog', 'inProgress', 'shipped', 'signals', 'claude', 'architecture']);
+  assert.deepEqual(await page.evaluate(() => window.LocalAIViews.sections('improve').flatMap(s => s.views)), ['backlog', 'inProgress', 'shipped', 'signals', 'research', 'claude', 'architecture']);
   assert.equal(await page.evaluate(() => window.LocalAIViews.view('claude').domain), 'improve');
   await page.evaluate(() => window.showView('claude'));
   await page.waitForSelector('#claude.active');
