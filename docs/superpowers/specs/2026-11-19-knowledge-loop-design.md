@@ -526,6 +526,107 @@ The implementation plan is `docs/superpowers/plans/2026-11-19-research-intake-st
 
 ---
 
+## 11. Cost tiers, triggers and budgets (proposed contract)
+
+**Status:** proposed. This section binds the knowledge loop's model spend and its repository learning. It adds no service, no table family and no tick: it constrains what `app/research/*`, the Atlas facade and the existing 30 s ticks may do. Anything marked *needs amendment* is not built until a pi-hub amendment lists it.
+
+Labels: **Observed** is read in code at LocalAI `df69969f`; **Rule** is a requirement on future code.
+
+### 11.1 Observed state at `df69969f`
+
+- **Tier 0 exists for feeds.** `intake.js` fetches on the 30 s tick with no model, a daily fetch cap (`dailyFetches`, default 200) and a per-tick cap. Fetches, hashes and revisions are scripts.
+- **The reader is not wired.** `app/research/reader.js` builds a no-tools prompt, but nothing under `app/` requires it (`git grep` finds no caller). No model is called by the research code today, which is the safe state.
+- **Topic budgets are stored, not enforced.** `research_topics.budget_daily_model_calls` (5) and `budget_daily_characters` (20000) have no reader of those columns outside `topics.js`. A budget nothing checks is not a budget.
+- **Scope drift.** Amendment A31 approves phases 1 and 2 only and says phases 3 to 5 "each need their own amendment". #593 to #596 shipped experiments, contracts, topics and a chat tool without one. **Rule:** treat those tables and routes as unapproved until an amendment lists them; build nothing further on them first.
+- **Atlas already holds the repository graph.** The deterministic graph and per-commit snapshots (`<repo>/<commit>/graph.json`, `index.json`, written by `quick_arch.py`) and `app/atlas/contracts.json` (provider, consumers, source) are served by `app/server/atlas.js`, `atlas-systems.js` and `atlas-contracts.js`, with the graph readable when the Python service is down.
+
+### 11.2 Separation: collectors write, learners read
+
+1. **Rule.** A learning job never crawls a repository, a feed or the network. It reads stored evidence (`research_documents`, findings, outcomes, Atlas snapshots, CI and ship records) and validated outcomes only.
+2. **Rule.** Evidence is collected by event-driven indexers, each a script: feed intake (exists); a **repo indexer** triggered by a merge, ship or `release` move; a **dependency indexer** reading lockfiles and manifests. They run on events, not on a learning schedule.
+3. **Rule.** The repo indexer extends Atlas rather than duplicating it: it calls `quick_arch.py --repo --git-dir --commit` for the changed commit and records the snapshot id. No second graph, parser or index service. *Needs amendment* before a table or job is added.
+
+### 11.3 Tiers
+
+| Tier | What runs | Triggered by | Model |
+|---|---|---|---|
+| **0** | Fetch, hash, diff, dependency extraction, release and advisory matching, `git diff --name-only`, Atlas graph and `contracts.json` checks, lint, tests, benchmark scoring | Event or schedule | None. Always first |
+| **1** | Local model (`qwen3:4b-instruct` through the coordinator, cloud off) over **new or revised material only**, bounded by chars and calls | A Tier 0 result that names changed material | Local, capped |
+| **2** | Claude (cloud or Hand to Claude) investigation | The owner promotes an item, **or** a defined high-severity gate (11.4) | Cloud, per-investigation budget |
+
+- **Rule.** Tier 0 runs before any model call and its output is the model's input, not the repository.
+- **Rule.** A Tier 0 failure (a failing check, a matched advisory, a broken contract) may create a **candidate** with its evidence. It never authorises Tier 1 or Tier 2 by itself.
+- **Rule.** Tier 1 input is the diff, the changed documents, or the Atlas subgraph for the changed files, never a whole repository. If the bounded input exceeds its budget, the job is split or queued, not widened.
+- **Rule.** No learning cycle triggers a full-repository model review. A full review is a Tier 2 item the owner promotes by name.
+
+### 11.4 Tier 2 gate
+
+Tier 2 starts only when one holds, and the record names which:
+
+1. The owner promotes an item (Promote to Improve, then Hand to Claude).
+2. A high-severity gate, defined in code and shown on the state route, and each condition must be matched by Tier 0 evidence: an advisory of critical severity matched by exact version to something the platform pins, **and** a failing contract or test on the affected module. Even then it creates a Tier 2 **proposal** awaiting the daily Tier 2 allowance; it does not bypass 11.6.
+
+### 11.5 Incremental correctness
+
+Rule: the indexer stores, per repo: `commit` identity, `parent` commit, per-file `path` plus `sha256`, indexing `state` (indexed, partial, failed, stale), the Atlas snapshot id, and `provenance` (which script, version, when).
+
+| Event | Handling |
+|---|---|
+| Addition | Index the file; add its edges |
+| Modification | Re-hash; re-index only files whose hash changed |
+| Deletion | Remove the file's rows and edges; mark dependents stale |
+| Rename | Detect by `git diff -M`; keep the identity, update the path, do not delete and re-add |
+| Divergent history (force-push, rebase, reset) | If the stored `commit` is not an ancestor of the new head, mark the repo `stale` and re-index from the merge base, never from the stored commit blindly |
+| Invalidated dependency | A changed provider in `contracts.json` or the import graph marks every consumer's derived rows stale until re-checked |
+
+A failed or partial index is its own state. It is never shown as "no changes" or "fine" (owner rule on failed reads).
+
+### 11.6 Budgets
+
+- **Rule.** Four independent caps, each configurable and each checked **before** the call, not after: per repository, per investigation, per day, per week. Units are model calls and characters sent; cloud spend is also capped in money where a price is known.
+- **Rule.** Defaults: Tier 1 local only; Tier 2 allowance zero until the owner sets it. The existing per-topic columns become the per-investigation cap only once something enforces them (*needs amendment*, as topics are unapproved).
+- **Rule.** When any cap is exhausted the system **queues** the investigation with its evidence and reason, **keeps running Tier 0 collection**, and shows the queue, the cap that stopped it and when it resets. It never drops a queued item and never raises a cap itself.
+- **Rule.** The budget state route reports `budgets: {limit, used, resetsAt}` per cap, and a failed read of the counters is `unreadable`, never zero used.
+
+### 11.7 Learning from outcomes
+
+- **Rule.** Record, as append-only rows with provenance: validated outcomes, rejected recommendations (with the owner's reason), false positives, corrected assumptions, repeat defects (same Atlas module or contract).
+- **Rule.** A lesson becomes reusable only when it cites at least two independent outcomes or one pinned benchmark result, names the module or contract it applies to, and carries an expiry or revalidation trigger. One anecdote stays an observation.
+- **Rule.** Contradicted lessons are marked, not deleted.
+
+### 11.8 Measures
+
+Computed by script from stored rows, shown on the existing state route, never self-reported by a model:
+
+| Measure | Definition |
+|---|---|
+| Cost per validated improvement | Model calls and chars at all tiers ÷ outcomes recorded validated |
+| Model calls avoided | Candidates closed at Tier 0 or Tier 1 without escalation |
+| Defect detection | Seeded or later-confirmed defects the Tier 0/1 checks flagged ÷ total confirmed |
+| Recommendation precision | Promoted findings validated ÷ promoted |
+| Regression escapes | Shipped changes later reverted or fixed for a defect a gate should have caught |
+| Investigation efficiency | Median chars and calls per closed investigation, by tier |
+
+Each needs a denominator that can be zero; a zero denominator reads "no data", not 0%.
+
+### 11.9 Safety
+
+- **Rule.** Learning is read-only: it holds no write credential to any repository, host, printer or setting.
+- **Rule.** Code change from a learned recommendation goes to a branch in its own worktree (`wt new`), through the existing review gates and local CI, merged only on the owner's word.
+- **Rule.** The loop never edits its own permissions, budgets, the Tier 2 gate, safety rules or trusted agent instructions (`CLAUDE.md`, `AGENTS.md`, hooks, agent definitions). Those change by a PR the owner merges. Fetched text stays untrusted data (A28 D5, A31).
+
+### 11.10 Integration, not new services
+
+Reuses: the `research_*` tables, the 30 s ticks, `coordinator`/`modelRouter` for every model call, Atlas snapshots and `contracts.json`, the journal's `redact`, Improve and Hand to Claude, local CI. The general `jobs` table of 3.7 is still not built and is not required by this section; if a queue is needed, it uses `research_meta` or a new amendment.
+
+### 11.11 What this section changes, and what it needs
+
+- **Needs amendment (pi-hub):** phases 3 to 5 as built, the repo indexer, any budget table or counters, the Tier 2 gate and any Tier 1 scheduling. Until then, section 5's boundary stands: no model call from research code.
+- **Needs code, after the amendment:** enforce the budgets in 11.6 before wiring the reader; add the stale and failed index states; add the measures to the state route.
+- **Tests that must exist:** an exhausted cap queues and still collects; a failed counter read is `unreadable`; a Tier 0 failure creates a candidate and no model call; a rename keeps identity; a non-ancestor commit marks stale.
+
+---
+
 ## Follow-ups found during the audit (not part of this design)
 
 - **F1.** `validateExternalUrl` (`app/server/workbench.js:19`) checks only the URL scheme, so `/api/browser/fetch` and `/api/actions/http-check` can be pointed at loopback, LAN and tailnet addresses by any signed-in device. Replace with the guard from step 1.
