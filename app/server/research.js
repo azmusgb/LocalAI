@@ -12,7 +12,7 @@ const UNAVAILABLE = new Set(['error', 'record_failed']);
 const SOURCE_FIELDS = ['name', 'url', 'kind', 'trust', 'topics', 'scheduleMinutes', 'status'];
 
 function createResearchRoutes(ctx) {
-  const { budget, experiments, intake, reader, json, readBody, store, storageError, topics } = ctx;
+  const { budget, experiments, intake, measures, reader, json, readBody, store, storageError, topics } = ctx;
   const pick = (b, fields) => Object.fromEntries(fields.filter(k => k in b).map(k => [k, b[k]]));
   // Store validation errors carry .status 400, 404, 409 or 410 and a message written for the owner; anything else is a failure.
   function fail(res, e) {
@@ -36,7 +36,7 @@ function createResearchRoutes(ctx) {
 
   async function apiResearchState(req, res) {
     // The model budgets ride along (A32 D2): each cap's limit, used and resetsAt. A failed read of them is `unreadable`, never zero used.
-    try { return json(res, 200, { ...read(), budget: budget ? budget.state() : { unreadable: true, reason: 'budget not configured', caps: [] }, reader: reader ? reader.state() : { enabled: false, unreadable: true } }); } catch (e) { fail(res, e); }
+    try { return json(res, 200, { ...read(), budget: budget ? budget.state() : { unreadable: true, reason: 'budget not configured', caps: [] }, reader: reader ? reader.state() : { enabled: false, unreadable: true }, measures: measures ? measures.compute() : { unreadable: true, reason: 'measures not configured', measures: {} } }); } catch (e) { fail(res, e); }
   }
   async function apiResearchPause(req, res) {
     try {

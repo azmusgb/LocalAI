@@ -220,6 +220,10 @@ Research intake reads the feeds (Atom and RSS) the owner registers and stores th
   interactive is using the model. The document sits in an untrusted block; a finding is kept only if its quote appears
   word for word in the document; at most 10 new findings a day. A refusal leaves the document queued; three model failures
   skip one document and say so. `GET /api/research/state` shows the reader's last outcome, cursor and counts.
+- **Measures** (`app/research/measures.js`, design 11.8) are computed from stored rows on `GET /api/research/state`: cost per
+  validated improvement, model calls avoided, recommendation precision, investigation efficiency. A zero denominator is
+  `noData`, not 0%; defect detection and regression escapes say they are not recorded yet; a failed read of any input makes
+  the whole block `unreadable`. Nothing a model says feeds them.
 
 ## Known gaps
 
