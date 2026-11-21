@@ -2774,3 +2774,7 @@ html.is-framed body.ux-v3 .ux-page-strip{top:0}
 .owner-facts__form .ui-field{flex:1 1 16rem;width:auto;min-width:0}
 .owner-facts__label{font-weight:600}
 .owner-facts__label,.owner-facts__rule,.owner-facts__error{flex:1 0 100%}
+
+/* Action proposals in chat (Amendment A30 Phase 4) */
+.run-action-proposal{margin-top:var(--ui-s-3);max-width:32rem}
+

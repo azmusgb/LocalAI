@@ -40,6 +40,63 @@
   const core = () => window.LocalAIChatCore;
   const sortRuns = list => list.slice().sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.id).localeCompare(String(b.id)));
   const isWeb = run => run?.type === 'research' || run?.input?.webSearch === true;
+  // Amendment A30 Phase 4 (D1, D3): Action proposal cards.
+  // The Assistant proposes; Pi Hub executes. An action card names an action Pi Hub lists and links to Pi Hub's confirmation on Pi Hub's origin.
+  const PI_HUB_ACTIONS = Object.freeze({
+    'restart:plex': { label: 'Restart Plex', desc: 'Plex stops and starts again. Anyone watching is cut off for a moment.' },
+    'restart:homebridge': { label: 'Restart Homebridge', desc: 'Homebridge stops and starts again. Lights and plugs don\'t answer for a moment.' },
+    'remount:movies': { label: 'Remount movies', desc: 'The movies drive is mounted again. Plex can\'t play from it while that happens.' },
+    'rescan:plex': { label: 'Rescan Plex', desc: 'Plex looks through the movies drive for new films. Nothing stops.' },
+    'updates:install': { label: 'Install updates', desc: 'All waiting updates install now. Plex or Homebridge may restart.' },
+    'restart:pi': { label: 'Restart Pi', desc: 'The Pi restarts. Plex, Homebridge and the hub go away for about a minute.', danger: true },
+    'selfcheck:run': { label: 'Run self-check', desc: 'The hub checks its own services and writes the result on Health. Nothing stops.' },
+    'mirror:movies': { label: 'Copy movies', desc: 'New movies are copied from the PC to the movies drive. Plex keeps playing.' },
+    'restart:ntfy': { label: 'Restart ntfy', desc: 'The alert service stops and starts again.' },
+    'restart:bambuddy': { label: 'Restart Bambuddy', desc: 'Bambuddy stops and starts again.' },
+    'restart:homebox': { label: 'Restart Homebox', desc: 'Homebox stops and starts again.' },
+    'restart:backrest': { label: 'Restart Backrest', desc: 'Backrest stops and starts again.' },
+    'restart:adguard': { label: 'Restart AdGuard', desc: 'AdGuard stops and starts again. Name lookups fail for a few seconds.' },
+    'restart:scanserv': { label: 'Restart Scanner', desc: 'The scanner service stops and starts again.' },
+    'clear': { label: 'Clear the plate', desc: 'Is the plate empty? Bambuddy may start the next print in the queue.', printer: true },
+    'pause': { label: 'Pause print', desc: 'Pause the print? It waits on the plate until you resume it.', printer: true },
+    'resume': { label: 'Resume print', desc: 'Resume the active 3D print.', printer: true }
+  });
+
+  function findProposedActions(text) {
+    if (!text || typeof text !== 'string') return [];
+    const proposals = [];
+    // Check for explicit action names or natural suggestions
+    for (const [name, meta] of Object.entries(PI_HUB_ACTIONS)) {
+      const regex = new RegExp(`\\b${name.replace(':', '[:\\s]')}\\b`, 'i');
+      if (regex.test(text) || (name.startsWith('restart:') && text.toLowerCase().includes(name.toLowerCase()))) {
+        proposals.push({ name, ...meta });
+      }
+    }
+    return proposals;
+  }
+
+  function actionProposalCard(action, runId) {
+    const card = h('div', 'ui-result-card run-action-proposal');
+    card.setAttribute('role', 'region');
+    card.setAttribute('aria-label', `Proposed action: ${action.label}`);
+
+    const title = h('h3', 'ui-title', `Proposed: ${action.label}`);
+    const desc = h('p', 'meta', action.desc || 'Action on Pi Hub');
+
+    const hubBase = window.ApplianceTools?.toolUrl('hub') || 'http://10.0.0.80';
+    const targetPath = action.printer ? '/workshop' : '/system#fixes';
+    const handoffUrl = `${hubBase.replace(/\/+$/, '')}${targetPath}${targetPath.includes('?') ? '&' : '?'}action=${encodeURIComponent(action.name)}${runId ? `&source_run=${encodeURIComponent(runId)}` : ''}`;
+
+    const link = h('a', `ui-btn ${action.danger ? 'ui-btn--danger' : 'ui-btn--primary'}`, `Confirm on Pi Hub ↗`);
+    link.href = handoffUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.setAttribute('aria-label', `Open confirmation for ${action.label} on Pi Hub`);
+
+    card.append(title, desc, link);
+    return card;
+  }
+
   // A chat in a project (app/project-memory.js cardLine): "Used 3 notes from RIFT tiles", a link to Projects › Memory on it, or a warning that they couldn't be read.
   // Also the owner's facts (app/owner-facts.js cardLine); a cloud answer's is plain text.
   const memoryLine = m => {
@@ -132,6 +189,19 @@
         if (who === 'assistant') { n.dataset.srcs = ''; const ul = t.sources.length ? sourceLinks(t.sources) : null; const sig = ul ? ul.textContent : ''; if (n.dataset.srcSig !== sig) { n.dataset.srcSig = sig; n.querySelector('.chat-turn__sources')?.remove(); if (ul) n.appendChild(ul); } }
         if (who === 'assistant') { const lv = t.cut, want = lv ? lv.err + (t.done ? '' : ' ') : '', el = n.querySelector('.chat-turn__cut');
           if ((el?.dataset.t || '') !== want) { el?.remove(); if (want) { const p = h('p', 'chat-turn__cut', want); p.dataset.t = want; if (!t.done) p.append(againBtn(c, lv.prompt)); n.appendChild(p); } } }
+        // Amendment A30 Phase 4 (D1, D3): Render proposed action cards for Pi Hub hand-off
+        if (who === 'assistant' && !t.kind) {
+          const proposed = findProposedActions(t.answer);
+          const actSig = proposed.map(p => p.name).join('|');
+          if (n.dataset.actSig !== actSig) {
+            n.dataset.actSig = actSig;
+            n.querySelectorAll('.run-action-proposal').forEach(e => e.remove());
+            if (proposed.length) {
+              const runId = t.run?.id || '';
+              proposed.forEach(act => n.appendChild(actionProposalCard(act, runId)));
+            }
+          }
+        }
         if (who === 'assistant') window.LocalAIUI.rateAnswer(n, t.run);
         rows.push(n);
       }
