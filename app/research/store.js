@@ -107,6 +107,7 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     trimDocs: db.prepare(`DELETE FROM research_documents WHERE source_id = ? AND seq <= COALESCE((SELECT seq FROM research_documents WHERE source_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?), 0)`),
     docSeq: db.prepare('SELECT seq FROM research_documents WHERE id = ?'),
     getDocument: db.prepare('SELECT * FROM research_documents WHERE id = ?'),
+    nextDocumentAfter: db.prepare('SELECT * FROM research_documents WHERE seq > ? ORDER BY seq ASC LIMIT 1'),
     insertFinding: db.prepare(`INSERT INTO research_findings (id, document_id, source_id, claim, quote, target_project, relevance, status, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'extracted', ?)`),
     getFinding: db.prepare('SELECT * FROM research_findings WHERE id = ?'),
@@ -260,6 +261,8 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
   const listFetches = (sourceId, limit = 20) => st.listFetches.all(String(sourceId ?? ''), Math.max(1, Math.min(KEEP_FETCHES, Number.parseInt(limit, 10) || 20)))
     .map(r => ({ at: r.at, day: r.day, ok: !!r.ok, status: r.status, code: r.code, reason: r.reason, bytes: r.bytes, added: r.added, revised: r.revised, ms: r.ms }));
   const getDocument = id => { const r = st.getDocument.get(String(id ?? '')); return r ? hydrateDoc(r) : null; };
+  // The oldest document after a position (its `seq`), for the reader's cursor. Each revision of an entry is its own row, so a revised entry is read again.
+  const nextDocumentAfter = seq => { const r = st.nextDocumentAfter.get(Number(seq) || 0); return r ? { ...hydrateDoc(r), seq: r.seq } : null; };
 
   const hydrateFinding = r => r && ({
     id: r.id, documentId: r.document_id, sourceId: r.source_id, claim: r.claim, quote: r.quote,
@@ -320,7 +323,7 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
 
   return {
     addSource, updateSource, listSources, getSource, dueSources, recordFetch, saveEntries,
-    listDocuments, getDocument, fetchesToday, listFetches, getMeta, setMeta,
+    listDocuments, getDocument, nextDocumentAfter, fetchesToday, listFetches, getMeta, setMeta,
     addFinding, getFinding, listFindings, countFindingsToday, decideFinding, recordOutcome, listOutcomes
   };
 }
