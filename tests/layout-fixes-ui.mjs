@@ -56,6 +56,14 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   assert.ok(x < 120, `main starts at ${x}px, beside the 76px rail`);
   assert.equal(await area(), 'Work');
   assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Agent World', 'Assistant automations']);
+  // The page strip is in every area, Home included, so the bar does not appear and vanish as you move around.
+  for (const [hash, id, tabs] of [['#home', 'home', ['Home', 'Decisions']], ['#projects', 'projects', null], ['#backlog', 'backlog', null], ['#status', 'status', null]]) {
+    await page.evaluate(h => LocalAIRouter.go(h), hash);
+    await page.waitForSelector(`#${id}.active`, T);
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator('#uxPageStrip').isVisible(), true, `${hash} shows its area's page strip`);
+    if (tabs) assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), tabs);
+  }
   await page.evaluate(() => LocalAIRouter.go('#status'));
   await page.waitForSelector('#status.active', T);
   await page.waitForTimeout(300);
