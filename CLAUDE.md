@@ -78,6 +78,7 @@ events, decisions and votes without it gets 401; other calls without it are list
 - **Navigation lives in `app/public/view-registry.js`.** New page = registry entry + `<section id>` in
   `index.html`; retired ids go in `ALIASES`. Use the registry's labels in docs and UI text.
 - New `tests/*.test.cjs` and `tests/*-ui.mjs` files are picked up automatically; no lists to update.
+- **Research and learning code follows section 11 of `docs/superpowers/specs/2026-11-19-knowledge-loop-design.md`.** Learning jobs read stored evidence and never crawl a repository, feed or network; scripts (Tier 0) run before any model, and a Tier 0 failure makes a candidate, never a model call. A model call needs its budget checked first (an unreadable counter is not zero), and Claude-level work (Tier 2) only on the owner's promotion or the gate in 11.4. Learning is read-only: never edit permissions, budgets, safety rules, `CLAUDE.md`, `AGENTS.md`, hooks or agent definitions from it; those change by a PR the owner merges. Research code is limited to the phases an approved pi-hub amendment lists (A31: phases 1 and 2).
 - **Never put secrets in the container, repo or logs.** The PowerShell `approval-key.txt` must never reach the
   container. Spawned processes get a filtered environment; see `docs/SECURITY.md` (Other controls, `childEnv`).
 - **Host scripts run under Windows PowerShell 5.1**: send UTF-8 bytes in `Invoke-RestMethod` bodies, set
