@@ -61,9 +61,9 @@ test('model calls avoided counts documents that cost no call, and never goes neg
   assert.equal(s.measures.compute().measures.modelCallsAvoided.num, 0);
 });
 
-test('defect detection and regression escapes say what is not recorded instead of guessing', () => {
+test('with nothing recorded, defect detection and regression escapes are noData, never 0%', () => {
   const m = setup().measures.compute().measures;
-  for (const k of ['defectDetection', 'regressionEscapes']) { assert.equal(m[k].noData, true); assert.match(m[k].note, /not measured/); }
+  for (const k of ['defectDetection', 'regressionEscapes']) { assert.equal(m[k].noData, true); assert.equal(m[k].value, null); assert.equal(m[k].den, 0); }
 });
 
 test('a bad budget row, a missing table or a throw makes the result unreadable, with no measures shown', () => {
@@ -72,4 +72,75 @@ test('a bad budget row, a missing table or a throw makes the result unreadable, 
   let r = s.measures.compute(); assert.equal(r.unreadable, true); assert.deepEqual(r.measures, {});
   s.storage.db.exec('DROP TABLE research_outcomes');
   r = s.measures.compute(); assert.equal(r.unreadable, true);
+});
+
+const { createOutcomes } = require('../app/research/outcomes');
+
+test('defect detection: flagged over recorded defects, newest record per defect wins, zero denominator is noData', () => {
+  const s = setup(); const o = createOutcomes({ db: s.storage.db });
+  assert.equal(s.measures.compute().measures.defectDetection.noData, true);
+  o.recordDefect({ defectId: 'd1', source: 'seeded', flaggedByCheck: true, check: 'contracts' });
+  o.recordDefect({ defectId: 'd2', source: 'confirmed', flaggedByCheck: false });
+  o.recordDefect({ defectId: 'd3', source: 'confirmed', flaggedByCheck: false });
+  o.recordDefect({ defectId: 'd3', source: 'confirmed', flaggedByCheck: true, note: 'correction' });
+  const d = s.measures.compute().measures.defectDetection;
+  assert.deepEqual([d.noData, d.num, d.den, d.value], [false, 2, 3, 2 / 3]);
+  assert.deepEqual(Object.keys(d).sort(), ['den', 'noData', 'note', 'num', 'unit', 'value']);
+});
+
+test('regression escapes: only reverts or fixes a gate should have caught, over shipped changes, each change once', () => {
+  const s = setup(); const o = createOutcomes({ db: s.storage.db });
+  assert.equal(s.measures.compute().measures.regressionEscapes.noData, true);
+  for (const id of ['c1', 'c2', 'c3', 'c4']) o.recordShipOutcome({ changeId: id, outcome: 'shipped' });
+  o.recordShipOutcome({ changeId: 'c1', outcome: 'reverted', gateShouldHaveCaught: true });
+  o.recordShipOutcome({ changeId: 'c1', outcome: 'fixed_after_ship', gateShouldHaveCaught: true });
+  o.recordShipOutcome({ changeId: 'c2', outcome: 'fixed_after_ship', gateShouldHaveCaught: false });
+  o.recordShipOutcome({ changeId: 'c3', outcome: 'reverted', gateShouldHaveCaught: true });
+  const r = s.measures.compute().measures.regressionEscapes;
+  assert.deepEqual([r.noData, r.num, r.den, r.value], [false, 2, 4, 0.5]);
+});
+
+test('recorder validation: bad input, unshipped revert, duplicate ship, bad writer are refused and store nothing', () => {
+  const s = setup(); const o = createOutcomes({ db: s.storage.db });
+  const code = f => { try { f(); } catch (e) { return e.status; } return 'none'; };
+  assert.equal(code(() => o.recordShipOutcome({ changeId: 'c1', outcome: 'reverted', gateShouldHaveCaught: true })), 409);
+  assert.equal(code(() => o.recordShipOutcome({ changeId: 'bad id!', outcome: 'shipped' })), 400);
+  assert.equal(code(() => o.recordShipOutcome({ changeId: 'c1', outcome: 'exploded' })), 400);
+  assert.equal(code(() => o.recordShipOutcome({ changeId: 'c1', outcome: 'shipped', by: 'model' })), 400);
+  o.recordShipOutcome({ changeId: 'c1', outcome: 'shipped' });
+  assert.equal(code(() => o.recordShipOutcome({ changeId: 'c1', outcome: 'shipped' })), 409);
+  assert.equal(code(() => o.recordShipOutcome({ changeId: 'c1', outcome: 'reverted', gateShouldHaveCaught: 'yes' })), 400);
+  assert.equal(code(() => o.recordShipOutcome({ changeId: 'c1', outcome: 'shipped', gateShouldHaveCaught: true })), 400);
+  assert.equal(code(() => o.recordDefect({ source: 'guess', flaggedByCheck: true })), 400);
+  assert.equal(code(() => o.recordDefect({ source: 'seeded', flaggedByCheck: 'true' })), 400);
+  assert.equal(code(() => o.recordDefect({ source: 'seeded', flaggedByCheck: true, by: 'model' })), 400);
+  assert.equal(s.storage.db.prepare("SELECT count(*) AS n FROM research_events WHERE entity_type IN ('ship_record','defect_record')").get().n, 1);
+});
+
+test('recorded free text is redacted and capped', () => {
+  const s = setup(); const o = createOutcomes({ db: s.storage.db });
+  o.recordDefect({ defectId: 'd1', source: 'seeded', flaggedByCheck: true, note: 'x'.repeat(1000) });
+  const row = s.storage.db.prepare("SELECT reason FROM research_events WHERE entity_type = 'defect_record'").get();
+  assert.ok(JSON.parse(row.reason).note.length <= 300);
+});
+
+test('a malformed recorded row makes the measures unreadable, never zero', () => {
+  for (const [type, to, reason] of [['defect_record', 'flagged', 'not json'], ['defect_record', 'maybe', '{}'], ['ship_record', 'reverted', '{}'], ['ship_record', 'reverted', '{"gateShouldHaveCaught":true}'], ['ship_record', 'exploded', '{}']]) {
+    const s = setup();
+    s.storage.db.prepare("INSERT INTO research_events (id, entity_type, entity_id, from_state, to_state, by, reason, at) VALUES ('x', ?, 'e', '', ?, 'owner', ?, '2026-11-19T00:00:00Z')").run(type, to, reason);
+    const r = s.measures.compute();
+    assert.equal(r.unreadable, true, `${type} ${to} ${reason}`); assert.deepEqual(r.measures, {});
+  }
+});
+
+test('a model-written row is not accepted: a row whose writer is not owner or code is unreadable', () => {
+  const s = setup();
+  s.storage.db.prepare("INSERT INTO research_events (id, entity_type, entity_id, from_state, to_state, by, reason, at) VALUES ('x', 'defect_record', 'e', '', 'flagged', 'model', '{}', '2026-11-19T00:00:00Z')").run();
+  assert.equal(s.measures.compute().unreadable, true);
+});
+
+test('a failed read of the recorded rows makes the measures unreadable', () => {
+  const s = setup();
+  s.storage.db.exec('DROP TABLE research_events');
+  assert.equal(s.measures.compute().unreadable, true);
 });

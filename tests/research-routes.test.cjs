@@ -8,6 +8,8 @@ const { createResearchStore } = require('../app/research/store');
 const { createIntake } = require('../app/research/intake');
 const { createTopicManager } = require('../app/research/topics');
 const { createBudget } = require('../app/research/budget');
+const { createOutcomes } = require('../app/research/outcomes');
+const { createMeasures } = require('../app/research/measures');
 const { createResearchRoutes } = require('../app/server/research');
 const { json, readBody, storageError } = require('../app/server/http');
 
@@ -21,7 +23,7 @@ const ATOM = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><ti
  <entry><id>tag:example.com,2026:a</id><title>Alpha release</title><link href="https://example.com/a"/><updated>2026-11-18T10:00:00Z</updated><summary>Adds things.</summary></entry></feed>`;
 const T = Date.parse('2026-11-19T15:00:00Z');
 
-function setup({ enabled = true, script, withBudget = false } = {}) {
+function setup({ enabled = true, script, withBudget = false, withMeasures = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'research-routes-'));
   dirs.push(dir);
   const storage = new Storage({ dataDir: dir });
@@ -31,7 +33,8 @@ function setup({ enabled = true, script, withBudget = false } = {}) {
   const intake = createIntake({ store, fetcher, enabled, now: () => T });
   const topics = createTopicManager({ db: storage.db, now: () => T });
   const budget = withBudget ? createBudget({ db: storage.db, store, topics, now: () => T, timeZone: 'UTC' }) : undefined;
-  const routes = createResearchRoutes({ budget, intake, json, readBody, store, storageError, topics });
+  const outcomes = createOutcomes({ db: storage.db, now: () => T });
+  const routes = createResearchRoutes({ outcomes, measures: withMeasures ? createMeasures({ db: storage.db }) : undefined, budget, intake, json, readBody, store, storageError, topics });
   return { store, intake, routes, calls, storage, topics };
 }
 const reqOf = body => Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))]), { method: 'POST', headers: {} });
@@ -213,4 +216,33 @@ test('GET /api/research/state carries every model budget cap; a failed read is u
   r = await call(routes.apiResearchState);
   assert.equal(r.status, 200); assert.equal(r.body.budget.unreadable, true); assert.deepEqual(r.body.budget.caps, []);
   void topics;
+});
+
+test('POST /api/research/ship-outcome and /defects record as owner and feed the measures on state', async () => {
+  const { routes, storage } = setup({ withBudget: true, withMeasures: true });
+  assert.equal((await call(routes.apiResearchShipOutcome, { changeId: 'chg-1', outcome: 'shipped' })).status, 200);
+  const r = await call(routes.apiResearchShipOutcome, { changeId: 'chg-1', outcome: 'reverted', gateShouldHaveCaught: true, by: 'code' });
+  assert.equal(r.status, 200);
+  assert.equal(storage.db.prepare("SELECT by FROM research_events WHERE to_state = 'reverted'").get().by, 'owner', 'the body cannot name the writer');
+  assert.equal((await call(routes.apiResearchDefect, { defectId: 'd1', source: 'seeded', flaggedByCheck: false })).status, 200);
+  const m = (await call(routes.apiResearchState)).body.measures.measures;
+  assert.deepEqual([m.regressionEscapes.num, m.regressionEscapes.den], [1, 1]);
+  assert.deepEqual([m.defectDetection.num, m.defectDetection.den], [0, 1]);
+});
+
+test('record routes: invalid 400, unshipped revert 409, not JSON 400, off 409, nothing stored on refusal', async () => {
+  const on = setup();
+  assert.equal((await call(on.routes.apiResearchShipOutcome, { changeId: 'c', outcome: 'reverted', gateShouldHaveCaught: true })).status, 409);
+  assert.equal((await call(on.routes.apiResearchShipOutcome, { changeId: 'c', outcome: 'nope' })).status, 400);
+  assert.equal((await call(on.routes.apiResearchDefect, { source: 'seeded' })).status, 400);
+  assert.equal((await call(on.routes.apiResearchDefect, 'not json{')).status, 400);
+  const off = setup({ enabled: false });
+  assert.equal((await call(off.routes.apiResearchDefect, { source: 'seeded', flaggedByCheck: true })).status, 409);
+  for (const s of [on, off]) assert.equal(s.storage.db.prepare("SELECT count(*) AS n FROM research_events WHERE entity_type IN ('ship_record','defect_record')").get().n, 0);
+});
+
+test('record routes: a failing store is an error status, not success', async () => {
+  const { routes, storage } = setup();
+  storage.db.exec('DROP TABLE research_events');
+  assert.ok((await call(routes.apiResearchDefect, { source: 'seeded', flaggedByCheck: true })).status >= 500);
 });

@@ -222,8 +222,15 @@ Research intake reads the feeds (Atom and RSS) the owner registers and stores th
   skip one document and say so. `GET /api/research/state` shows the reader's last outcome, cursor and counts.
 - **Measures** (`app/research/measures.js`, design 11.8) are computed from stored rows on `GET /api/research/state`: cost per
   validated improvement, model calls avoided, recommendation precision, investigation efficiency. A zero denominator is
-  `noData`, not 0%; defect detection and regression escapes say they are not recorded yet; a failed read of any input makes
-  the whole block `unreadable`. Nothing a model says feeds them.
+  `noData`, not 0%; a failed read of any input makes the whole block `unreadable`. Nothing a model says feeds them.
+- **Recorded outcomes** (`app/research/outcomes.js`, design 11.8) are the inputs of defect detection and regression
+  escapes: `POST /api/research/ship-outcome` (a change `shipped`, later `reverted` or `fixed_after_ship`, with the owner's
+  word on whether a gate should have caught it) and `POST /api/research/defects` (a seeded or confirmed defect and whether
+  a Tier 0 or Tier 1 check flagged it). Both sit under the guarded `/api/research/*` prefix (paired device or Mac key) and
+  answer 409 while research is off. The route fixes the writer to `owner`; deterministic code may write as `code`. No
+  model, reader or agent tool is given the recorder. Rows are append-only `research_events` (no schema change); free text is
+  redacted and capped. They change no permission, budget, safety rule or trusted instruction file. A zero denominator is
+  `noData`; a row that cannot be parsed makes the measures `unreadable`, never zero.
 
 ## Known gaps
 
