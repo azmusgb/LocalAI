@@ -9,7 +9,8 @@ const { createBudget } = require('../app/research/budget');
 const { createReaderJob, parseAnswer } = require('../app/research/reader-job');
 
 let T;
-const TEXT = 'Node 22.14 fixes CVE-2026-0001 in the http parser. Upgrade at once.';
+const PAD = ' ' + 'The release also lists every other change in this line, so the entry is long enough to be worth a model read.'.repeat(2);
+const TEXT = 'Node 22.14 fixes CVE-2026-0001 in the http parser. Upgrade at once. '.repeat(1) + 'The release also updates npm, refreshes the bundled root certificates and lists every change since 22.13 in the changelog for this line.';
 function setup(opts = {}) {
   T = Date.parse('2026-11-19T15:00:00Z');
   const storage = new Storage({ dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'reader-')) });
@@ -77,7 +78,7 @@ test('a quote that is not in the document yields no finding but the document cou
 
 test('an exhausted budget queues the document, keeps it first in line and reads it after the reset', async () => {
   const s = setup(); s.topics.updateTopic(s.topic.id, { budgetCalls: 1, reason: 'test' });
-  s.addDoc('a'); s.addDoc('b', 'Second doc fixes CVE-2026-0001 in the http parser.');
+  s.addDoc('a'); s.addDoc('b', 'Second doc fixes CVE-2026-0001 in the http parser.' + PAD);
   assert.equal((await s.job.tick()).code, 'finding');
   const r = await s.job.tick();
   assert.equal(r.code, 'budget_exhausted'); assert.equal(r.queued, true); assert.equal(r.cap, 'topic.day.calls'); assert.ok(r.resetsAt);
@@ -102,7 +103,7 @@ test('a document no active topic covers is not read and is counted', async () =>
 });
 
 test('the daily findings cap stops reading and the rest wait', async () => {
-  const s = setup({ dailyFindings: 1 }); s.addDoc('a'); s.addDoc('b', 'Another fixes CVE-2026-0001 in the http parser.');
+  const s = setup({ dailyFindings: 1 }); s.addDoc('a'); s.addDoc('b', 'Another fixes CVE-2026-0001 in the http parser.' + PAD);
   assert.equal((await s.job.tick()).code, 'finding');
   assert.equal((await s.job.tick()).code, 'daily_cap'); assert.equal(s.calls.length, 1);
 });
@@ -127,4 +128,18 @@ test('two ticks at once never run two reads', async () => {
   const s = setup(); s.addDoc();
   const [a, b] = await Promise.all([s.job.tick(), s.job.tick()]);
   assert.deepEqual([a.code, b.code].sort(), ['busy', 'finding']); assert.equal(s.calls.length, 1);
+});
+
+test('a document with almost no text is skipped without a model call or budget spend, and counted', async () => {
+  const t = setup(); t.addDoc('thin', 'A short teaser.'); t.addDoc('empty', '');
+  const first = await t.job.tick();
+  assert.equal(first.code, 'too_thin'); assert.equal(t.calls.length, 0);
+  assert.equal((await t.job.tick()).code, 'too_thin');
+  assert.equal((await t.job.tick()).code, 'idle', 'both were passed over, the cursor moved');
+  assert.equal(t.calls.length, 0);
+  assert.equal(t.job.state().counts.tooThin, 2); assert.equal(t.job.state().counts.read, 0);
+  assert.equal(t.storage.db.prepare("SELECT count(*) n FROM research_events WHERE entity_type='budget'").get().n, 0);
+  t.addDoc('full'); assert.equal((await t.job.tick()).code, 'finding', 'a document with real text is still read');
+  const tuned = setup({ minTextChars: 5 }); tuned.addDoc('thin', 'A short teaser.');
+  await tuned.job.tick(); assert.equal(tuned.calls.length, 1, 'the threshold is a setting: a short document is read when it is lowered');
 });
