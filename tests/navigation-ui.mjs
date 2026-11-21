@@ -91,7 +91,7 @@ await check('System: Tools lists every tool, each opens at its address with Tool
   await page.waitForSelector('#architecture.active', { timeout: 5000 });
   assert.equal(await crumbOf(page), 'Improve');
   assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Atlas');
-  assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Claude Code', 'Atlas']);
+  assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Research', 'Claude Code', 'Atlas']);
 });
 
 // One Changes page (navigation depth, D4): In progress and Shipped keep their addresses, light Changes and share its stage chips.
@@ -100,7 +100,7 @@ await check('Improve: Backlog, In progress and Shipped are one Changes page with
   for (const [id, current] of stages) {
     await page.evaluate(h => { location.hash = '#' + h; }, id);
     await page.waitForSelector(`#${id}.active`, { timeout: 5000 });
-    assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Claude Code', 'Atlas'], `${id} strip`);
+    assert.deepEqual(await stripLabels(), ['Changes', 'Signals', 'Research', 'Claude Code', 'Atlas'], `${id} strip`);
     assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Changes', `${id} lights Changes`);
     const chips = page.locator(`#${id} .changes-stages a`);
     assert.deepEqual(await chips.allInnerTexts(), ['Backlog', 'In progress', 'Shipped'], `${id} chips`);

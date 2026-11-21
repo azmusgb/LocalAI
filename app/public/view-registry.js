@@ -45,6 +45,7 @@ const VIEWS=[
  // GridCraft on the Windows computer, through the appliance (spreadsheets.js). The old /gridcraft.html page sends you here.
  // A Work kind since 2 Nov (D4): the Spreadsheets chip in Work and the Spreadsheet mode on Home lead here.
  {id:'spreadsheets',svg:'file',domain:'hidden',owner:'work',section:'Make',label:'Spreadsheets',description:'Ask for a spreadsheet on the Windows computer to be checked or changed.',aka:['gridcraft','excel','workbook']},
+ {id:'research',svg:'eye',domain:'improve',section:'Pipeline',label:'Research',description:'What the research intake read, what it cost and how well it is doing.',aka:['intake','feeds','knowledge loop','findings']},
  {id:'claude',svg:'sparkle',domain:'improve',section:'Pipeline',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
  {id:'architecture',svg:'flow',domain:'improve',section:'Pipeline',label:'Atlas',description:'System Atlas: topology, changes, risk, evidence and local architecture intelligence.',aka:['architecture','system atlas','dependencies','architecture atlas']},
  {id:'workbench',svg:'folder',domain:'system',section:'Tools',tool:true,lights:'tools',label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
