@@ -293,9 +293,107 @@ await check('the bell says checking until Needs you is read, couldn\'t check whe
   await page.evaluate(() => window.LocalAIHome.refresh());
   await notice.waitFor(T);
   assert.match(await notice.innerText(), /^Local AI's run list isn't answering\. Showing runs from \d{1,2}:\d{2}\s?[AP]M\.$/);
+  // The notice and the sources line name the same last good read (Needs you's, the older of the two).
+  const shown = (await notice.innerText()).match(/from (.+)\.$/)[1];
+  assert.match(await page.locator('#homeSrcRuns').innerText(), new RegExp(`^Local AI's run list:\\s+Not answering\\s+last read ${shown.replace(/\s/g, '\\s')}$`));
   assert.equal(await page.locator('#homeNeedsList .ui-need').count(), n, 'the last rows stay');
   assert.equal(await page.locator('#homeNeedsCount').textContent(), '', 'stale rows are not counted');
   assert.equal(await bell.getAttribute('aria-label'), "Needs you, couldn't check");
+  await ctx.close();
+});
+
+// A28: a failed read is its own state. Improve's and the approvals' reads were dropped without a word: the new-signals row
+// went (or kept its old count) and approvals kept old rows as if current. Now a muted note under Needs you says what may be
+// missing; the count Home did read stays (only an unread run list blanks it).
+async function needsReads(stubs, runs = () => []) {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: desk });
+  await ctx.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  const page = await ctx.newPage();
+  const fulfil = (r, body, status = 200) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  const answer = key => r => { const s = stubs[key](); return fulfil(r, s.body, s.status || 200); };
+  const rows = runs();
+  await page.route(u => u.pathname === '/api/activity', r => fulfil(r, { items: [] }));
+  await page.route(u => u.pathname === '/api/home/hub-needs', r => fulfil(r, { items: [] }));
+  await page.route(u => u.pathname === '/api/capabilities', r => fulfil(r, capabilities()));
+  await page.route(u => u.pathname === '/api/runs', r => fulfil(r, { items: rows, summary: {} }));
+  await page.route(u => u.pathname === '/api/improve/items', answer('improve'));
+  await page.route(u => u.pathname === '/api/approvals', answer('approvals'));
+  await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.LocalAIHome && /Answering/.test(document.getElementById('homeSrcRuns')?.textContent || ''), null, T);
+  return { ctx, page, note: page.locator('#homeNeedsNote'), plate: page.locator('#homePlate .ui-readout'), count: page.locator('#homeNeedsCount'), bell: page.locator('#uxInboxBtn') };
+}
+const signal = n => Array.from({ length: n }, (_, i) => ({ id: 'sig-' + i, source: 'signal', status: 'proposed', stage: 'backlog', createdAt: new Date(NOW - 60e3).toISOString() }));
+const down = { status: 500, body: { error: 'Server blew up' } };
+const at = '\\d{1,2}:\\d{2}\\s?[AP]M';
+const warns = page => page.locator('#home .ui-notice--warn:visible').count();
+
+await check('runs read and Improve not answering: the count Home read stays, and a note says the list may be incomplete', async () => {
+  let imp = () => ({ body: { items: [], signals: [] } });
+  const { ctx, page, note, plate, count, bell } = await needsReads({ improve: () => imp(), approvals: () => ({ body: { items: [] } }) }, needs);
+  await page.waitForFunction(() => /^· \d+$/.test(document.getElementById('homeNeedsCount').textContent), null, T);
+  const n = await count.textContent(), readout = (await plate.innerText()).trim(), label = await bell.getAttribute('aria-label');
+  assert.equal(await note.isHidden(), true, 'no note while every read is good');
+  imp = () => down;
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await note.waitFor(T);
+  assert.equal(await note.innerText(), "Improve isn't answering, so this list may be incomplete.");
+  assert.equal(await count.textContent(), n, 'the count Home read is kept');
+  assert.equal((await plate.innerText()).trim(), readout, 'not "couldn\'t check" from a read the count does not rest on');
+  assert.equal(await bell.getAttribute('aria-label'), label, 'the bell keeps its number');
+  assert.match(await page.locator('#homeSrcImprove').innerText(), new RegExp(`^Improve:\\s+Not answering\\s+last read ${at}$`));
+  assert.equal(await warns(page), 0, 'a muted note under Needs you, not a warning notice');
+  await ctx.close();
+});
+
+await check("Improve not answering is said on Home, and no signals count is shown as current", async () => {
+  // First read refused (an unpaired browser: 401 signIn), then answered, then failing again.
+  let imp = () => ({ status: 401, body: { error: 'Sign in on this device first', signIn: true } });
+  const { ctx, page, note, plate } = await needsReads({ improve: () => imp(), approvals: () => ({ body: { items: [] } }) });
+  await note.waitFor(T);
+  assert.equal(await note.innerText(), "Improve isn't answering, so this list may be incomplete.");
+  assert.equal(await page.locator('#homeNeedsYou').isVisible(), true, 'Needs you shows the note even with no rows');
+  assert.match(await page.locator('#homeSrcImprove').innerText(), /^Improve:\s+Not answering$/);
+  assert.equal(await page.locator('#homeRunsNotice').isHidden(), true, 'the runs were read: their notice stays down');
+  imp = () => ({ body: { items: signal(2), signals: [] } });
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await page.waitForFunction(() => /2 new signals in your backlog/.test(document.getElementById('homeNeedsList').textContent), null, T);
+  assert.equal(await note.isHidden(), true, 'a good read clears the note');
+  assert.match(await page.locator('#homeSrcImprove').innerText(), new RegExp(`^Improve:\\s+Answering\\s+read ${at}$`));
+  assert.equal((await plate.innerText()).trim(), '1 needs you');
+  imp = () => down;
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await note.waitFor(T);
+  assert.match(await page.locator('#homeSrcImprove').innerText(), new RegExp(`^Improve:\\s+Not answering\\s+last read ${at}$`));
+  assert.equal(await page.locator('#homeNeedsList .ui-need', { hasText: 'new signals' }).count(), 0, 'the old count is withheld, not shown as current');
+  await ctx.close();
+});
+
+await check('approvals not answering keep their last rows and count, said to be from the last read', async () => {
+  let appr = () => down;
+  const pending = [{ id: 'ap-1', status: 'pending', title: 'Approve the update', detail: 'A change waits for you' }];
+  const { ctx, page, note, count } = await needsReads({ improve: () => ({ body: { items: [] } }), approvals: () => appr() });
+  await note.waitFor(T);
+  assert.equal(await note.innerText(), "Approvals isn't answering, so this list may be incomplete.");
+  assert.match(await page.locator('#homeSrcApprovals').innerText(), /^Approvals:\s+Not answering$/);
+  appr = () => ({ body: { items: pending } });
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await page.waitForSelector('#homeNeedsList [data-approval-id="ap-1"]', T);
+  assert.equal(await note.isHidden(), true);
+  assert.equal(await count.textContent(), '· 1');
+  appr = () => down;
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await note.waitFor(T);
+  const text = await note.innerText();
+  assert.match(text, new RegExp(`^Approvals isn't answering\\. Showing approvals from ${at}\\.$`));
+  assert.match(await page.locator('#homeSrcApprovals').innerText(), new RegExp(`^Approvals:\\s+Not answering\\s+last read ${text.match(/from (.+)\.$/)[1].replace(/\s/g, '\\s')}$`));
+  assert.equal(await page.locator('#homeNeedsList [data-approval-id="ap-1"]').count(), 1, 'the last approvals stay, said to be from then');
+  assert.equal(await count.textContent(), '· 1', 'the count stays');
+  // Both down: one note, naming both, still saying where the approvals are from.
+  await page.route(u => u.pathname === '/api/improve/items', r => r.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));
+  await page.evaluate(() => window.LocalAIHome.refresh());
+  await page.waitForFunction(() => /^Improve and Approvals/.test(document.getElementById('homeNeedsNote').textContent), null, T);
+  assert.match(await note.innerText(), new RegExp(`^Improve and Approvals aren't answering\\. Showing approvals from ${at}\\.$`));
+  assert.equal(await warns(page), 0);
   await ctx.close();
 });
 

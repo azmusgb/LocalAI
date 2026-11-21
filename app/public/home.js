@@ -134,7 +134,7 @@ async function decideHere(a){
  const sec=$('homeNeedsYou'),first=sec&&!sec.hidden?$('homeNeedsList')?.querySelector('a[href]'):null;
  root.LocalAIUI.refocus(a.id,{within:'#homeNeedsList',key:'approvalId',next,prev,fallback:first||$('homeRecentTitle')});
 }
-let needs=[],approvals=[],newSignals=0,hubItems=null,needsKitMissing=false;
+let needs=[],approvals=[],newSignals=0,hubItems=null,needsKitMissing=false,impAt=null,apprAt=null,impBad=false,apprBad=false,needsNote='';
 // Another device on plain HTTP can't use voice, notifications or Add to Home Screen; point it at the setup until it opts out there.
 const onPlainHttp=()=>location.protocol==='http:'&&!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
 const secureNudge=()=>{if(!onPlainHttp())return false;try{return localStorage.getItem('localai.secureNudge.off')!=='1'}catch{return true}};
@@ -191,7 +191,8 @@ function paintNeeds(){
  // The bell shows this on every page; no number until Local AI's runs are read.
  root.dispatchEvent(new CustomEvent('localai:needs-count',{detail:needsFailed?{state:'unavailable'}:needsRead?{n:n+covered}:{state:'checking'}}));
  if(needsFailed)plateNeeds(null);else if(needsRead)plateNeeds(n+covered);
- if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
+ const note=$('homeNeedsNote');if(note){if(note.textContent!==needsNote)note.textContent=needsNote;note.hidden=!needsNote}
+ if(!entries.length){box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=!needsNote;return}
  if(!root.ApplianceNeeds){if(!needsKitMissing){needsKitMissing=true;console.warn('Needs you: /ui/needs.js did not load; the section stays hidden')}box.replaceChildren();$('homeNeedsCount').textContent='';sec.hidden=true;return}
  // Dense on the Assistant's Home (A7 P2): one line a row, the same rows as Pi Hub's.
  const ul=root.ApplianceNeeds.renderList(entries.map(e=>e.item),{resolve,here:new URL(location.href),self:'Local AI',max:shown,dense:true,more:{href:'#work?kind=needs',label:`See all ${n}`}});
@@ -237,8 +238,9 @@ const recentUrl='/api/runs?threads=1&limit=30';  // enough to fill six rows afte
 async function loadNeeds(){
  const [d,p,imp,hub]=await Promise.allSettled([root.LocalAIUI.fetchJson('/api/runs?limit=120',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/approvals',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/improve/items',{cache:'no-store'}),root.LocalAIUI.fetchJson('/api/home/hub-needs',{cache:'no-store'})]);
  hubItems=hub.status==='fulfilled'?hub.value.items:null;  // Pi Hub not answering: only Local AI's own rows
- root.LocalAIUI?.sources?.('homeSrcHub',"Pi Hub's Needs you",hubItems?'ok':'bad');
- if(imp.status==='fulfilled'){const day=Date.now()-864e5;newSignals=(imp.value.items||[]).filter(i=>i.source==='signal'&&i.status==='proposed'&&i.stage==='backlog'&&Date.parse(i.createdAt)>day).length}
+ src('homeSrcHub',"Pi Hub's Needs you",!hubItems);
+ impBad=imp.status!=='fulfilled';apprBad=p.status!=='fulfilled';
+ if(impBad)newSignals=0;else{const day=Date.now()-864e5;newSignals=(imp.value.items||[]).filter(i=>i.source==='signal'&&i.status==='proposed'&&i.stage==='backlog'&&Date.parse(i.createdAt)>day).length;impAt=new Date()}
  const runs=d.status==='fulfilled'?d.value.items||[]:null;
  if(runs){needs=root.LocalAINeedsYou.pick(runs);needsRead=new Date()}
  needsFailed=!runs; // the rows stay, said to be stale (A28)
@@ -247,15 +249,21 @@ async function loadNeeds(){
   const waiting=new Set(needs.filter(r=>r.status==='awaiting_approval').map(r=>r.meta?.changeId).filter(Boolean));
   approvals=(p.value.items||[]).filter(a=>a.status==='pending'&&!(a.meta?.changeId&&waiting.has(a.meta.changeId)))
    .map(a=>({a,run:a.meta?.changeId&&(runs||[]).find(r=>r.meta?.changeId===a.meta.changeId)||null}));
- }
+  apprAt=new Date();
+ } // else the last ones stay, said to be from then
+ src('homeSrcImprove','Improve',impBad,impAt);src('homeSrcApprovals','Approvals',apprBad,apprAt);
+ // The count stays; a note says what it may miss (the runs' notice covers them)
+ const off=[impBad&&'Improve',apprBad&&'Approvals'].filter(Boolean);
+ needsNote=needsFailed||!off.length?'':(off[1]?off.join(' and ')+" aren't answering":(root.ApplianceNeeds?.PHRASES?.source_down||"{name} isn't answering").replace('{name}',off[0]))+(apprBad&&approvals.length?'. Showing approvals from '+hm(apprAt)+'.':', so this list may be incomplete.');
  paintNeeds();
  if(lastRecent?.box.isConnected&&!lastRecent.box.querySelector(':scope > .state-loading,:scope > .state-error'))paintRecent(lastRecent.box,lastRecent.data); // Recent may have painted before Needs you knew its rows
 }
 // One notice and sources part for Local AI's runs (Needs you and Recent; A28). A Recent never loaded shows its own error.
+const hm=d=>d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}),src=(id,name,bad,at)=>root.LocalAIUI?.sources?.(id,name,bad?'bad':'ok',at?(bad?'last read ':'read ')+hm(at):'');
 function paintRuns(){
  const U=root.LocalAIUI,bad=needsFailed||recentFailed&&recentReadAt,at=[needsFailed&&needsRead,recentFailed&&recentReadAt].filter(Boolean),since=at.length?new Date(Math.min(...at)):null,last=bad?since:new Date(Math.max(needsRead,recentReadAt));
  U?.staleNotice?.('homeRunsNotice',{since:bad?needsFailed&&!needsRead||since||true:null,missing:'Needs you'});
- if(needsRead||recentReadAt||bad)U?.sources?.('homeSrcRuns',"Local AI's run list",bad?'bad':'ok',last?(bad?'last read ':'read ')+last.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}):'');
+ if(needsRead||recentReadAt||bad)src('homeSrcRuns',"Local AI's run list",bad,last);
 }
 function recentRead(ok){if(ok)recentReadAt=new Date();recentFailed=!ok;paintRuns();if(!ok&&lastRecent?.box.isConnected&&!lastRecent.box.querySelector(':scope > .state-loading,:scope > .state-error'))paintRecent(lastRecent.box,lastRecent.data)}
 let inflight=null;
