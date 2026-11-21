@@ -24,7 +24,7 @@ function createMeasures({ db } = {}) {
       }
       const allCalls = spend[1].calls + spend[2].calls, allChars = spend[1].chars + spend[2].chars;
       const documents = db.prepare('SELECT count(*) AS n FROM research_documents').get().n;
-      const decided = db.prepare("SELECT count(*) AS n FROM research_findings WHERE status IN ('kept', 'dismissed', 'promoted')").get().n;
+      const decided = db.prepare("SELECT count(*) AS n FROM research_findings WHERE status IN ('kept', 'dismissed', 'promoted', 'validated', 'refuted')").get().n;
       // The newest outcome of each finding is its verdict: a later "refuted" overrides an earlier "validated".
       const latest = db.prepare(`SELECT o.verdict AS verdict FROM research_outcomes o
         WHERE o.rowid = (SELECT o2.rowid FROM research_outcomes o2 WHERE o2.finding_id = o.finding_id ORDER BY o2.created_at DESC, o2.rowid DESC LIMIT 1)`).all();

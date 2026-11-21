@@ -24,7 +24,7 @@ test('research step 2 routes: findings, decide, promote, and outcomes', async ()
     readBody: fakeReadBody,
     storageError: (res, e) => { res.statusCode = 500; res.body = { error: e.message }; },
     changes: {
-      addChange: (c) => ({ id: 'chg-456', ...c })
+      addResearchItem: (f, sources, title) => ({ id: 'chg-456', title })
     }
   });
 

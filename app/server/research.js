@@ -9,6 +9,8 @@ const OFF = { error: 'research is off' };
 const REFUSED = new Set(['off', 'paused', 'busy', 'not_active', 'daily_cap']);
 // The intake could not read its state or record the fetch: the store is failing, not the feed.
 const UNAVAILABLE = new Set(['error', 'record_failed']);
+// New findings shown per calendar day (A31: the daily attention cap).
+const CAP = 10;
 const SOURCE_FIELDS = ['name', 'url', 'kind', 'trust', 'topics', 'scheduleMinutes', 'status'];
 
 function createResearchRoutes(ctx) {
@@ -94,8 +96,13 @@ function createResearchRoutes(ctx) {
       if (!enabled) return json(res, 200, { enabled, findings: [] });
       const q = urlObj.searchParams;
       const status = q.get('status') || '';
-      const limit = Math.min(10, Math.max(1, Number.parseInt(q.get('limit'), 10) || 10)); // Daily attention cap default 10
-      return json(res, 200, { enabled, findings: store.listFindings({ status, limit }) });
+      const limit = Math.min(CAP, Math.max(1, Number.parseInt(q.get('limit'), 10) || CAP));
+      // At most CAP new (extracted) findings are shown per calendar day; the rest wait (store.inbox). `counts` feeds
+      // "New today N of 10 · M waiting". A failed read throws to fail(), never to zero.
+      const box = store.inbox(CAP);
+      const shown = new Set(box.ids);
+      const findings = store.listFindings({ status, limit: 100 }).filter(f => f.status !== 'extracted' || shown.has(f.id)).slice(0, limit);
+      return json(res, 200, { enabled, findings, counts: { newToday: box.newToday, cap: box.cap, waiting: box.waiting } });
     } catch (e) { fail(res, e); }
   }
 
@@ -115,21 +122,16 @@ function createResearchRoutes(ctx) {
       const finding = store.getFinding(String(b.id || ''));
       if (!finding) return json(res, 404, { error: 'No such finding' });
 
-      // Promotion creates an ordinary Improve backlog item
-      const itemTitle = String(b.title || finding.claim).slice(0, 140);
-      const desc = `Promoted from Research Finding ${finding.id}.\nEvidence quote:\n"${finding.quote}"\n\nTarget project: ${finding.targetProject}\nRelevance: ${finding.relevance}`;
-
-      let changeId = '';
-      if (ctx.changes && typeof ctx.changes.addChange === 'function') {
-        const chg = ctx.changes.addChange({
-          title: itemTitle,
-          description: desc,
-          project: finding.targetProject,
-          kind: 'improvement',
-          source: 'research'
-        });
-        changeId = chg.id;
-      }
+      // Promotion creates an ordinary Improve backlog item (app/server/changes.js addResearchItem). Without one the finding
+      // stays as it was and the owner is told: a promote that made nothing is never shown as done.
+      if (!ctx.changes || typeof ctx.changes.addResearchItem !== 'function') return json(res, 503, { error: 'Improve is not available, so nothing was promoted' });
+      const doc = store.getDocument(finding.documentId), src = store.getSource(finding.sourceId);
+      const sources = [src && { name: src.name, url: src.url }, doc && doc.url && { name: doc.title, url: doc.url }].filter(Boolean);
+      let item;
+      try { item = ctx.changes.addResearchItem(finding, sources, String(b.title || '').trim()); }
+      catch (e) { return json(res, 500, { error: `Could not add it to the backlog, so nothing was promoted: ${String(e && e.message || e).slice(0, 200)}` }); }
+      const changeId = item && typeof item.id === 'string' ? item.id : '';
+      if (!changeId) return json(res, 500, { error: 'Could not add it to the backlog, so nothing was promoted' });
 
       const updated = store.decideFinding(finding.id, 'promoted', { changeId });
       return json(res, 200, { finding: updated, changeId });

@@ -663,6 +663,13 @@ function createChanges(ctx) {
       if(c.approvalId){const approvals=approvalStore(),ai=approvals.findIndex(a=>a.id===c.approvalId&&a.status==='pending');if(ai>=0){approvals[ai].status='rejected';approvals[ai].updatedAt=nowIso();saveStore(APPROVALS_STORE,approvals,500)}}
       saveChanges(items)});
   }
+  // Research's Promote: the finding becomes an ordinary backlog item (improve.researchItem). The same finding again is the one item.
+  function addResearchItem(finding,sources,title){
+    const at=nowIso(),made=improve.researchItem(finding,sources,title,at),prev=improveRead(made.id);
+    if(prev)return prev;
+    storage.writeSetting(CLAUDE_FINDING_PREFIX+made.id,{sessionId:'research',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',pr:'',...made});
+    return improveRead(made.id);
+  }
   async function apiImproveItems(req,res){
     try{runImproveReconcile();const changes=changeStore(),byId=new Map(changes.map(c=>[c.id,c]));
       const ranked=claudeRanked(claudeFindings().map(f=>({...f,source:f.source||'claude'})));
@@ -846,7 +853,7 @@ function createChanges(ctx) {
     const open=claudeRanked(claudeFindings()).filter(f=>!['fixed','rejected','deferred'].includes(f.status));
     json(res,200,{generatedAt:nowIso(),items:open.slice(0,Math.max(1,Math.min(200,Number(urlObj.searchParams.get('limit'))||50))).map(({id,rank,score,title,category,severity,status,votes,file,fix,decisionNote})=>({id,rank,score,title,category,severity,status,votes,file,fix,decisionNote}))});
   }
-  return { claudeLiveNow, apiChangeApprove, apiChangeCapabilities, apiChangeDeployResult, apiChangePlan, apiChangeRequestApply, apiChangeStage, apiChanges, apiClaudeBoard, apiClaudeDecision, apiClaudeEvents, apiClaudeFindings, apiClaudePriorities, apiClaudeVote, apiEngineeringRun, apiEngineeringRuns, apiEngineeringStart, apiImproveHandoff, apiImproveIdea, apiImproveItem, apiImproveItems, apiImproveSignal, changeStore, claudeFindings, decideChange, duplicateHtmlIds, duplicateTopLevelFunctions, effectiveEngineeringRuns, engineeringRunStore, generatePatchPlan, publicChange, retireChangesOfClosedItems, runImproveReconcile, runProcess, saveChanges, shipQueuedSelfChanges };
+  return { addResearchItem, claudeLiveNow, apiChangeApprove, apiChangeCapabilities, apiChangeDeployResult, apiChangePlan, apiChangeRequestApply, apiChangeStage, apiChanges, apiClaudeBoard, apiClaudeDecision, apiClaudeEvents, apiClaudeFindings, apiClaudePriorities, apiClaudeVote, apiEngineeringRun, apiEngineeringRuns, apiEngineeringStart, apiImproveHandoff, apiImproveIdea, apiImproveItem, apiImproveItems, apiImproveSignal, changeStore, claudeFindings, decideChange, duplicateHtmlIds, duplicateTopLevelFunctions, effectiveEngineeringRuns, engineeringRunStore, generatePatchPlan, publicChange, retireChangesOfClosedItems, runImproveReconcile, runProcess, saveChanges, shipQueuedSelfChanges };
 }
 
 module.exports = { createChanges, CLAUDE_LIVE_WINDOW_MS, CLAUDE_MAX_SESSIONS, claudeKeptSessions, claudeSessionView };
