@@ -12,7 +12,7 @@ const UNAVAILABLE = new Set(['error', 'record_failed']);
 const SOURCE_FIELDS = ['name', 'url', 'kind', 'trust', 'topics', 'scheduleMinutes', 'status'];
 
 function createResearchRoutes(ctx) {
-  const { budget, experiments, intake, measures, reader, json, readBody, store, storageError, topics } = ctx;
+  const { budget, experiments, intake, measures, outcomes, reader, json, readBody, store, storageError, topics } = ctx;
   const pick = (b, fields) => Object.fromEntries(fields.filter(k => k in b).map(k => [k, b[k]]));
   // Store validation errors carry .status 400, 404, 409 or 410 and a message written for the owner; anything else is a failure.
   function fail(res, e) {
@@ -152,6 +152,20 @@ function createResearchRoutes(ctx) {
     } catch (e) { fail(res, e); }
   }
 
+  // Owner-recorded inputs of two measures (outcomes.js). Guarded like every /api/research/* route; `by` is fixed to 'owner'
+  // here, so the body cannot name another writer. Off means 409 like the other writes; a missing recorder is 501.
+  async function apiResearchRecord(req, res, kind) {
+    try {
+      const b = await body(req);
+      if (!read().enabled) return json(res, 409, OFF);
+      if (!outcomes) return json(res, 501, { error: 'Outcome recorder not configured' });
+      if (kind === 'ship') return json(res, 200, { ok: true, record: outcomes.recordShipOutcome({ ...pick(b, ['changeId', 'outcome', 'gateShouldHaveCaught', 'note']), by: 'owner' }) });
+      return json(res, 200, { ok: true, record: outcomes.recordDefect({ ...pick(b, ['defectId', 'source', 'flaggedByCheck', 'check', 'note']), by: 'owner' }) });
+    } catch (e) { fail(res, e); }
+  }
+  const apiResearchShipOutcome = (req, res) => apiResearchRecord(req, res, 'ship');
+  const apiResearchDefect = (req, res) => apiResearchRecord(req, res, 'defect');
+
   async function apiResearchExperiments(req, res, urlObj) {
     try {
       const enabled = read().enabled;
@@ -230,7 +244,8 @@ function createResearchRoutes(ctx) {
     apiResearchSourceUpdate, apiResearchSourceFetch, apiResearchDocuments,
     apiResearchFindings, apiResearchFindingDecide, apiResearchFindingPromote, apiImproveOutcome,
     apiResearchExperiments, apiResearchContracts,
-    apiResearchTopics, apiResearchTopicUpdate, apiResearchConflicts
+    apiResearchTopics, apiResearchTopicUpdate, apiResearchConflicts,
+    apiResearchShipOutcome, apiResearchDefect
   };
 }
 
