@@ -46,8 +46,10 @@ const FEED = 'https://example.com/feed.atom';
 test('GET /api/research/state answers intake.state()', async () => {
   const { routes, intake } = setup();
   const r = await call(routes.apiResearchState);
-  assert.equal(r.status, 200); const { budget, ...rest } = r.body; assert.deepEqual(rest, intake.state()); assert.equal(r.body.enabled, true);
+  assert.equal(r.status, 200); const { budget, reader, measures, ...rest } = r.body; assert.deepEqual(rest, intake.state()); assert.equal(r.body.enabled, true);
   assert.equal(budget.unreadable, true, 'no budget configured is shown as unreadable, never as nothing used');
+  assert.equal(reader.unreadable, true, 'no reader configured is shown as unreadable, never as idle');
+  assert.equal(measures.unreadable, true, 'no measures configured is shown as unreadable, never as zero');
 });
 
 test('POST /api/research/pause sets and clears the pause; a non-boolean is 400', async () => {

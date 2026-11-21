@@ -214,6 +214,16 @@ Research intake reads the feeds (Atom and RSS) the owner registers and stores th
   `budget.tier2.day.*` in `research_meta`. Spend is an append-only `research_events` row. An exhausted cap queues nothing and
   loses nothing: the call is refused with the cap, its limit and when it resets, and intake keeps running. A cap or counter
   that cannot be read refuses the call and shows `unreadable` on `GET /api/research/state`, never zero used.
+- **The reader** (`app/research/reader-job.js`, A31 phase 2, A32 D4) is off unless **both** `LOCALAI_RESEARCH=on` and
+  `LOCALAI_RESEARCH_READER=on`. Every 30 s it reads at most one new or revised stored document with the local model and no
+  tools (never the network), only if an active topic matches the document's source, the budget allows it and nothing
+  interactive is using the model. The document sits in an untrusted block; a finding is kept only if its quote appears
+  word for word in the document; at most 10 new findings a day. A refusal leaves the document queued; three model failures
+  skip one document and say so. `GET /api/research/state` shows the reader's last outcome, cursor and counts.
+- **Measures** (`app/research/measures.js`, design 11.8) are computed from stored rows on `GET /api/research/state`: cost per
+  validated improvement, model calls avoided, recommendation precision, investigation efficiency. A zero denominator is
+  `noData`, not 0%; defect detection and regression escapes say they are not recorded yet; a failed read of any input makes
+  the whole block `unreadable`. Nothing a model says feeds them.
 
 ## Known gaps
 
