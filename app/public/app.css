@@ -2779,4 +2779,4 @@ html.is-framed body.ux-v3 .ux-page-strip{top:0}
 .run-action-proposal{margin-top:var(--ui-s-3);max-width:32rem}
 
 
-#research .research-mono{margin:0;font:400 var(--ui-fs-2)/1.4 var(--ui-mono);overflow-wrap:anywhere}#research .ui-row__detail,#research .ui-notice{overflow-wrap:anywhere}#research .ui-table td{overflow-wrap:break-word}#research .ui-row__value{white-space:normal;text-align:right}
+#research .ui-disclosure__summary{min-height:44px}#research .research-mono{margin:0;font:400 var(--ui-fs-2)/1.4 var(--ui-mono);overflow-wrap:anywhere}#research .ui-row__detail,#research .ui-notice{overflow-wrap:anywhere}#research .ui-table td{overflow-wrap:break-word}#research .ui-row__value{white-space:normal;text-align:right}
