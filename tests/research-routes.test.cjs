@@ -230,7 +230,7 @@ test('POST /api/research/ship-outcome and /defects record as owner and feed the 
   assert.deepEqual([m.defectDetection.num, m.defectDetection.den], [0, 1]);
 });
 
-test('record routes: invalid 400, unshipped revert 409, not JSON 400, off 409, nothing stored on refusal', async () => {
+test('record routes (/api/research/ship-outcome, /api/research/defects): invalid 400, unshipped revert 409, not JSON 400, off 409, nothing stored on refusal', async () => {
   const on = setup();
   assert.equal((await call(on.routes.apiResearchShipOutcome, { changeId: 'c', outcome: 'reverted', gateShouldHaveCaught: true })).status, 409);
   assert.equal((await call(on.routes.apiResearchShipOutcome, { changeId: 'c', outcome: 'nope' })).status, 400);
