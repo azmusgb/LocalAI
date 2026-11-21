@@ -6,6 +6,8 @@ const { Readable } = require('node:stream');
 const { Storage } = require('../app/storage');
 const { createResearchStore } = require('../app/research/store');
 const { createIntake } = require('../app/research/intake');
+const { createTopicManager } = require('../app/research/topics');
+const { createBudget } = require('../app/research/budget');
 const { createResearchRoutes } = require('../app/server/research');
 const { json, readBody, storageError } = require('../app/server/http');
 
@@ -19,7 +21,7 @@ const ATOM = `<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><ti
  <entry><id>tag:example.com,2026:a</id><title>Alpha release</title><link href="https://example.com/a"/><updated>2026-11-18T10:00:00Z</updated><summary>Adds things.</summary></entry></feed>`;
 const T = Date.parse('2026-11-19T15:00:00Z');
 
-function setup({ enabled = true, script } = {}) {
+function setup({ enabled = true, script, withBudget = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'research-routes-'));
   dirs.push(dir);
   const storage = new Storage({ dataDir: dir });
@@ -27,8 +29,10 @@ function setup({ enabled = true, script } = {}) {
   const calls = [];
   const fetcher = { fetchText: async url => { calls.push(url); return script ? script(url) : { ok: true, status: 200, body: ATOM, finalUrl: url, bytes: ATOM.length }; } };
   const intake = createIntake({ store, fetcher, enabled, now: () => T });
-  const routes = createResearchRoutes({ intake, json, readBody, store, storageError });
-  return { store, intake, routes, calls };
+  const topics = createTopicManager({ db: storage.db, now: () => T });
+  const budget = withBudget ? createBudget({ db: storage.db, store, topics, now: () => T, timeZone: 'UTC' }) : undefined;
+  const routes = createResearchRoutes({ budget, intake, json, readBody, store, storageError, topics });
+  return { store, intake, routes, calls, storage, topics };
 }
 const reqOf = body => Object.assign(Readable.from(body === undefined ? [] : [Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))]), { method: 'POST', headers: {} });
 function call(handler, body, url = 'http://x/') {
@@ -42,7 +46,8 @@ const FEED = 'https://example.com/feed.atom';
 test('GET /api/research/state answers intake.state()', async () => {
   const { routes, intake } = setup();
   const r = await call(routes.apiResearchState);
-  assert.equal(r.status, 200); assert.deepEqual(r.body, intake.state()); assert.equal(r.body.enabled, true);
+  assert.equal(r.status, 200); const { budget, ...rest } = r.body; assert.deepEqual(rest, intake.state()); assert.equal(r.body.enabled, true);
+  assert.equal(budget.unreadable, true, 'no budget configured is shown as unreadable, never as nothing used');
 });
 
 test('POST /api/research/pause sets and clears the pause; a non-boolean is 400', async () => {
@@ -194,4 +199,16 @@ test('an unreadable state is flagged by unreadable:true and answered 503 by the 
   assert.equal(intake.state().unreadable, true);
   const r = await call(routes.apiResearchState);
   assert.equal(r.status, 503);
+});
+
+test('GET /api/research/state carries every model budget cap; a failed read is unreadable, not zero used', async () => {
+  const { routes, storage, topics } = setup({ withBudget: true });
+  let r = await call(routes.apiResearchState);
+  assert.equal(r.status, 200); assert.equal(r.body.budget.unreadable, false);
+  const day = r.body.budget.caps.find(c => c.name === 'day.calls');
+  assert.deepEqual([day.limit, day.used], [20, 0]); assert.ok(Date.parse(day.resetsAt) > T);
+  storage.db.exec('DROP TABLE research_events');
+  r = await call(routes.apiResearchState);
+  assert.equal(r.status, 200); assert.equal(r.body.budget.unreadable, true); assert.deepEqual(r.body.budget.caps, []);
+  void topics;
 });
