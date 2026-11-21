@@ -208,6 +208,12 @@ Research intake reads the feeds (Atom and RSS) the owner registers and stores th
   rule the journal uses. An entry id longer than 512 characters is stored as a hash (`sha256:` and its hex digest).
 - Every `/api/research/*` route is in `GUARDED` (`app/signin.js`): a caller without a paired device or the Mac key is
   refused, reads included, because the source list and what was read show what the owner follows.
+- **Model budgets** (`app/research/budget.js`, amendment A32 D2). Research code that calls a model reserves its budget first:
+  per topic (`budget_daily_model_calls`, `budget_daily_characters`), per repository (10 calls a day by default), per day
+  (20 calls, 100,000 characters) and per week (100 calls, 500,000 characters); Tier 2 (cloud) is zero until the owner sets
+  `budget.tier2.day.*` in `research_meta`. Spend is an append-only `research_events` row. An exhausted cap queues nothing and
+  loses nothing: the call is refused with the cap, its limit and when it resets, and intake keeps running. A cap or counter
+  that cannot be read refuses the call and shows `unreadable` on `GET /api/research/state`, never zero used.
 
 ## Known gaps
 

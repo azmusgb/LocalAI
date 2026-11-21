@@ -325,4 +325,4 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
   };
 }
 
-module.exports = { createResearchStore };
+module.exports = { createResearchStore, localDay };
