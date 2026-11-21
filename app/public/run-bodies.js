@@ -54,10 +54,10 @@
     if (c) return c;
     c = { threadId, runs: [], lib: new Map(), libTried: new Set(), live: null, cut: new Map(), run: null, loading: false, hadFocus: false, scroll: { top: 0, near: true }, nodes: new Map(), frame: 0 };
     c.root = h('div', 'chat-body');
-    c.turns = h('div', 'chat-body__turns'); c.turns.setAttribute('role', 'group'); c.turns.setAttribute('aria-label', 'Conversation');
-    c.form = h('form', 'chat-body__reply'); c.form.noValidate = true;
-    c.input = h('textarea'); c.input.id = 'runReply'; c.input.rows = 1; c.input.placeholder = 'Reply…'; c.input.setAttribute('aria-label', 'Reply'); c.input.enterKeyHint = 'send';
-    c.send = h('button', 'btn-primary chat-body__send', 'Send'); c.send.id = 'runReplySend'; c.send.type = 'submit';
+    c.turns = h('div', 'chat-body__turns ui-chat-thread'); c.turns.setAttribute('role', 'group'); c.turns.setAttribute('aria-label', 'Conversation');
+    c.form = h('form', 'chat-body__reply ui-chat-composer'); c.form.noValidate = true;
+    c.input = h('textarea', 'ui-chat-composer__input'); c.input.id = 'runReply'; c.input.rows = 1; c.input.placeholder = 'Reply…'; c.input.setAttribute('aria-label', 'Reply'); c.input.enterKeyHint = 'send';
+    c.send = h('button', 'ui-btn ui-btn--primary chat-body__send ui-chat-composer__action', 'Send'); c.send.id = 'runReplySend'; c.send.type = 'submit';
     c.err = h('div', 'chat-body__error'); c.err.setAttribute('role', 'alert'); c.err.hidden = true;
     c.form.append(c.input, c.send);
     c.root.append(c.turns, c.err, c.form);
@@ -123,7 +123,7 @@
         let n = c.nodes.get(key);
         // Each turn is an article named for who spoke, so a screen reader says "You" or "Local AI" before the words.
         if (!n) { n = h('div'); n.dataset.key = key; n.setAttribute('role', 'article'); n.setAttribute('aria-label', who === 'user' ? 'You' : 'Local AI'); c.nodes.set(key, n); }
-        const text = who === 'user' ? t.prompt : t.answer, cls = `chat-turn chat-turn--${who}${who === 'assistant' && t.kind ? ' chat-turn--' + t.kind : ''}`;
+        const text = who === 'user' ? t.prompt : t.answer, cls = `chat-turn ui-chat-msg chat-turn--${who} ui-chat-msg--${who}${who === 'assistant' && t.kind ? ' chat-turn--' + t.kind + (t.kind === 'live' ? ' ui-chat-msg--streaming' : '') : ''}`;
         if (n.className !== cls) n.className = cls;
         if (n.dataset.text !== text) { n.dataset.text = text; n.textContent = text; }
         // Where the answer came from, under it: "Answered by Llama 3.3 70B · Groq. Not private: …" (the model coordinator).
