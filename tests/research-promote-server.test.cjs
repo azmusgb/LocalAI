@@ -50,6 +50,11 @@ test('promote on the real server makes an Improve backlog item that quotes the f
   assert.ok(inside.includes('https://fastapi.tiangolo.com/0.165'), 'source url is inside the markers');
   assert.ok(inside.includes('FastAPI Releases'), 'source name is inside the markers');
   assert.ok(!item.fix.replace(inside, '').includes(QUOTE), 'quote is not outside the markers');
+  // The claim is page text too: only inside the markers, never in the title or summary an agent reads as plain text.
+  assert.ok(inside.includes('Claim 0'), 'claim is inside the markers');
+  assert.equal(item.title, `Research finding ${ids[0]}`);
+  for (const k of Object.keys(item)) if (k !== 'fix') assert.ok(!JSON.stringify(item[k]).includes('Claim 0'), `claim leaked into ${k}`);
+  assert.ok(!item.fix.replace(inside, '').includes('Claim 0'), 'claim is not outside the markers');
 });
 
 test('promote fails closed when no backlog item can be made', async () => {
