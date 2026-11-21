@@ -107,3 +107,14 @@ test('the inbox shows at most 10 new findings a day, with the counts, and dismis
   assert.deepEqual(r.counts, { newToday: 4, cap: 10, waiting: 0 });
   assert.equal(all.length, 14);
 });
+
+test('the inbox returns the released findings even when more than 100 are waiting', async () => {
+  const store = createResearchStore({ db: new DatabaseSync(':memory:'), now: () => Date.parse('2026-11-20T15:00:00Z'), timeZone: 'UTC' });
+  seedFindings(store, 150);
+  const routes = createResearchRoutes({ intake: { state: () => ({ enabled: true }) }, store, json: (res, s, b) => { res.statusCode = s; res.body = b; }, readBody: async () => ({}), storageError: (res, e) => { res.statusCode = 500; res.body = { error: e.message }; } });
+  const res = {};
+  await routes.apiResearchFindings({}, res, new URL('http://x/api/research/findings?status=extracted'));
+  assert.equal(res.body.findings.length, 10);
+  assert.deepEqual(res.body.counts, { newToday: 10, cap: 10, waiting: 140 });
+  assert.deepEqual(res.body.findings.map(f => f.claim).sort(), Array.from({ length: 10 }, (_, i) => `Claim ${i}`).sort());
+});

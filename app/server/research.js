@@ -100,8 +100,10 @@ function createResearchRoutes(ctx) {
       // At most CAP new (extracted) findings are shown per calendar day; the rest wait (store.inbox). `counts` feeds
       // "New today N of 10 · M waiting". A failed read throws to fail(), never to zero.
       const box = store.inbox(CAP);
-      const shown = new Set(box.ids);
-      const findings = store.listFindings({ status, limit: 100 }).filter(f => f.status !== 'extracted' || shown.has(f.id)).slice(0, limit);
+      // The released ids are the oldest waiting, so they are fetched by id: paging the newest 100 would miss them.
+      const others = status === 'extracted' ? [] : store.listFindings({ status, limit: 100 }).filter(f => f.status !== 'extracted');
+      const released = !status || status === 'extracted' ? box.ids.slice().reverse().map(id => store.getFinding(id)).filter(f => f && f.status === 'extracted') : [];
+      const findings = [...others, ...released].slice(0, limit);
       return json(res, 200, { enabled, findings, counts: { newToday: box.newToday, cap: box.cap, waiting: box.waiting } });
     } catch (e) { fail(res, e); }
   }
