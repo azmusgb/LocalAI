@@ -57,3 +57,13 @@ test('with LOCALAI_RESEARCH=on a source can be added, a private address is refus
   assert.equal(f.status, 409); assert.equal((await f.json()).code, 'paused');
   assert.deepEqual((await (await fetch(`${base}/api/research/documents`)).json()), { enabled: true, documents: [] });
 });
+
+test('compose passes both research switches to the container and the env example lists them', () => {
+  const root = path.resolve(__dirname, '..');
+  const compose = fs.readFileSync(path.join(root, 'deploy/stack/compose.yml'), 'utf8');
+  const example = fs.readFileSync(path.join(root, 'deploy/stack/stack.env.example'), 'utf8');
+  for (const k of ['LOCALAI_RESEARCH', 'LOCALAI_RESEARCH_READER']) {
+    assert.match(compose, new RegExp(`^\\s+${k}: \\$\\{${k}:-\\}$`, 'm'), `${k} is passed through`);
+    assert.match(example, new RegExp(`^${k}=$`, 'm'), `${k} is in stack.env.example`);
+  }
+});

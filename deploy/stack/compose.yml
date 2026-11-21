@@ -101,6 +101,10 @@ services:
       # Pi Hub is the one phone channel (platform step 5, D2): phone notices go to its /api/notify/localai with Local AI's
       # deploy key (the one in C:\LocalAI\stack\pi-hub-deploy.key). Empty means Web Push only. A secret: only in stack.env.
       LOCALAI_PI_HUB_TOKEN: ${LOCALAI_PI_HUB_TOKEN:-}
+      # Research loop switches (knowledge-loop design, sections 5 and 11): intake runs only on `on`, and the Tier 1 reader
+      # needs both. Empty means off. They are the owner's switches in stack.env; no secret.
+      LOCALAI_RESEARCH: ${LOCALAI_RESEARCH:-}
+      LOCALAI_RESEARCH_READER: ${LOCALAI_RESEARCH_READER:-}
       # The display's read-only printer-status token (Local Portal › More › Read-only status access). Empty means no
       # printer line. A secret: it lives only in stack.env.
       LOCALAI_WORKSHOP_STATUS_TOKEN: ${LOCALAI_WORKSHOP_STATUS_TOKEN:-}
