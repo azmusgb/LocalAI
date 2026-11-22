@@ -12,7 +12,7 @@ import subprocess
 import tarfile
 import tempfile
 import webbrowser
-from collections import Counter, defaultdict, deque
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
