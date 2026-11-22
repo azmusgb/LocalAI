@@ -619,7 +619,7 @@ function createChanges(ctx) {
       for(const u of upserts){const key=CLAUDE_FINDING_PREFIX+u.id,prev=storage.readSetting(key,null);
         // A whole new item (it has createdAt) never replaces a stored one: reconcile sees only the newest findings.
         if(prev&&u.createdAt)continue;
-        storage.writeSetting(key,prev?{...prev,...u}:{sessionId:'improve',category:'other',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...u});written++}
+        storage.writeSetting(key,prev?{...prev,...u}:seedItem('improve',u,{category:'other'}));written++}
     });
     return written;
   }
@@ -663,11 +663,16 @@ function createChanges(ctx) {
       if(c.approvalId){const approvals=approvalStore(),ai=approvals.findIndex(a=>a.id===c.approvalId&&a.status==='pending');if(ai>=0){approvals[ai].status='rejected';approvals[ai].updatedAt=nowIso();saveStore(APPROVALS_STORE,approvals,500)}}
       saveChanges(items)});
   }
-  // Research's Promote: the finding becomes an ordinary backlog item (improve.researchItem). The same finding again is the one item.
+  // Every item written to the board starts from the same fields; `item` overrides any of them.
+  function seedItem(sessionId,item,extra={}){return{sessionId,votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...extra,...item}}
+  // Research's Promote: the finding becomes an ordinary backlog item (improve.researchItem). The same finding again is the
+  // one item while it is open; once that item is closed (fixed, rejected, set aside) a second promote is refused with 409
+  // rather than answered with the closed item as if it were new.
   function addResearchItem(finding,sources,title){
     const at=nowIso(),made=improve.researchItem(finding,sources,title,at),prev=improveRead(made.id);
+    if(prev&&IMPROVE_CLOSED.includes(prev.status))throw Object.assign(new Error(`Its backlog item is already ${prev.status==='deferred'?'set aside':prev.status}, so it was not promoted again`),{status:409});
     if(prev)return prev;
-    storage.writeSetting(CLAUDE_FINDING_PREFIX+made.id,{sessionId:'research',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',pr:'',...made});
+    storage.writeSetting(CLAUDE_FINDING_PREFIX+made.id,seedItem('research',made));
     return improveRead(made.id);
   }
   async function apiImproveItems(req,res){
@@ -682,7 +687,7 @@ function createChanges(ctx) {
     try{const b=await readBody(req,512*1024);const made=improve.ideaItem(b.text,nowIso());if(!made)return json(res,400,{error:'Describe the change first.'});
       // The same idea again within minutes (a double tap) is the one item, not a second row.
       const again=improve.recentDuplicate(claudeFindings(),made,made.createdAt),item=again||made;
-      if(!again)storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,{sessionId:'owner',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
+      if(!again)storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,seedItem('owner',item));
       if(b.start!==true)return json(res,again?200:201,{item});
       // The idea is saved either way; if planning fails, say so and let the owner retry from the Backlog.
       try{const change=await planChange({request:improveChangeRequest(item),target:'self'},{itemId:item.id,stay:improveStay(item)});json(res,201,{item:improveRead(item.id),change:publicChange(change)})}
@@ -697,7 +702,7 @@ function createChanges(ctx) {
       const at=nowIso(),title=text.split('\n')[0].trim().slice(0,120).toLowerCase();
       const existing=claudeFindings().find(f=>['proposed','approved'].includes(f.status)&&!f.changeId&&String(f.title||'').trim().toLowerCase()===title)||null;
       const item=improve.handoffItem(text,b.from,at,existing);
-      storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,{sessionId:'owner',category:'idea',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',pr:'',...item});
+      storage.writeSetting(CLAUDE_FINDING_PREFIX+item.id,seedItem('owner',item,{category:'idea'}));
       recordActivity('change','Handed to Claude Code',`${item.title} (from ${improve.HANDOFF_FROM[b.from]||'Improve'})`,{itemId:item.id});
       json(res,existing?200:201,{item:improveRead(item.id)})}catch(e){storageError(res,e,500)}
   }
@@ -746,7 +751,7 @@ function createChanges(ctx) {
         if(promoted&&improve.stageOf(promoted,new Map(changeStore().map(c=>[c.id,c])))==='backlog')improveWrite({...promoted,status:'rejected',decisionNote:'Signal dismissed',decidedAt:nowIso()});
         return json(res,200,{signal:issues[i]})}
       const id=improve.signalItemId(issues[i].id);const existing=improveRead(id);if(existing)return json(res,200,{item:existing});
-      const item=improve.promoteSignal(issues[i],nowIso());storage.writeSetting(CLAUDE_FINDING_PREFIX+id,{sessionId:'improve',votes:{up:0,down:0},priorityBoost:0,decidedAt:null,file:'',area:'',scenario:'',fix:'',pr:'',...item});
+      const item=improve.promoteSignal(issues[i],nowIso());storage.writeSetting(CLAUDE_FINDING_PREFIX+id,seedItem('improve',item));
       json(res,200,{item})}catch(e){storageError(res,e,500)}
   }
   function claudeSaveSession(input,at){
