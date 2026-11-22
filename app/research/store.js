@@ -112,6 +112,7 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
       VALUES (?, ?, ?, ?, ?, ?, ?, 'extracted', ?)`),
     getFinding: db.prepare('SELECT * FROM research_findings WHERE id = ?'),
     listFindings: db.prepare("SELECT * FROM research_findings WHERE (status = ? OR ? = '') ORDER BY seq DESC LIMIT ?"),
+    listExtractedOldest: db.prepare("SELECT id FROM research_findings WHERE status = 'extracted' ORDER BY seq ASC"),
     countFindingsToday: db.prepare('SELECT count(*) AS n FROM research_findings WHERE created_at >= ?'),
     updateFindingStatus: db.prepare('UPDATE research_findings SET status = ?, decided_at = ?, change_id = ? WHERE id = ?'),
     insertOutcome: db.prepare(`INSERT INTO research_outcomes (id, finding_id, change_id, metric_name, before_val, after_val, verdict, notes, created_at)
@@ -302,12 +303,23 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     return getFinding(cur.id);
   }
 
+  // A finding is 'extracted' until the owner decides it. A measured outcome closes it: validated or refuted; inconclusive leaves it as it was.
+  // Only a finding the owner kept or promoted (or one already measured) can have an outcome: never one still in the inbox or dismissed.
+  const VERDICTS = ['validated', 'refuted', 'inconclusive'];
+  const MEASURABLE = ['kept', 'promoted', 'validated', 'refuted'];
   function recordOutcome({ findingId, changeId = '', metricName, beforeVal, afterVal, verdict = 'validated', notes = '' } = {}) {
     const cur = getFinding(findingId);
     if (!cur) throw fail(404, 'unknown finding');
+    if (!VERDICTS.includes(verdict)) throw fail(400, `verdict must be one of: ${VERDICTS.join(', ')}`);
+    if (!MEASURABLE.includes(cur.status)) throw fail(409, `finding is ${cur.status}: only a kept or promoted finding can have an outcome`);
     const id = newId('out');
     const at = nowIso();
-    st.insertOutcome.run(id, cur.id, String(changeId || cur.changeId || ''), String(metricName || 'metric'), Number(beforeVal) || 0, Number(afterVal) || 0, String(verdict), redact(notes, 1000), at);
+    const linked = String(changeId || cur.changeId || '');
+    tx(() => {
+      st.insertOutcome.run(id, cur.id, linked, String(metricName || 'metric'), Number(beforeVal) || 0, Number(afterVal) || 0, String(verdict), redact(notes, 1000), at);
+      // The finding keeps its own link (Promote's backlog item); the outcome row holds the change it measured.
+      if (verdict !== 'inconclusive') st.updateFindingStatus.run(verdict, at, String(cur.changeId || linked), cur.id);
+    });
     return { id, findingId: cur.id, verdict, recordedAt: at };
   }
 
@@ -318,13 +330,27 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     }));
   }
 
+  // The daily attention cap: at most `cap` findings are released to the inbox per calendar day, oldest first, and the
+  // release is remembered (research_meta) so deciding some does not let more through. Others wait for the next day.
+  // Returns the released ids and how many extracted findings are still waiting; a store failure throws.
+  function inbox(cap = 10) {
+    const day = localDay(now(), timeZone);
+    let rec;
+    try { rec = JSON.parse(getMeta('inbox_released') || 'null'); } catch { rec = null; }
+    const ids = rec && rec.day === day && Array.isArray(rec.ids) ? rec.ids.slice() : [];
+    const pending = st.listExtractedOldest.all().map(r => r.id).filter(id => !ids.includes(id));
+    const take = pending.slice(0, Math.max(0, cap - ids.length));
+    if (take.length || !rec || rec.day !== day) { ids.push(...take); setMeta('inbox_released', JSON.stringify({ day, ids })); }
+    return { ids, newToday: ids.length, cap, waiting: pending.length - take.length };
+  }
+
   const getMeta = key => { const r = st.getMeta.get(String(key)); return r ? r.value : null; };
   const setMeta = (key, value) => { st.setMeta.run(String(key), String(value)); };
 
   return {
     addSource, updateSource, listSources, getSource, dueSources, recordFetch, saveEntries,
     listDocuments, getDocument, nextDocumentAfter, fetchesToday, listFetches, getMeta, setMeta,
-    addFinding, getFinding, listFindings, countFindingsToday, decideFinding, recordOutcome, listOutcomes
+    addFinding, getFinding, listFindings, countFindingsToday, inbox, decideFinding, recordOutcome, listOutcomes
   };
 }
 

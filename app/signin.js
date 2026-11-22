@@ -27,7 +27,7 @@ const GUARDED = [
   /^\/api\/research\//,
   // Claude's queue: handing a request or an item to Claude, adding an idea, promoting a signal, or changing an item's
   // decision or votes. Each lands on the board a Claude session works from, so one left open would bypass the others.
-  /^\/api\/improve\/(handoff|item|idea|signal)$/, /^\/api\/claude\/findings\/(decision|vote)$/,
+  /^\/api\/improve\/(handoff|item|idea|signal|outcome)$/, /^\/api\/claude\/findings\/(decision|vote)$/,
   // Reporting to that board: the Mac's hooks and Claude sessions send the Mac key. An unsigned finding would reach
   // /api/claude/priorities and the phone, or pre-plant an id a session later updates.
   /^\/api\/claude\/(findings|events)$/,

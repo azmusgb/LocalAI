@@ -44,6 +44,7 @@ test('cost per validated improvement divides all spend by findings whose newest 
 test('precision uses each finding’s newest outcome: a later refuted overrides an earlier validated', () => {
   const s = setup();
   const a = s.finding(1), b = s.finding(2), c = s.finding(3);
+  for (const f of [a, b, c]) s.store.decideFinding(f.id, 'promoted');
   s.store.recordOutcome({ findingId: a.id, metricName: 'm', beforeVal: 0, afterVal: 1, verdict: 'validated' });
   s.store.recordOutcome({ findingId: b.id, metricName: 'm', beforeVal: 0, afterVal: 1, verdict: 'validated' });
   s.store.recordOutcome({ findingId: b.id, metricName: 'm', beforeVal: 1, afterVal: 0, verdict: 'refuted' });

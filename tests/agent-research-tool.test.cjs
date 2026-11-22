@@ -82,3 +82,13 @@ test('search_research_findings: an unreadable store is reported, not shown as no
   assert.equal(res.data.unavailable, true);
   assert.match(res.data.note, /unavailable/i);
 });
+
+// Review of #614: a promoted finding whose outcome validated it is still the owner's promoted finding; a refuted one is not.
+test('search_research_findings keeps validated findings and drops refuted ones', async () => {
+  const mk = (id, status) => ({ id, claim: `claim ${id} lifespan`, quote: 'q', status, targetProject: 'LocalAI', relevance: 'General' });
+  const all = [mk('f-val', 'validated'), mk('f-ref', 'refuted'), mk('f-prom', 'promoted')];
+  const store = { listFindings: ({ status = '', limit = 10 } = {}) => all.filter(f => !status || f.status === status).slice(0, limit) };
+  const search = createResearchTools({ projectRoot: __dirname, projectId: 'p', researchStore: store }).find(t => t.name === 'search_research_findings');
+  const ids = (await search.execute({ query: 'lifespan' })).data.matches.map(m => m.id).sort();
+  assert.deepEqual(ids, ['f-prom', 'f-val']);
+});

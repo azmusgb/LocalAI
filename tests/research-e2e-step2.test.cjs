@@ -24,7 +24,7 @@ test('knowledge loop e2e integration flow (Task 5)', async () => {
     readBody: async (req) => req.body || {},
     storageError: (res, e) => { res.statusCode = 500; res.body = { error: e.message }; },
     changes: {
-      addChange: (c) => ({ id: 'chg-e2e-1', ...c })
+      addResearchItem: () => ({ id: 'chg-e2e-1' })
     }
   });
 
