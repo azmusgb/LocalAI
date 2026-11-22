@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import concurrent.futures
-import contextlib
 import json
 import os
 import re
