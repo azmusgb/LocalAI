@@ -174,3 +174,39 @@ test('promote refuses a finding that is already promoted, dismissed or has a ver
   }
   assert.equal(made, 0, 'no backlog item was made');
 });
+
+// Follow-ups to the #614 review: the four findings left open there.
+test('promoting again after its backlog item was rejected is refused, not answered with the closed item', { timeout: 40000 }, async t => {
+  const { base, ids } = await startServer(t, 1);
+  const first = await post(base, '/api/research/findings/promote', { id: ids[0] });
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  const rej = await post(base, '/api/improve/item', { id: first.body.changeId, action: 'reject' });
+  assert.equal(rej.status, 200, JSON.stringify(rej.body));
+  const kept = await post(base, '/api/research/findings/decide', { id: ids[0], status: 'kept' });
+  assert.equal(kept.status, 200, JSON.stringify(kept.body));
+  const again = await post(base, '/api/research/findings/promote', { id: ids[0] });
+  assert.equal(again.status, 409, JSON.stringify(again.body));
+  assert.match(again.body.error, /rejected/);
+  const { body: { finding } } = { body: { finding: (await get(base, '/api/research/findings?status=kept')).body.findings.find(f => f.id === ids[0]) } };
+  assert.equal(finding.status, 'kept', 'the finding is left as it was');
+});
+
+test('reading kept or dismissed findings does not use up the day\'s inbox release', async () => {
+  const store = createResearchStore({ db: new DatabaseSync(':memory:'), now: () => Date.parse('2026-11-20T15:00:00Z'), timeZone: 'UTC' });
+  seedFindings(store, 3);
+  const routes = routesFor(store);
+  const res = {};
+  await routes.apiResearchFindings({}, res, new URL('http://x/api/research/findings?status=kept'));
+  assert.equal(res.statusCode ?? 200, 200);
+  assert.equal(res.body.counts, undefined, 'no inbox counts for a list that is not the inbox');
+  assert.equal(store.getMeta('inbox_released'), null, 'nothing was released by reading kept findings');
+});
+
+test('the promoted item keeps the whole evidence quote even with a long claim and long sources', () => {
+  const { researchItem } = require('../app/improve');
+  const quote = 'q'.repeat(400);
+  const longUrl = 'https://example.com/' + 'p'.repeat(280);
+  const item = researchItem({ id: 'fnd_1', claim: 'c'.repeat(900), quote, targetProject: 'LocalAI', relevance: 'Direct' },
+    [{ name: 'Feed', url: longUrl }, { name: 'Doc', url: longUrl }], '', '2026-11-21T00:00:00Z');
+  assert.ok(item.fix.includes(quote), 'the quote is whole inside the markers');
+});

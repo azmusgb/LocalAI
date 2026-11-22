@@ -99,10 +99,12 @@ function createResearchRoutes(ctx) {
       const limit = Math.min(CAP, Math.max(1, Number.parseInt(q.get('limit'), 10) || CAP));
       // At most CAP new (extracted) findings are shown per calendar day; the rest wait (store.inbox). `counts` feeds
       // "New today N of 10 · M waiting". A failed read throws to fail(), never to zero.
+      // Only a read of the inbox (all, or extracted) releases the day's findings; reading kept or dismissed ones does not.
+      if (status && status !== 'extracted') return json(res, 200, { enabled, findings: store.listFindings({ status, limit }) });
       const box = store.inbox(CAP);
       // The released ids are the oldest waiting, so they are fetched by id: paging the newest 100 would miss them.
       const others = status === 'extracted' ? [] : store.listFindings({ status, limit: 100 }).filter(f => f.status !== 'extracted');
-      const released = !status || status === 'extracted' ? box.ids.slice().reverse().map(id => store.getFinding(id)).filter(f => f && f.status === 'extracted') : [];
+      const released = box.ids.slice().reverse().map(id => store.getFinding(id)).filter(f => f && f.status === 'extracted');
       // New findings first: decided ones fill the rest of the page and never push today's inbox off it.
       const findings = [...released, ...others].slice(0, limit);
       return json(res, 200, { enabled, findings, counts: { newToday: box.newToday, cap: box.cap, waiting: box.waiting } });
@@ -134,7 +136,10 @@ function createResearchRoutes(ctx) {
       const sources = [src && { name: src.name, url: src.url }, doc && doc.url && { name: doc.title, url: doc.url }].filter(Boolean);
       let item;
       try { item = ctx.changes.addResearchItem(finding, sources, String(b.title || '').trim()); }
-      catch (e) { return json(res, 500, { error: `Could not add it to the backlog, so nothing was promoted: ${String(e && e.message || e).slice(0, 200)}` }); }
+      catch (e) {
+        if (e && e.status === 409) return json(res, 409, { error: String(e.message).slice(0, 200) });
+        return json(res, 500, { error: `Could not add it to the backlog, so nothing was promoted: ${String(e && e.message || e).slice(0, 200)}` });
+      }
       const changeId = item && typeof item.id === 'string' ? item.id : '';
       if (!changeId) return json(res, 500, { error: 'Could not add it to the backlog, so nothing was promoted' });
 

@@ -135,7 +135,9 @@ function handoffItem(text, from, at, existing = null) {
 function researchItem(finding, sources, title, at) {
   const f = finding || {};
   const list = (sources || []).filter(s => s && (s.name || s.url)).map(s => `- ${[s.name, s.url].filter(Boolean).join(' ')}`);
-  const body = `Finding ${f.id}: ${f.claim}\nTarget project: ${f.targetProject}\nRelevance: ${f.relevance}\nSources:\n${list.join('\n') || '- (none recorded)'}\nQuote: "${f.quote}"`;
+  // The quote is the evidence, so it comes straight after a clipped claim: when the 1,500-character limit bites, it cuts the
+  // source list, never the quote.
+  const body = `Finding ${f.id}: ${clip(f.claim, 400)}\nQuote: "${clip(f.quote, 600)}"\nTarget project: ${clip(f.targetProject, 80)}\nRelevance: ${clip(f.relevance, 80)}\nSources:\n${list.join('\n') || '- (none recorded)'}`;
   return {
     id: `research-${f.id}`, source: 'research', findingId: f.id, status: 'proposed', severity: 'medium', category: 'idea',
     title: clip(String(title || '').trim() || `Research finding ${f.id}`, 140), summary: `Promoted from Research Finding ${f.id}. Its text is in the fix, between the markers.`, createdAt: at, updatedAt: at,
