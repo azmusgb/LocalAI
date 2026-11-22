@@ -304,17 +304,21 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
   }
 
   // A finding is 'extracted' until the owner decides it. A measured outcome closes it: validated or refuted; inconclusive leaves it as it was.
+  // Only a finding the owner kept or promoted (or one already measured) can have an outcome: never one still in the inbox or dismissed.
   const VERDICTS = ['validated', 'refuted', 'inconclusive'];
+  const MEASURABLE = ['kept', 'promoted', 'validated', 'refuted'];
   function recordOutcome({ findingId, changeId = '', metricName, beforeVal, afterVal, verdict = 'validated', notes = '' } = {}) {
     const cur = getFinding(findingId);
     if (!cur) throw fail(404, 'unknown finding');
     if (!VERDICTS.includes(verdict)) throw fail(400, `verdict must be one of: ${VERDICTS.join(', ')}`);
+    if (!MEASURABLE.includes(cur.status)) throw fail(409, `finding is ${cur.status}: only a kept or promoted finding can have an outcome`);
     const id = newId('out');
     const at = nowIso();
     const linked = String(changeId || cur.changeId || '');
     tx(() => {
       st.insertOutcome.run(id, cur.id, linked, String(metricName || 'metric'), Number(beforeVal) || 0, Number(afterVal) || 0, String(verdict), redact(notes, 1000), at);
-      if (verdict !== 'inconclusive') st.updateFindingStatus.run(verdict, at, linked, cur.id);
+      // The finding keeps its own link (Promote's backlog item); the outcome row holds the change it measured.
+      if (verdict !== 'inconclusive') st.updateFindingStatus.run(verdict, at, String(cur.changeId || linked), cur.id);
     });
     return { id, findingId: cur.id, verdict, recordedAt: at };
   }

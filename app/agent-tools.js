@@ -118,6 +118,9 @@ async function findInProject(projectRoot, query, scope, maxChars) {
   throw new Error('Not enough room left in the model context to search; write up what you have');
 }
 
+// A32 D3: only findings the owner kept or promoted. 'validated' is a promoted finding whose outcome confirmed it; a refuted one is not read.
+const READABLE_FINDINGS = ['kept', 'promoted', 'validated'];
+
 function createResearchTools({ projectRoot, projectId = '', knowledgeStore = () => [], knowledgeScore, searxSearch, researchStore = null, allowWeb = false }) {
   const tools = [
     // Amendment A32 D3 (amends A31 D4.3): this run has tools, so only findings the owner has kept or promoted reach it, as
@@ -131,14 +134,14 @@ function createResearchTools({ projectRoot, projectId = '', knowledgeStore = () 
       }
       let allFindings;
       try {
-        allFindings = ['kept', 'promoted'].flatMap(status => researchStore.listFindings({ status, limit: 50 }));
+        allFindings = READABLE_FINDINGS.flatMap(status => researchStore.listFindings({ status, limit: 50 }));
       } catch {
         return { data: { matches: [], unavailable: true, note: 'Research findings unavailable: the store could not be read' }, evidence: [] };
       }
       const block = (name, text) => `<<<UNTRUSTED_FINDING_${name}\n${defuse(text)}\nUNTRUSTED_FINDING_${name}>>>`;
       const q = query.toLowerCase();
       const hits = allFindings.filter(f => {
-        if (f.status !== 'kept' && f.status !== 'promoted') return false;
+        if (!READABLE_FINDINGS.includes(f.status)) return false;
         if (targetProj && f.targetProject.toLowerCase() !== targetProj.toLowerCase()) return false;
         return f.claim.toLowerCase().includes(q) || f.quote.toLowerCase().includes(q);
       }).slice(0, 5);

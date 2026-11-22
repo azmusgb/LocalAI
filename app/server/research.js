@@ -103,7 +103,8 @@ function createResearchRoutes(ctx) {
       // The released ids are the oldest waiting, so they are fetched by id: paging the newest 100 would miss them.
       const others = status === 'extracted' ? [] : store.listFindings({ status, limit: 100 }).filter(f => f.status !== 'extracted');
       const released = !status || status === 'extracted' ? box.ids.slice().reverse().map(id => store.getFinding(id)).filter(f => f && f.status === 'extracted') : [];
-      const findings = [...others, ...released].slice(0, limit);
+      // New findings first: decided ones fill the rest of the page and never push today's inbox off it.
+      const findings = [...released, ...others].slice(0, limit);
       return json(res, 200, { enabled, findings, counts: { newToday: box.newToday, cap: box.cap, waiting: box.waiting } });
     } catch (e) { fail(res, e); }
   }
@@ -123,6 +124,8 @@ function createResearchRoutes(ctx) {
       const b = await body(req);
       const finding = store.getFinding(String(b.id || ''));
       if (!finding) return json(res, 404, { error: 'No such finding' });
+      // Only a finding still open to a decision: promoting again would reset a verdict or link it to an old item.
+      if (!['extracted', 'kept'].includes(finding.status)) return json(res, 409, { error: `This finding is already ${finding.status}, so it was not promoted again` });
 
       // Promotion creates an ordinary Improve backlog item (app/server/changes.js addResearchItem). Without one the finding
       // stays as it was and the owner is told: a promote that made nothing is never shown as done.

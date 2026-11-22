@@ -79,12 +79,13 @@ test('/api/improve/outcome needs the sign-in guard like the other research route
 test('recording an outcome moves the finding to validated or refuted, and inconclusive leaves it', () => {
   const store = createResearchStore({ db: new DatabaseSync(':memory:') });
   const [a, b, c] = seedFindings(store, 3);
+  for (const f of [a, b, c]) store.decideFinding(f.id, 'promoted');
   store.recordOutcome({ findingId: a.id, metricName: 'm', beforeVal: 1, afterVal: 2, verdict: 'validated' });
   store.recordOutcome({ findingId: b.id, metricName: 'm', beforeVal: 1, afterVal: 2, verdict: 'refuted' });
   store.recordOutcome({ findingId: c.id, metricName: 'm', beforeVal: 1, afterVal: 2, verdict: 'inconclusive' });
   assert.equal(store.getFinding(a.id).status, 'validated');
   assert.equal(store.getFinding(b.id).status, 'refuted');
-  assert.equal(store.getFinding(c.id).status, 'extracted');
+  assert.equal(store.getFinding(c.id).status, 'promoted', 'inconclusive leaves it as the owner decided it');
   assert.throws(() => store.recordOutcome({ findingId: a.id, verdict: 'great' }), e => e.status === 400);
 });
 
@@ -117,4 +118,59 @@ test('the inbox returns the released findings even when more than 100 are waitin
   assert.equal(res.body.findings.length, 10);
   assert.deepEqual(res.body.counts, { newToday: 10, cap: 10, waiting: 140 });
   assert.deepEqual(res.body.findings.map(f => f.claim).sort(), Array.from({ length: 10 }, (_, i) => `Claim ${i}`).sort());
+});
+
+// Review of #614: the five defects, each pinned.
+const routesFor = (store, changes) => createResearchRoutes({ intake: { state: () => ({ enabled: true }) }, store, changes, json: (res, s, b) => { res.statusCode = s; res.body = b; }, readBody: async req => req.body, storageError: (res, e) => { res.statusCode = 500; res.body = { error: e.message }; } });
+
+test('the unfiltered list shows the day\'s new findings before decided ones', async () => {
+  const store = createResearchStore({ db: new DatabaseSync(':memory:'), now: () => Date.parse('2026-11-20T15:00:00Z'), timeZone: 'UTC' });
+  const all = seedFindings(store, 15);
+  for (const f of all.slice(0, 12)) store.decideFinding(f.id, 'kept');
+  const res = {};
+  await routesFor(store).apiResearchFindings({}, res, new URL('http://x/api/research/findings'));
+  const fresh = res.body.findings.filter(f => f.status === 'extracted');
+  assert.equal(fresh.length, 3, 'all 3 released findings are in the first page');
+  assert.equal(res.body.counts.newToday, 3);
+});
+
+test('an outcome needs a decided finding: extracted or dismissed is refused and left as it was', () => {
+  const store = createResearchStore({ db: new DatabaseSync(':memory:') });
+  const [a, b] = seedFindings(store, 2);
+  store.decideFinding(b.id, 'dismissed');
+  for (const f of [a, b]) {
+    const before = store.getFinding(f.id).status;
+    assert.throws(() => store.recordOutcome({ findingId: f.id, metricName: 'm', verdict: 'validated' }), e => e.status === 409);
+    assert.equal(store.getFinding(f.id).status, before);
+    assert.equal(store.listOutcomes(f.id).length, 0);
+  }
+});
+
+test('an outcome keeps the finding linked to its backlog item; the outcome row holds its own change', () => {
+  const store = createResearchStore({ db: new DatabaseSync(':memory:') });
+  const [f] = seedFindings(store, 1);
+  store.decideFinding(f.id, 'promoted', { changeId: 'research-' + f.id });
+  store.recordOutcome({ findingId: f.id, changeId: 'chg-789', metricName: 'm', verdict: 'validated' });
+  assert.equal(store.getFinding(f.id).changeId, 'research-' + f.id);
+  assert.equal(store.getFinding(f.id).status, 'validated');
+  assert.equal(store.listOutcomes(f.id)[0].changeId, 'chg-789');
+});
+
+test('promote refuses a finding that is already promoted, dismissed or has a verdict, and makes no item', async () => {
+  const store = createResearchStore({ db: new DatabaseSync(':memory:') });
+  const [p, d, v] = seedFindings(store, 3);
+  store.decideFinding(p.id, 'promoted', { changeId: 'research-' + p.id });
+  store.decideFinding(d.id, 'dismissed');
+  store.decideFinding(v.id, 'promoted', { changeId: 'research-' + v.id });
+  store.recordOutcome({ findingId: v.id, metricName: 'm', verdict: 'refuted' });
+  let made = 0;
+  const routes = routesFor(store, { addResearchItem: () => ({ id: `item-${++made}` }) });
+  for (const f of [p, d, v]) {
+    const before = store.getFinding(f.id);
+    const res = {};
+    await routes.apiResearchFindingPromote({ body: { id: f.id } }, res);
+    assert.equal(res.statusCode, 409, JSON.stringify(res.body));
+    assert.deepEqual(store.getFinding(f.id), before);
+  }
+  assert.equal(made, 0, 'no backlog item was made');
 });
