@@ -60,7 +60,7 @@
       <ul class="ui-rows" id="researchReader">
         <li class="ui-row ui-row--lamp"><span><span class="ui-row__title">Reader</span><span class="ui-row__detail">Reads stored documents with the model on this PC. It never fetches anything.</span></span>${status}</li>
         <li class="ui-row ui-row--lamp"><span><span class="ui-row__title">Last result</span><span class="ui-row__detail">${esc(cap(last?.reason) || 'Not reported')}${last?.at ? ` · ${esc(when(last.at))}` : ''}</span></span>${last?.code ? chip(LAST_TONE[last.code] || '', words(last.code)) : chip('unknown', NR)}</li>
-        ${row('Documents read', num(c.read))}${row('Findings stored', num(c.findings))}${row('Out of scope', num(c.outOfScope))}${row('Failed', num(c.failed))}${row('Findings allowed each day', num(r.dailyFindings))}
+        ${row('Documents read', num(c.read))}${row('Findings stored', num(c.findings))}${row('Judged not relevant', num(c.notRelevant))}${row('Quote not in document', num(c.quoteRejected))}${row('Answer was not JSON', num(c.unparsable))}${row('Too little text', num(c.tooThin))}${row('Out of scope', num(c.outOfScope))}${row('Failed', num(c.failed))}${row('Findings allowed each day', num(r.dailyFindings))}
       </ul>
       <details class="ui-disclosure"><summary class="ui-disclosure__summary">Details</summary><div class="ui-disclosure__body"><p class="research-mono">${esc(detail || 'Nothing more to report.')}</p><p class="research-mono">${esc(last?.code ? `Result code: ${last.code}` : '')}${r.lastTickAt ? esc(` · Last run ${when(r.lastTickAt)}`) : ''}</p></div></details>`;
   }
