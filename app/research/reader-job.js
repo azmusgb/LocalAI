@@ -36,7 +36,7 @@ function createReaderJob({ store, topics, budget, runModel, busy = () => ({ busy
 
   let running = false, lastTickAt = 0, last = { code: 'none', reason: 'has not run' };
   let holdUntil = 0, failing = { seq: 0, count: 0 };
-  const counts = { read: 0, findings: 0, outOfScope: 0, failed: 0, tooThin: 0, notRelevant: 0, quoteRejected: 0, unparsable: 0 };
+  const counts = { read: 0, findings: 0, outOfScope: 0, failed: 0, tooThin: 0, sourceInactive: 0, notRelevant: 0, quoteRejected: 0, unparsable: 0 };
 
   const result = (code, reason, extra = {}) => { last = { code, reason, at: new Date(now()).toISOString(), ...extra }; return last; };
 
@@ -70,6 +70,7 @@ function createReaderJob({ store, topics, budget, runModel, busy = () => ({ busy
       if (!doc) return result('idle', 'nothing new to read');
       if (String(doc.text || '').trim().length < minTextChars) { counts.tooThin++; advance(doc.seq); return result('too_thin', 'the document has too little text to hold a finding; not read', { documentId: doc.id }); }
       const source = store.getSource(doc.sourceId);
+      if (source && source.status !== 'active') { counts.sourceInactive++; advance(doc.seq); return result('source_inactive', `the source is ${source.status}; its documents are not read`, { documentId: doc.id }); }
       const candidates = topicsFor(source);
       if (!candidates.length) { counts.outOfScope++; advance(doc.seq); return result('out_of_scope', 'no active topic covers this source', { documentId: doc.id }); }
 

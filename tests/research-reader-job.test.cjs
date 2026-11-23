@@ -144,6 +144,20 @@ test('a document with almost no text is skipped without a model call or budget s
   await tuned.job.tick(); assert.equal(tuned.calls.length, 1, 'the threshold is a setting: a short document is read when it is lowered');
 });
 
+test('a document from a paused or retired source is passed over unread and counted; an active one is still read', async () => {
+  const t = setup(); t.addDoc('a');
+  for (const status of ['paused', 'retired']) {
+    t.store.updateSource(t.source.id, { status });
+    t.addDoc('d-' + status, TEXT + ' ' + status);
+    const r = await t.job.tick();
+    assert.equal(r.code, 'source_inactive', status); assert.match(r.reason, new RegExp(status));
+  }
+  assert.equal(t.calls.length, 0); assert.equal(t.job.state().counts.sourceInactive, 2);
+  assert.equal(t.storage.db.prepare("SELECT count(*) n FROM research_events WHERE entity_type='budget'").get().n, 0);
+  t.store.updateSource(t.source.id, { status: 'active' }); t.addDoc('later', TEXT + ' later');
+  assert.equal((await t.job.tick()).code, 'finding', 'back to active, new documents are read');
+});
+
 test('a read with no finding says why: not relevant, quote rejected, or not an answer', async () => {
   const s = setup();
   s.addDoc('a'); s.ctl.answer = '{"relevant": false}';
