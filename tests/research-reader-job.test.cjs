@@ -143,3 +143,21 @@ test('a document with almost no text is skipped without a model call or budget s
   const tuned = setup({ minTextChars: 5 }); tuned.addDoc('thin', 'A short teaser.');
   await tuned.job.tick(); assert.equal(tuned.calls.length, 1, 'the threshold is a setting: a short document is read when it is lowered');
 });
+
+test('a read with no finding says why: not relevant, quote rejected, or not an answer', async () => {
+  const s = setup();
+  s.addDoc('a'); s.ctl.answer = '{"relevant": false}';
+  let r = await s.job.tick();
+  assert.equal(r.code, 'no_finding'); assert.equal(r.why, 'not_relevant'); assert.match(r.reason, /not relevant/i);
+  s.addDoc('b'); s.ctl.answer = JSON.stringify({ relevant: true, claim: 'x', verbatim_quote: 'text that is not there', target_project: 'LocalAI', relevance: 'Optimization' });
+  r = await s.job.tick();
+  assert.equal(r.why, 'quote_rejected'); assert.match(r.reason, /quote/i);
+  s.addDoc('c'); s.ctl.answer = 'I could not decide';
+  r = await s.job.tick();
+  assert.equal(r.why, 'unparsable'); assert.match(r.reason, /JSON answer/i);
+  const c = s.job.state().counts;
+  assert.equal(c.read, 3); assert.equal(c.notRelevant, 1); assert.equal(c.quoteRejected, 1); assert.equal(c.unparsable, 1); assert.equal(c.findings, 0);
+  s.addDoc('d'); s.ctl.answer = JSON.stringify({ relevant: true, claim: 'Node fixes a parser CVE', verbatim_quote: 'fixes CVE-2026-0001 in the http parser', target_project: 'LocalAI', relevance: 'Security Advisory' });
+  r = await s.job.tick();
+  assert.equal(r.code, 'finding'); assert.equal(r.why, undefined);
+});
