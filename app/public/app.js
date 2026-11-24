@@ -83,8 +83,10 @@ function announcePage(id,first,from){
   // The page strip sits above every page: keep focus on its current button (the hash change took focus off it).
   if(strip&&!strip.closest('.view')){requestAnimationFrame(()=>(strip.querySelector('[aria-current="page"]')||from).focus?.({preventScroll:true}));return}
   if(strip){if(strip.closest('.view')===sec)return;requestAnimationFrame(()=>{const t=sec.querySelector('.ux-tabs[role="tablist"] .ux-tab.active,.ux-tabs [aria-selected="true"]');if(t)t.focus({preventScroll:true})});return}
-  // The new page already put focus somewhere inside itself on purpose (Work's "Start something" focuses the composer): keep it.
-  requestAnimationFrame(()=>{const a=document.activeElement;if(!force&&a&&a!==document.body&&sec.contains(a))return;const h=[...sec.querySelectorAll('h1')].find(x=>x.offsetParent!==null),t=h||sec;if(!t.hasAttribute('tabindex'))t.setAttribute('tabindex','-1');t.focus({preventScroll:true})});
+  // The new page already put focus somewhere inside itself on purpose (Work's "Start something" focuses the composer), or
+  // the person moved focus before this frame came (a busy first load can delay it past their next key): keep it.
+  const at=Date.now();
+  requestAnimationFrame(()=>{const a=document.activeElement;if(!force&&(lastFocusAt>at||a&&a!==document.body&&sec.contains(a)))return;const h=[...sec.querySelectorAll('h1')].find(x=>x.offsetParent!==null),t=h||sec;if(!t.hasAttribute('tabindex'))t.setAttribute('tabindex','-1');t.focus({preventScroll:true})});
 }
 function showView(id){
   const raw=id;

@@ -43,6 +43,21 @@ await check('choosing an area titles the tab and moves focus to that page; the s
   await context.close();
 });
 
+// Opening a page moves focus to its heading a frame later. On a busy first load that frame can come after the person has
+// already moved focus (to the strip, or Search): it must not take focus back (it did, which broke the check above in full runs).
+await check('focus the person moved before the new page settled stays where they put it', async () => {
+  const { page, context } = await open();
+  // Move focus the moment Changes becomes the open page: after showView has asked for its frame, before the frame comes.
+  await page.evaluate(() => new Promise(done => {
+    const sec = document.getElementById('backlog');
+    new MutationObserver((_, mo) => { if (!sec.classList.contains('active')) return; mo.disconnect(); document.getElementById('uxCommandBtn').focus(); done(); }).observe(sec, { attributes: true, attributeFilter: ['class'] });
+    document.querySelector('.ux-primary-item[data-domain="improve"]').click();
+  }));
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'uxCommandBtn');
+  await context.close();
+});
+
 // ---- Semantics (critique §3.8) ----
 const active = page => page.evaluate(() => { const a = document.activeElement; return a ? { id: a.id, tab: a.dataset?.uxTab || '', mode: a.dataset?.homeMode || '', text: (a.textContent || '').trim() } : null; });
 
