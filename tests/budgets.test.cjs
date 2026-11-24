@@ -195,7 +195,10 @@ const KB = 1024;
 // can't be read (A28): their sources parts and a note under Needs you saying what it may be missing (home.js +344 bytes
 // after sharing one sources helper with the runs and Pi Hub parts; index.html +37 bytes). main had home.js 14,811 and
 // index.html 17,406; 377,406 bytes measured, home.js 15,155 (at its limit), index.html 17,443.
-const TOTAL = 375 * KB;
+// 2026-11-23: 375 → 378 KB for the kit at 2.27.1 (A34 P0 decision 6, A27 step 2a): needs.js +2,436 bytes and needs.css
+// +441 bytes gzipped for kit 2.27.0's Decisions group, which the shell loads with the rest of needs.js though Local AI
+// does not draw it yet. 385,687 bytes (376.6 KB) measured after the sync alone; main was 382,810.
+const TOTAL = 378 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
