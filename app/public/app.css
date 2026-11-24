@@ -2045,6 +2045,19 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ui-line)}
 .aw-story__empty{font-size:var(--ui-fs-4);color:var(--ui-muted)}
 .aw-all{display:inline-flex;align-items:center;min-height:44px;color:var(--ui-accent-text);font-weight:600}
 
+/* Mission control: a read-only projection of the canonical mission record. */
+.aw-control__facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,calc(var(--ui-s-8)*3)),1fr));gap:var(--ui-s-3);margin:0;padding:var(--ui-s-4);border-radius:var(--ui-r-2);background:var(--ui-surface-2)}
+.aw-control__facts div{display:grid;gap:var(--ui-s-1)}
+.aw-control__facts dt{color:var(--ui-muted);font-size:var(--ui-fs-2)}
+.aw-control__facts dd{margin:0;font-size:var(--ui-fs-5);font-weight:650;font-stretch:var(--ui-stretch-heading);font-variant-numeric:tabular-nums}
+.aw-control h3{margin:var(--ui-s-2) 0 0;font-size:var(--ui-fs-4)}
+.aw-control__roadmap .aw-control__worker{width:100%;border-inline:0;border-block-start:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.aw-control__roadmap .aw-control__worker:hover{background:var(--ui-surface-2)}
+.aw-control__actions{display:flex;flex-wrap:wrap;gap:var(--ui-s-2)}
+.aw-control__details .ui-disclosure__summary{display:flex;align-items:center;min-height:var(--ui-s-8);cursor:pointer;color:var(--ui-muted)}
+.aw-control__details .ui-rows{margin-block-start:var(--ui-s-2)}
+.aw-control .ui-sources{margin:var(--ui-s-2) 0 0}
+
 /* Desktop: the sections under the faceplate, crew beside the story; the rest full width. */
 @media(min-width:761px){
   .aw-sheet__body{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start;gap:28px 32px}
