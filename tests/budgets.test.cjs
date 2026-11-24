@@ -198,7 +198,12 @@ const KB = 1024;
 // 2026-11-23: 375 → 378 KB for the kit at 2.27.1 (A34 P0 decision 6, A27 step 2a): needs.js +2,436 bytes and needs.css
 // +441 bytes gzipped for kit 2.27.0's Decisions group, which the shell loads with the rest of needs.js though Local AI
 // does not draw it yet. 385,687 bytes (376.6 KB) measured after the sync alone; main was 382,810.
-const TOTAL = 378 * KB;
+// Same change, 378 → 379 KB, ui.js 118 → 118.5 KB and index.html 17.1 → 17.2 KB for System as one page of cards (A27
+// step 2a): the card pages, the way back on each card's page and the tool cards' status line (ui.js +847 bytes), the
+// System section and its menu entry (index.html +78), the card styles (app.css +158) and the registry's cards and kit
+// aliases (view-registry.js +260). main (#619) had 383,544 bytes, ui.js 120,219, index.html 17,466; 387,764 bytes
+// (378.7 KB) measured, ui.js 121,066, index.html 17,544.
+const TOTAL = 379 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -238,7 +243,7 @@ const TOTAL = 378 * KB;
 // 2026-11-19: ui.js 117 → 118 KB for the Claude Code page's sign-in state (its board api() marks .signIn; Activity says
 // to pair, the live chip says "not read") and the pairing card's words: +134 bytes over main's 119,797 (11 under 117 KB);
 // 119,931 measured. The shell total stays within 370 KB (378,849 bytes).
-const PER_FILE = { 'ui.js': 118 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40.5 * KB, 'index.html': 17.1 * KB, 'home.js': 14.8 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 14 * KB };
+const PER_FILE = { 'ui.js': 118.5 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40.5 * KB, 'index.html': 17.2 * KB, 'home.js': 14.8 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 14 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
 const gz = f => zlib.gzipSync(fs.readFileSync(path.join(pub, f)), { level: 9 }).length;
