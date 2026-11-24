@@ -92,7 +92,7 @@ test('Agent World is drawn on the anatomy, with its sections in order and a shor
   const html = fs.readFileSync(path.join(__dirname, '..', 'app', 'public', 'index.html'), 'utf8');
   const page = html.slice(html.indexOf('<section id="agents"'), html.indexOf('<dialog id="awStart"'));
   assert.match(page, /<h1 class="ui-page__title">Agent World<\/h1>\s*<p class="ui-page__purpose">Give the team a goal; watch them work it\.<\/p>/);
-  const order = ['id="awNotice"', 'id="awPlate"', 'ui-faceplate__aside aw-city', 'id="agentWorldCityMount"', 'id="awSheet"', 'id="awNeeds"', 'aw-results', 'aw-crew', 'aw-story-box', 'aw-all-box', 'id="awSources"'];
+  const order = ['id="awNotice"', 'id="awPlate"', 'ui-faceplate__aside aw-city', 'id="agentWorldCityMount"', 'id="awSheet"', 'id="awNeeds"', 'id="agentMissionControl"', 'aw-results', 'aw-crew', 'aw-story-box', 'aw-all-box', 'id="awSources"'];
   const pos = order.map(s => page.indexOf(s));
   assert.ok(pos.every(p => p > 0), 'missing: ' + order.filter((s, i) => pos[i] < 0).join(', '));
   assert.deepEqual([...pos].sort((a, b) => a - b), pos, 'in order: ' + order.join(' → '));

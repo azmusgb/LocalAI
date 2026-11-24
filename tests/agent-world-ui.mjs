@@ -182,6 +182,15 @@ const FAILED = {
   timeline: [{ at: t(0), type: 'mission-start', workers: snapW('pending', 'pending') }, { at: t(1), type: 'dispatch', workers: snapW('running', 'pending') }, { at: t(300), type: 'worker-result', workers: snapW('error', 'pending', { errorCode: 'MODEL_CONNECTION_ERROR' }) }, { at: t(301), type: 'mission-attention', status: 'needs_attention', workers: snapW('error', 'blocked', { errorCode: 'MODEL_CONNECTION_ERROR' }) }]
 };
 const DONE = { ...FAILED, id: 'mission-ui-done', status: 'complete', error: '', answer: 'The summary of what the team found.', finishedAt: t(240), workers: snapW('complete', 'complete'), results: [{ agentId: 'ux_analyst', agentName: 'UX Analyst', status: 'complete', answer: 'Three things to fix.' }], timeline: [] };
+const CONTROL = {
+  ...DONE, id: 'mission-ui-control',
+  evidenceRecords: [{ id: 'ev-project', title: 'Project brief', source: 'project:agent-world', kind: 'project' }],
+  results: [{ ...DONE.results[0], evidenceRecords: [{ id: 'ev-screen', title: 'Phone layout inspection', source: 'app/public/index.html', kind: 'file' }] }],
+  timeline: [
+    { at: t(20), type: 'followup', detail: 'UX Analyst was asked to check the phone layout.' },
+    { at: t(40), type: 'fallback', detail: 'Documentation Agent completed a fallback review.' }
+  ]
+};
 async function withMission(contextOpts, mission) {
   const context = await newContext({ serviceWorkers: 'block', ...contextOpts });
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
@@ -218,6 +227,22 @@ async function withMission(contextOpts, mission) {
     await page.waitForFunction(() => document.getElementById('awCrewSummary').textContent === '3 workers: 3 done.', null, { timeout: 4000 });
     await page.evaluate(m => window.dispatchEvent(new CustomEvent('localai:agentworld-mission', { detail: { mission: m } })), FAILED);
     await page.waitForFunction(() => document.getElementById('awCrewSummary').textContent === '3 workers: 1 done, 2 need you.', null, { timeout: 4000 });
+  });
+  await check('1440px: mission control projects the stored plan, dependencies and blockers', async () => {
+    const control = page.locator('#agentMissionControl');
+    const text = await control.innerText();
+    assert.match(text, /Stage\s+Needs a look/);
+    assert.match(text, /Progress\s+1 of 3 workers/);
+    assert.match(text, /Blockers\s+2/);
+    assert.match(text, /Evidence\s+0 records/);
+    assert.match(text, /Source: (Stored mission record|Live mission feed) · mission-ui-failed/);
+    const workstreams = control.locator('[data-aw-control-worker]');
+    assert.equal(await workstreams.count(), 3);
+    assert.match(await workstreams.nth(1).innerText(), /After: Team lead/);
+    assert.match(await workstreams.nth(2).innerText(), /After: UX Analyst/);
+    await workstreams.nth(1).click();
+    await page.locator('#agentInspector').waitFor({ state: 'visible' });
+    await page.locator('#awWorkerClose').click();
   });
   await check('1440px: the city is the faceplate\'s aside; the sections are under it, crew beside the story', async () => {
     const plate = await page.locator('.aw-plate__main').boundingBox(), city = await page.locator('.aw-city').boundingBox(), crew = await page.locator('.aw-crew:not(#awServices)').boundingBox(), story = await page.locator('.aw-story-box').boundingBox();
@@ -286,9 +311,26 @@ async function withMission(contextOpts, mission) {
     assert.equal(await page.locator('#awPrimary').innerText(), 'See the answer');
     assert.equal(await page.locator('#awReadings').innerText().then(t => /Answered by/.test(t)), false, 'no route recorded: no Answered by line');
     const order = await page.locator('#awSheetBody > section:not([hidden]) > h2').allInnerTexts();
-    assert.deepEqual(order.slice(0, 3), ['Answer', 'Crew', 'Story']);
+    assert.deepEqual(order.slice(0, 4), ['Answer', 'Mission control', 'Crew', 'Story']);
   });
   await check('1440px: no script errors (done)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, CONTROL);
+  await check('1440px: mission control exposes recorded evidence and plan revisions', async () => {
+    const control = page.locator('#agentMissionControl');
+    assert.match(await control.innerText(), /Evidence\s+2 records/);
+    await control.getByText('Evidence (2)', { exact: true }).click();
+    assert.match(await control.innerText(), /Project brief/);
+    assert.match(await control.innerText(), /Phone layout inspection/);
+    await control.getByText('Plan revisions (3)', { exact: true }).click();
+    const text = await control.innerText();
+    assert.match(text, /Revision 1 · Initial plan/);
+    assert.match(text, /Revision 2 · Follow-up added/);
+    assert.match(text, /Revision 3 · Fallback used/);
+  });
+  await check('1440px: no script errors (mission control)', async () => assert.deepEqual(errors, []));
   await context.close();
 }
 {
@@ -382,6 +424,38 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
     await page.waitForFunction(() => document.querySelectorAll('#awcRoster [data-awc-roster]').length >= 3);
   });
   await check(`${label}: no script errors (start)`, async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+{
+  const { context, page, errors } = await emptyPage({ viewport: { width: 1440, height: 900 } });
+  await check('1440px: demo decisions and custom plan direction persist in this browser', async () => {
+    await page.evaluate(() => localStorage.removeItem('localai.agentWorld.missionControlDemo.v1'));
+    await page.locator('#awEmptyDemo').click();
+    await page.locator('[data-aw-demo-decisions]').waitFor({ state: 'visible' });
+    const choiceLayout = await page.locator('.aw-control__choices label').evaluateAll((labels) => labels.map((label) => {
+      const box = label.getBoundingClientRect();
+      const inputBox = label.querySelector('input')?.getBoundingClientRect();
+      return { height: box.height, inputWidth: inputBox?.width ?? 0 };
+    }));
+    assert.ok(choiceLayout.every(({ height, inputWidth }) => height >= 40 && height <= 52 && inputWidth > 0 && inputWidth < 32));
+    await page.getByLabel('Clarify the mission').check();
+    await page.getByLabel('Phone layout').check();
+    await page.getByLabel('Accessibility').check();
+    await page.locator('#awControlDirection').fill('Review the phone flow before visual polish.');
+    await page.getByRole('button', { name: 'Save direction' }).click();
+    await page.getByText('Plan revisions (2)', { exact: true }).waitFor();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof window.showView === 'function');
+    await page.evaluate(() => window.showView('agents'));
+    await page.locator('#awEmptyDemo').click();
+    await page.locator('[data-aw-demo-decisions]').waitFor({ state: 'visible' });
+    assert.equal(await page.getByLabel('Clarify the mission').isChecked(), true);
+    assert.equal(await page.getByLabel('Phone layout').isChecked(), true);
+    assert.equal(await page.getByLabel('Accessibility').isChecked(), true);
+    assert.equal(await page.locator('#awControlDirection').inputValue(), 'Review the phone flow before visual polish.');
+    await page.getByText('Plan revisions (2)', { exact: true }).waitFor();
+  });
+  await check('1440px: no script errors (persistent demo decisions)', async () => assert.deepEqual(errors, []));
   await context.close();
 }
 // The page can open before the header and the page strip are built (a deep link, a fast tap): the stage must still
@@ -886,8 +960,8 @@ const DEV_WORDS = /Synthesis|Evidence|Routing|Mission Router|Capability|Groundin
     assert.equal(await page.locator('#awMenu [data-aw-menu="demo"]').isVisible(), true);
     await page.keyboard.press('Escape');
   });
-  await check('1440px: no developer words on the page outside Routing and the worker details', async () => {
-    const text = await page.evaluate(() => { const c = document.querySelector('#agents').cloneNode(true); c.querySelectorAll('.aw-results__dev, .aw-worker__dev').forEach(e => e.remove()); document.body.appendChild(c); c.id = 'agentsCopy'; const t = c.innerText; c.remove(); return t; });
+  await check('1440px: no developer words on the page outside Mission control, Routing and the worker details', async () => {
+    const text = await page.evaluate(() => { const c = document.querySelector('#agents').cloneNode(true); c.querySelectorAll('#agentMissionControl, .aw-results__dev, .aw-worker__dev').forEach(e => e.remove()); document.body.appendChild(c); c.id = 'agentsCopy'; const t = c.innerText; c.remove(); return t; });
     assert.doesNotMatch(text, DEV_WORDS);
   });
   await check('1440px: Routing and the demo are there', async () => {
