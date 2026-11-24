@@ -96,7 +96,9 @@ Rules:
 ## Files and behavior
 
 - `app/public/index.html`: Mission Control section inside the existing Agent World sheet.
-- `app/public/ui.js`: projection, honest provenance, workstream inspection, demo decisions and local demo revisions.
+- `app/public/ui.js`: lifecycle wiring into the existing mission feed and worker inspector.
+- `app/public/aw/mission-control.js`: on-demand projection, honest provenance, demo decisions and local demo revisions;
+  kept out of the app-shell download budget with the other Agent World modules.
 - `app/public/app.css`: responsive kit-token styling, including reduced-motion-safe behavior.
 - `tests/agent-world-plate.test.cjs`: page anatomy contract.
 - `tests/agent-world-ui.mjs`: desktop, phone, evidence, revision, inspector and persistence coverage.
