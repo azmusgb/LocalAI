@@ -432,6 +432,12 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
     await page.evaluate(() => localStorage.removeItem('localai.agentWorld.missionControlDemo.v1'));
     await page.locator('#awEmptyDemo').click();
     await page.locator('[data-aw-demo-decisions]').waitFor({ state: 'visible' });
+    const choiceLayout = await page.locator('.aw-control__choices label').evaluateAll((labels) => labels.map((label) => {
+      const box = label.getBoundingClientRect();
+      const inputBox = label.querySelector('input')?.getBoundingClientRect();
+      return { height: box.height, inputWidth: inputBox?.width ?? 0 };
+    }));
+    assert.ok(choiceLayout.every(({ height, inputWidth }) => height >= 40 && height <= 52 && inputWidth > 0 && inputWidth < 32));
     await page.getByLabel('Clarify the mission').check();
     await page.getByLabel('Phone layout').check();
     await page.getByLabel('Accessibility').check();

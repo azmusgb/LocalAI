@@ -2061,7 +2061,8 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ui-line)}
 .aw-control__decision legend,.aw-control__direction label{font-weight:650}
 .aw-control__decision p{margin:0}
 .aw-control__choices{display:grid;gap:var(--ui-s-2)}
-.aw-control__choices label{display:flex;align-items:center;gap:var(--ui-s-2);min-height:var(--ui-s-8)}
+.aw-control__choices label{display:flex;align-items:center;justify-content:flex-start;gap:var(--ui-s-2);min-height:calc(var(--ui-s-8) - var(--ui-s-4) - var(--ui-space))}
+.aw-control__choices input{width:auto;flex:none;margin:0}
 .aw-control__direction{display:grid;gap:var(--ui-s-2)}
 .aw-control__direction .btn-primary{justify-self:start}
 .aw-control__details .ui-disclosure__summary{display:flex;align-items:center;min-height:var(--ui-s-8);cursor:pointer;color:var(--ui-muted)}
