@@ -56,8 +56,9 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   assert.ok(x < 120, `main starts at ${x}px, beside the 76px rail`);
   assert.equal(await area(), 'Work');
   assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Agent World', 'Assistant automations']);
-  // The page strip is in every area, Home included, so the bar does not appear and vanish as you move around.
-  for (const [hash, id, tabs] of [['#home', 'home', ['Home', 'Decisions']], ['#projects', 'projects', null], ['#backlog', 'backlog', null], ['#status', 'status', null]]) {
+  // The page strip is in every area with more than one page, Home included. System is one page of cards (A27 step 2a),
+  // so it has none; checked below.
+  for (const [hash, id, tabs] of [['#home', 'home', ['Home', 'Decisions']], ['#projects', 'projects', null], ['#backlog', 'backlog', null]]) {
     await page.evaluate(h => LocalAIRouter.go(h), hash);
     await page.waitForSelector(`#${id}.active`, T);
     await page.waitForTimeout(300);
@@ -68,16 +69,17 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   await page.waitForSelector('#status.active', T);
   await page.waitForTimeout(300);
   assert.equal(await left(), x, 'content starts at the same x in every area');
-  assert.equal(await area(), 'System');
-  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Status');
+  // With no strip to name it, the top bar names a card's page itself (and its own page on #system).
+  assert.equal(await area(), 'Assistant status');
+  assert.equal(await page.locator('#uxPageStrip').isVisible(), false, 'System has no strip row');
   await page.context().close();
 });
 
 // Every strip fits a 320 px phone since Status and Connections became one page (#524), so nothing overflows by itself.
 // The scrolling still matters for a longer label or larger text: the check narrows the strip to make it overflow.
-await check('small phone: the System tab strip scrolls, fades at the overflowing edge, and keeps the open tab in view', async () => {
-  const page = await open({ width: 320, height: 640 }, '#status');
-  await page.waitForSelector('#status.active', T);
+await check('small phone: the Improve tab strip scrolls, fades at the overflowing edge, and keeps the open tab in view', async () => {
+  const page = await open({ width: 320, height: 640 }, '#backlog');
+  await page.waitForSelector('#backlog.active', T);
   const strip = page.locator('#uxPageStrip');
   await strip.waitFor({ state: 'visible', timeout: 6000 });
   await strip.evaluate(e => { e.style.maxWidth = '200px'; e.dispatchEvent(new Event('scroll')); });
@@ -90,8 +92,8 @@ await check('small phone: the System tab strip scrolls, fades at the overflowing
   await page.waitForFunction(() => document.getElementById('uxPageStrip').dataset.fadeEnd === 'false', null, T);
   i = await info();
   assert.equal(i.start, 'true');
-  await page.evaluate(() => LocalAIRouter.go('#activity'));
-  await page.waitForSelector('#activity.active', T);
+  await page.evaluate(() => LocalAIRouter.go('#architecture'));
+  await page.waitForSelector('#architecture.active', T);
   await page.waitForTimeout(300);
   const vis = await page.evaluate(() => { const s = document.getElementById('uxPageStrip'), b = s.querySelector('[aria-current="page"]'), sr = s.getBoundingClientRect(), br = b.getBoundingClientRect(); return br.left >= sr.left - 1 && br.right <= sr.right + 1; });
   assert.ok(vis, 'the open tab is fully inside the strip');

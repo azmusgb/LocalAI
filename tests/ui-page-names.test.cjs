@@ -37,7 +37,7 @@ function badRefs(src, where) {
 }
 
 test('the scan knows real names and catches a wrong one', () => {
-  assert.deepEqual(badRefs("x('Open System › Settings to turn it on')", 'a'), []);
+  assert.deepEqual(badRefs("x('Open System › Assistant settings to turn it on')", 'a'), []);
   assert.deepEqual(badRefs("x('See System › Browser & computer.')", 'a'), []);
   assert.deepEqual(badRefs("x('See System › n8n workflows')", 'a'), []);
   assert.deepEqual(badRefs('/* Pi Hub\'s System › Health */\n// System › Health', 'a'), []);

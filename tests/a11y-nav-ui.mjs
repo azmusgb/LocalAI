@@ -28,16 +28,33 @@ await check('the first load leaves focus alone and titles the tab', async () => 
 await check('choosing an area titles the tab and moves focus to that page; the strip keeps focus on itself', async () => {
   const { page, context } = await open();
   await page.click('.ux-primary-item[data-domain="system"]');
-  await page.waitForFunction(() => document.title === 'Assistant status · Local AI');
-  await page.waitForFunction(() => !!document.activeElement?.closest('#status'), null, { timeout: 2000 }).catch(() => {});
-  assert.equal(await inView(page, 'status'), true, 'focus is on the Assistant status page');
+  await page.waitForFunction(() => document.title === 'Assistant · Local AI');
+  await page.waitForFunction(() => !!document.activeElement?.closest('#system'), null, { timeout: 2000 }).catch(() => {});
+  assert.equal(await inView(page, 'system'), true, "focus is on System's Assistant page");
   // The strip is a row of tabs: switching from it keeps focus on it, so the next tab is one key away.
-  const models = page.locator('#uxPageStrip [data-strip-view="models"]');
-  await models.focus(); await models.press('Enter');
-  await page.waitForFunction(() => document.title === 'Models · Local AI');
+  await page.click('.ux-primary-item[data-domain="improve"]');
+  await page.waitForSelector('#backlog.active');
+  const signals = page.locator('#uxPageStrip [data-strip-view="signals"]');
+  await signals.focus(); await signals.press('Enter');
+  await page.waitForFunction(() => document.title === 'Signals · Local AI');
   // The title changes at once; showView puts focus back on the strip's tab a frame later (requestAnimationFrame).
-  await page.waitForFunction(() => document.activeElement?.dataset?.stripView === 'models', null, { timeout: 2000 }).catch(() => {});
-  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.stripView), 'models');
+  await page.waitForFunction(() => document.activeElement?.dataset?.stripView === 'signals', null, { timeout: 2000 }).catch(() => {});
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.stripView), 'signals');
+  await context.close();
+});
+
+// Opening a page moves focus to its heading a frame later. On a busy first load that frame can come after the person has
+// already moved focus (to the strip, or Search): it must not take focus back (it did, which broke the check above in full runs).
+await check('focus the person moved before the new page settled stays where they put it', async () => {
+  const { page, context } = await open();
+  // Move focus the moment Changes becomes the open page: after showView has asked for its frame, before the frame comes.
+  await page.evaluate(() => new Promise(done => {
+    const sec = document.getElementById('backlog');
+    new MutationObserver((_, mo) => { if (!sec.classList.contains('active')) return; mo.disconnect(); document.getElementById('uxCommandBtn').focus(); done(); }).observe(sec, { attributes: true, attributeFilter: ['class'] });
+    document.querySelector('.ux-primary-item[data-domain="improve"]').click();
+  }));
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'uxCommandBtn');
   await context.close();
 });
 
@@ -83,16 +100,16 @@ await check('Home mode sheet: the modes are one radio group; arrows choose, Tab 
 
 await check('the menus are navigation landmarks and mark the current page', async () => {
   const { page, context } = await open();
-  await page.evaluate(() => window.showView('models'));
-  await page.waitForSelector('#models.active');
+  await page.evaluate(() => window.showView('signals'));
+  await page.waitForSelector('#signals.active');
   const primary = page.locator('[role="navigation"][aria-label="Primary"], nav[aria-label="Primary"]').filter({ has: page.locator('.ux-primary-item') });
   assert.equal(await primary.count(), 1, 'the rail is a Primary navigation landmark');
   const pages = page.locator('[role="navigation"][aria-label="Pages in this section"], nav[aria-label="Pages in this section"]').filter({ has: page.locator('[data-strip-view]') });
   assert.equal(await pages.count(), 1, 'the page strip is a navigation landmark');
-  assert.deepEqual(await page.locator('[data-strip-view][aria-current="page"]').evaluateAll(b => b.map(x => x.dataset.stripView)), ['models']);
-  assert.equal(await page.locator('.ux-primary-item[aria-current]').getAttribute('data-domain'), 'system');
-  await page.evaluate(() => window.showView('status'));
-  await page.waitForFunction(() => document.querySelector('[data-strip-view][aria-current="page"]')?.dataset.stripView === 'status');
+  assert.deepEqual(await page.locator('[data-strip-view][aria-current="page"]').evaluateAll(b => b.map(x => x.dataset.stripView)), ['signals']);
+  assert.equal(await page.locator('.ux-primary-item[aria-current]').getAttribute('data-domain'), 'improve');
+  await page.evaluate(() => window.showView('research'));
+  await page.waitForFunction(() => document.querySelector('[data-strip-view][aria-current="page"]')?.dataset.stripView === 'research');
   assert.equal(await page.locator('[data-strip-view][aria-current="page"]').count(), 1);
   await context.close();
 });

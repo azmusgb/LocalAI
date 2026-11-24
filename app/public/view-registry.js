@@ -5,9 +5,12 @@
 // `tab` is the label a page uses in its parent's tab strip (the parent's own tab included).
 // A domain's `icon` and a view's `svg` name symbols in the index.html sprite; every menu draws them from here.
 // `short` is a page's label in a page strip when its full one would push the strip past a phone's width.
-// `tool` puts a card for the page on System › Tools (navigation update, 2 Nov: always shown, no switch).
-// `lights` names the strip item a page lights while it is open; the page has no strip button of its own. A System tool lights
-// Tools; In progress and Shipped light Changes (the Backlog page). Architecture is only Improve's Atlas tab, not a tool card.
+// `card` puts a card for the page on another page, in registry order (kit 2.26.0, Pi Hub A27 D1 and D3): the five admin
+// pages are cards of System's one page, Assistant (`system`), and the five tools are cards of Developer tools. A card's
+// page has its own address and a way back to the page it is a card of; it is never a strip item or a tab.
+// `lights` names the strip item a page lights while it is open; the page has no strip button of its own. A card of System
+// or of Developer tools lights Assistant; In progress and Shipped light Changes (the Backlog page). Architecture is only
+// Improve's Atlas tab, not a tool card.
 // `owner` is the area a hidden page lights while open, when its address must keep opening the page itself (no alias).
 (function(root){'use strict';
 const DOMAINS=[
@@ -15,7 +18,7 @@ const DOMAINS=[
  {id:'work',label:'Work',icon:'work',tagline:'Everything running and done',defaultView:'work'},
  {id:'projects',label:'Projects',icon:'projects',tagline:'Make and keep things',defaultView:'projects'},
  {id:'improve',label:'Improve',icon:'improve',tagline:'Change the assistant itself',defaultView:'backlog'},
- {id:'system',label:'System',icon:'system',tagline:'Status and history',defaultView:'status'}
+ {id:'system',label:'System',icon:'system',tagline:'Status and history',defaultView:'system'}
 ];
 const VIEWS=[
  {id:'home',svg:'home',domain:'home',section:'Overview',label:'Home',description:'Start something, or pick up where you left off.',aka:['overview']},
@@ -31,8 +34,10 @@ const VIEWS=[
 // Automations is a tab of Work (scheduled work): navigation spec, step 3. Projects holds only what you keep (2 Nov, D4).
  {id:'library',svg:'library',domain:'projects',section:'Keep',parent:'projects',tab:'Library',label:'Library',description:'What you kept: chats, research and images.',aka:['kept']},
  
- {id:'status',svg:'health',short:'Status',domain:'system',section:'Status',label:'Assistant status',description:'Whether Local AI is working, and which optional services are up.',aka:['status','assistant status','health','connections','integrations','services','bridges','tools']},
- {id:'models',svg:'model',domain:'system',section:'Status',label:'Models',description:"Installed models and what's loaded now."},
+ // System is one page, Assistant, with five cards (kit 2.26.0 `assistant-system`): no strip row of System's own pages.
+ {id:'system',svg:'system',domain:'system',section:'Assistant',label:'Assistant',description:'Whether the Assistant is working, its models and tools, settings and audit log.',aka:['system','setup','admin','assistant system']},
+ {id:'status',svg:'health',domain:'system',section:'Assistant',card:'system',lights:'system',label:'Assistant status',description:'Whether Local AI is working, and which optional services are up.',aka:['status','assistant status','health','connections','integrations','services','bridges','tools']},
+ {id:'models',svg:'model',domain:'system',section:'Assistant',card:'system',lights:'system',label:'Models',description:"Installed models and what's loaded now."},
  // Agent World is a tab of Work (Pi Hub A7 plan, decision 9): Work · Agent World · Assistant automations. It has its own
  // address again (no alias), and titles itself Agent World: the mission is its faceplate, not its heading.
  {id:'agents',svg:'target',domain:'work',section:'Work',parent:'work',tab:'Agent World',label:'Agent World',description:'Give the team a goal; watch them work it.',aka:['agents','missions','mission','agent operations']},
@@ -48,18 +53,16 @@ const VIEWS=[
  {id:'research',svg:'eye',domain:'improve',section:'Pipeline',label:'Research',description:'What the research intake read, what it cost and how well it is doing.',aka:['intake','feeds','knowledge loop','findings']},
  {id:'claude',svg:'sparkle',domain:'improve',section:'Pipeline',label:'Claude Code',description:'Chat with your Claude Code sessions and watch them work.',aka:['claude']},
  {id:'architecture',svg:'flow',domain:'improve',section:'Pipeline',label:'Atlas',description:'System Atlas: topology, changes, risk, evidence and local architecture intelligence.',aka:['architecture','system atlas','dependencies','architecture atlas']},
- {id:'workbench',svg:'folder',domain:'system',section:'Tools',tool:true,lights:'tools',label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
- {id:'repoTools',svg:'branch',domain:'system',section:'Tools',tool:true,lights:'tools',label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
- {id:'powershell',svg:'terminal',domain:'system',section:'Tools',tool:true,lights:'tools',label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
- {id:'actions',svg:'globe',domain:'system',section:'Tools',tool:true,lights:'tools',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
- {id:'automations',svg:'flow',domain:'system',section:'Tools',tool:true,lights:'tools',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
+ {id:'workbench',svg:'folder',domain:'system',section:'Assistant',card:'tools',lights:'system',label:'Files',description:'Browse, search and safely edit mounted folders.',aka:['workbench','engineering workbench']},
+ {id:'repoTools',svg:'branch',domain:'system',section:'Assistant',card:'tools',lights:'system',label:'Repository',description:'Inspect repos and run allow-listed commands.',aka:['repo tools','repository tools']},
+ {id:'powershell',svg:'terminal',domain:'system',section:'Assistant',card:'tools',lights:'system',label:'PowerShell',description:'Approval-gated scripts on the Windows host.',aka:['powershell workbench']},
+ {id:'actions',svg:'globe',domain:'system',section:'Assistant',card:'tools',lights:'system',label:'Browser & computer',description:'Fetch pages and run approved local actions.',aka:['actions','computer actions']},
+ {id:'automations',svg:'flow',domain:'system',section:'Assistant',card:'tools',lights:'system',label:'n8n workflows',description:'Build advanced workflows in n8n.',aka:['workflows']},
  // Settings left Health (navigation update, 2 Nov): Health is only whether things work.
- // Developer tools and Assistant settings are the pages' names (Pi Hub A22 8.1) in the title, the menu and ⌘K. The System
- // strip keeps `short` (Tools, Settings), as Status does: five full names are 427 px, past a 390 px phone. Pi Hub draws
- // this strip from step 14 (A22 brief 4), where it scrolls; the short words go then.
- {id:'tools',svg:'terminal',short:'Tools',domain:'system',section:'Tools',label:'Developer tools',description:'Files, Repository, PowerShell, Browser & computer and n8n workflows.',aka:['tools','advanced','workbench']},
- {id:'settings',svg:'settings',short:'Settings',domain:'system',section:'Settings',label:'Assistant settings',description:'Notifications, sign-in, home location and the pages you open.',aka:['settings','preferences','notifications','home location','sign-in']},
- {id:'activity',svg:'history',domain:'system',section:'History',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
+ // Developer tools and Assistant settings are the pages' names (Pi Hub A22 8.1) in the title, the card and ⌘K.
+ {id:'tools',svg:'terminal',domain:'system',section:'Assistant',card:'system',lights:'system',label:'Developer tools',description:'Files, Repository, PowerShell, Browser & computer and n8n workflows.',aka:['tools','advanced','workbench']},
+ {id:'settings',svg:'settings',domain:'system',section:'Assistant',card:'system',lights:'system',label:'Assistant settings',description:'Notifications, sign-in, home location and the pages you open.',aka:['settings','preferences','notifications','home location','sign-in']},
+ {id:'activity',svg:'history',domain:'system',section:'Assistant',card:'system',lights:'system',label:'Audit log',description:'What happened on the appliance, and when.',aka:['activity']},
  {id:'runs',svg:'work',domain:'hidden',section:'History',label:'Runs',description:'Every run, live, with cancel and retry.'}
 ];
 // Change requests, Issues and Quality signals are retired: Improve's stages show the same things (see ALIASES).
@@ -69,7 +72,10 @@ const VIEWS=[
 // Monitors folded into Automations as its Health check and Morning brief kinds (D9).
 // Deployments merged into Shipped (2 Nov): its Running now card is the release evidence.
 // Connections merged into Status (9 Nov, D1): its cards sit under the Services list.
-const ALIASES={deployments:'shipped',approvals:'inbox',operations:'automationStudio',engineering:'inProgress',changes:'inProgress',issues:'signals',quality:'signals',runs:'work',ask:'home',create:'home',integrations:'status'};
+// The kit's retired page ids (kit 2.26.0 `redirects`, Pi Hub A27): each lands on the page the kit's redirect(id) names
+// (Assistant status; a Developer tools card; Changes at a stage). tests/kit-pages.test.cjs walks every one.
+const KIT_RETIRED={'assistant-status':'status','tools-files':'workbench','tools-repository':'repoTools','tools-powershell':'powershell','tools-browser':'actions','tools-n8n':'automations','changes-in-progress':'inProgress','changes-shipped':'shipped'};
+const ALIASES={deployments:'shipped',approvals:'inbox',operations:'automationStudio',engineering:'inProgress',changes:'inProgress',issues:'signals',quality:'signals',runs:'work',ask:'home',create:'home',integrations:'status',...KIT_RETIRED};
 const byId=new Map(VIEWS.map(v=>[v.id,v]));
 function resolve(id){return ALIASES[id]||id}
 // A view that still has its own page (hidden ones) wins over its alias.
@@ -84,9 +90,9 @@ function sections(domainId){
 }
 // The browser tab's title for a page (E8): "Work · Local AI"; a tab of a page by its tab label ("Library · Local AI").
 function title(id){const v=view(id);if(!v||v.id==='home')return 'Local AI';return `${v.parent?(v.tab||v.label):v.label} · Local AI`}
-// The pages System › Tools has a card for, in menu order.
-function tools(){return VIEWS.filter(v=>v.tool)}
-const api={DOMAINS,VIEWS,ALIASES,tools,resolve,view,page,tabs,sections,title,label:id=>byId.get(id)?.label||id,description:id=>byId.get(id)?.description||''};
+// The pages a page has a card for, in registry order: cards('system') (Assistant), cards('tools') (Developer tools).
+function cards(id){return VIEWS.filter(v=>v.card===id)}
+const api={DOMAINS,VIEWS,ALIASES,cards,resolve,view,page,tabs,sections,title,label:id=>byId.get(id)?.label||id,description:id=>byId.get(id)?.description||''};
 if(typeof module==='object'&&module.exports)module.exports=api;else root.LocalAIViews=api;
 })(typeof window!=='undefined'?window:globalThis);
 
