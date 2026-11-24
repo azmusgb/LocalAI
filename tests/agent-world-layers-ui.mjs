@@ -40,7 +40,7 @@ await check('opening Agent World fetches each on-demand module once', async () =
   await page.waitForFunction(() => !!window.LocalAIAWKit, null, { timeout: 5000 });
   await page.evaluate(() => window.showView('home')); await page.waitForTimeout(200);
   await page.evaluate(() => window.showView('agents')); await page.waitForTimeout(400);
-  assert.deepEqual(awRequests, ['/aw/kit.js', '/aw/landmarks.js']);
+  assert.deepEqual(awRequests, ['/aw/kit.js', '/aw/landmarks.js', '/aw/mission-control.js']);
   assert.equal(await page.evaluate(() => window.LocalAIAWKit.clean('a‮b', 80)), 'a b');
 });
 
