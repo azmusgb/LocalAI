@@ -2054,6 +2054,16 @@ body.ux-v3.ux-scrolled .ux-context-bar{box-shadow:0 1px 0 var(--ui-line)}
 .aw-control__roadmap .aw-control__worker{width:100%;border-inline:0;border-block-start:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .aw-control__roadmap .aw-control__worker:hover{background:var(--ui-surface-2)}
 .aw-control__actions{display:flex;flex-wrap:wrap;gap:var(--ui-s-2)}
+.aw-control__decisions{display:grid;gap:var(--ui-s-3);padding:var(--ui-s-4);border:thin solid var(--ui-line);border-radius:var(--ui-r-2)}
+.aw-control__decision-head{display:flex;align-items:center;justify-content:space-between;gap:var(--ui-s-3)}
+.aw-control__decision-head h3{margin:0}
+.aw-control__decision{display:grid;gap:var(--ui-s-2);margin:0;padding:var(--ui-s-3);border:thin solid var(--ui-line);border-radius:var(--ui-r-2)}
+.aw-control__decision legend,.aw-control__direction label{font-weight:650}
+.aw-control__decision p{margin:0}
+.aw-control__choices{display:grid;gap:var(--ui-s-2)}
+.aw-control__choices label{display:flex;align-items:center;gap:var(--ui-s-2);min-height:var(--ui-s-8)}
+.aw-control__direction{display:grid;gap:var(--ui-s-2)}
+.aw-control__direction .btn-primary{justify-self:start}
 .aw-control__details .ui-disclosure__summary{display:flex;align-items:center;min-height:var(--ui-s-8);cursor:pointer;color:var(--ui-muted)}
 .aw-control__details .ui-rows{margin-block-start:var(--ui-s-2)}
 .aw-control .ui-sources{margin:var(--ui-s-2) 0 0}
