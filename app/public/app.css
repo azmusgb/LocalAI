@@ -2729,14 +2729,14 @@ html.is-framed body.ux-v3 .ux-page-strip{top:0}
 .status-page>.ui-page__head{margin-bottom:0}
 .plate-skeleton{display:inline-block;width:6ch;height:1em}
 .status-plate__note,.status-plate__when{margin:0}
-.status-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
+/* A page on the kit's anatomy keeps the kit's grid and gap when open (.view.active would make it a block). */
+.ui-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
 #serviceList{margin:0;padding:0;list-style:none}
 #serviceList .status-error{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--ui-line)}
 .status-services details{margin-top:calc(var(--ui-space)*3)}
 .status-open-in{margin:0;color:var(--ui-muted)}
 .status-page>.ui-sources{margin:0}
 /* Projects on the page anatomy (A7 L2b): rows that open a project as a section under the list. */
-.projects-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
 #projects.projects-empty #projectMetrics{display:none}
 .project-row{width:100%;padding-inline:var(--ui-s-2);text-align:left;font:inherit;color:inherit;background:transparent;border:0;border-radius:0;cursor:pointer}
 .project-row:hover{background:var(--ui-surface)}
@@ -2748,11 +2748,9 @@ html.is-framed body.ux-v3 .ux-page-strip{top:0}
 .project-detail__actions{display:flex;flex-wrap:wrap;gap:var(--ui-s-2);margin-top:calc(var(--ui-space)*4)}
 .project-detail .empty-state{padding:calc(var(--ui-space)*2) 0;text-align:left;color:var(--ui-muted);font-size:var(--ui-fs-4)}
 /* Backlog on the page anatomy (A7 L2b). */
-.backlog-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
 .backlog-page .list-group{border:0;border-radius:0;background:transparent;box-shadow:none}
 .backlog-page .list-group>.list-row{padding-left:0;padding-right:0}
 /* Work on the page anatomy (A7 L2b): the faceplate, then the list as a section headed by its Select. */
-.work-page.view.active{display:grid;gap:calc(var(--ui-space)*7);min-width:0}
 .work-section__head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:calc(var(--ui-space)*3)}
 .work-section__head h2{margin:0}
 /* Home on the page anatomy (A7 L2b): the Assistant's faceplate with the street as its aside. */
