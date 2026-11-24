@@ -426,6 +426,32 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await check(`${label}: no script errors (start)`, async () => assert.deepEqual(errors, []));
   await context.close();
 }
+{
+  const { context, page, errors } = await emptyPage({ viewport: { width: 1440, height: 900 } });
+  await check('1440px: demo decisions and custom plan direction persist in this browser', async () => {
+    await page.evaluate(() => localStorage.removeItem('localai.agentWorld.missionControlDemo.v1'));
+    await page.locator('#awEmptyDemo').click();
+    await page.locator('[data-aw-demo-decisions]').waitFor({ state: 'visible' });
+    await page.getByLabel('Clarify the mission').check();
+    await page.getByLabel('Phone layout').check();
+    await page.getByLabel('Accessibility').check();
+    await page.locator('#awControlDirection').fill('Review the phone flow before visual polish.');
+    await page.getByRole('button', { name: 'Save direction' }).click();
+    await page.getByText('Plan revisions (2)', { exact: true }).waitFor();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof window.showView === 'function');
+    await page.evaluate(() => window.showView('agents'));
+    await page.locator('#awEmptyDemo').click();
+    await page.locator('[data-aw-demo-decisions]').waitFor({ state: 'visible' });
+    assert.equal(await page.getByLabel('Clarify the mission').isChecked(), true);
+    assert.equal(await page.getByLabel('Phone layout').isChecked(), true);
+    assert.equal(await page.getByLabel('Accessibility').isChecked(), true);
+    assert.equal(await page.locator('#awControlDirection').inputValue(), 'Review the phone flow before visual polish.');
+    await page.getByText('Plan revisions (2)', { exact: true }).waitFor();
+  });
+  await check('1440px: no script errors (persistent demo decisions)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
 // The page can open before the header and the page strip are built (a deep link, a fast tap): the stage must still
 // end up under them. It used to keep its 56px fallback, so the strip covered the faceplate's "Try a demo mission".
 {
