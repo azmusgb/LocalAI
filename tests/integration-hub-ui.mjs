@@ -35,6 +35,7 @@ await page.waitForSelector('.ux-primary-rail');
 
 await check('the connections are on Status, under its Services list', async () => {
   await page.locator('.ux-primary-item[data-domain="system"]').click();
+  await page.locator('#systemCards [data-tool="status"]').click(); // System is one page of cards (A27 step 2a)
   await page.waitForSelector('#status.active');
   await page.waitForSelector('#statusConnections[data-integration-v2="true"]');
   assert.equal(await page.locator('#uxPageStrip [data-strip-view="integrations"]').count(), 0, 'Connections has no page of its own');
@@ -277,6 +278,7 @@ await mobile.waitForSelector('#uxMobileNav');
 
 await check('the connections are on Status on mobile', async () => {
   await mobile.locator('#uxMobileNav [data-domain="system"]').click();
+  await mobile.locator('#systemCards [data-tool="status"]').click(); // System is one page of cards (A27 step 2a)
   await mobile.waitForSelector('#status.active');
   await mobile.waitForSelector('#statusConnections[data-integration-v2="true"]');
 });

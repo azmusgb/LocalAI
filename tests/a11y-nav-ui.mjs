@@ -34,12 +34,12 @@ await check('choosing an area titles the tab and moves focus to that page; the s
   // The strip is a row of tabs: switching from it keeps focus on it, so the next tab is one key away.
   await page.click('.ux-primary-item[data-domain="improve"]');
   await page.waitForSelector('#backlog.active');
-  const research = page.locator('#uxPageStrip [data-strip-view="research"]');
-  await research.focus(); await research.press('Enter');
-  await page.waitForFunction(() => document.title === 'Research · Local AI');
+  const signals = page.locator('#uxPageStrip [data-strip-view="signals"]');
+  await signals.focus(); await signals.press('Enter');
+  await page.waitForFunction(() => document.title === 'Signals · Local AI');
   // The title changes at once; showView puts focus back on the strip's tab a frame later (requestAnimationFrame).
-  await page.waitForFunction(() => document.activeElement?.dataset?.stripView === 'research', null, { timeout: 2000 }).catch(() => {});
-  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.stripView), 'research');
+  await page.waitForFunction(() => document.activeElement?.dataset?.stripView === 'signals', null, { timeout: 2000 }).catch(() => {});
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.stripView), 'signals');
   await context.close();
 });
 

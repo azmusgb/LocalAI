@@ -25,6 +25,8 @@ await page.waitForSelector('#agents.active');
 
 await check('system capability health distinguishes optional companions',async()=>{
   await page.locator('.ux-primary-item[data-domain="system"]').click();
+  await page.waitForSelector('#system.active'); // System is one page of cards (A27 step 2a); Assistant status is its first
+  await page.locator('#systemCards [data-tool="status"]').click();
   await page.waitForSelector('#status.active');
   await page.locator('#statusRetryBtn').waitFor({state:'visible'});
   await page.locator('#statusRetryBtn').click();

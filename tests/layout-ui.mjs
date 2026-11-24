@@ -275,8 +275,8 @@ await check('phone: the sticky header gets a hairline once the page scrolls, whe
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(150);
   assert.equal(await line(), 'none', 'gone again at the top');
-  await go(page, 'status'); // System has page tabs, whose own border is the line
-  await page.evaluate(() => { document.getElementById('status').style.minHeight = '3000px'; window.scrollTo(0, 300); });
+  await go(page, 'projects'); // Projects has page tabs, whose own border is the line
+  await page.evaluate(() => { document.getElementById('projects').style.minHeight = '3000px'; window.scrollTo(0, 300); });
   await page.waitForTimeout(150);
   assert.equal(await line(), 'none', 'the page tabs already draw the line');
   await context.close();
