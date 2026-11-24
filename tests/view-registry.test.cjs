@@ -19,7 +19,7 @@ const PENDING = new Set(['work']);
 
 test('registry has five domains and every view belongs to one', () => {
   assert.deepEqual(registry.DOMAINS.map(d => d.id), ['home', 'work', 'projects', 'improve', 'system']);
-  assert.deepEqual(registry.DOMAINS.map(d => d.defaultView), ['home', 'work', 'projects', 'backlog', 'status']);
+  assert.deepEqual(registry.DOMAINS.map(d => d.defaultView), ['home', 'work', 'projects', 'backlog', 'system']);
   const domains = new Set([...registry.DOMAINS.map(d => d.id), 'hidden']);
   const ids = registry.VIEWS.map(v => v.id);
   assert.equal(new Set(ids).size, ids.length, 'view ids must be unique');
@@ -112,15 +112,22 @@ test('navigation surfaces read from the registry instead of their own lists', ()
   assert.match(sw, /'\/view-registry\.js'/);
 });
 
-// System › Tools (navigation update, 2 Nov): one page of cards, always shown, no switch. The registry says which pages
-// have a card, so the strip, the phone sheet and ⌘K agree and a future tool gets it for free.
-test('Tools lists the tools, System ones first, and nothing is hidden behind a switch', () => {
-  assert.deepEqual(registry.tools().map(v => v.id), ['workbench', 'repoTools', 'powershell', 'actions', 'automations']);
-  assert.ok(registry.tools().every(v => v.lights === 'tools'), 'a tool lights Tools');
-  assert.ok(!registry.VIEWS.some(v => 'dev' in v || 'advanced' in v), 'no developer-only or Advanced pages remain');
+// System is one page, Assistant, with five cards; Developer tools is a page of five tool cards (kit 2.26.0, Pi Hub A27
+// D1 and D3). The registry says which pages have a card, so the cards, the way back and ⌘K agree.
+test('System is one page of five cards, and Developer tools is a page of five tool cards', () => {
+  assert.deepEqual(registry.cards('system').map(v => v.id), ['status', 'models', 'tools', 'settings', 'activity']);
+  assert.deepEqual(registry.cards('system').map(v => v.label), ['Assistant status', 'Models', 'Developer tools', 'Assistant settings', 'Audit log']);
+  assert.deepEqual(registry.cards('tools').map(v => v.id), ['workbench', 'repoTools', 'powershell', 'actions', 'automations']);
+  for (const v of [...registry.cards('system'), ...registry.cards('tools')]) {
+    assert.equal(v.lights, 'system', `${v.id} lights Assistant, the one System page`);
+    assert.ok(!v.parent && !v.short, `${v.id} is no tab and has no strip word`);
+  }
+  // No strip row of System's own: Assistant is the only System page a menu lists.
+  assert.deepEqual(registry.sections('system').flatMap(s => s.views).filter(id => !registry.view(id).lights), ['system']);
+  assert.equal(registry.title('system'), 'Assistant · Local AI');
+  assert.ok(!registry.VIEWS.some(v => 'dev' in v || 'advanced' in v || 'tool' in v), 'no developer-only, Advanced or tool-flag pages remain');
   assert.equal(registry.view('architecture').domain, 'improve', 'Architecture is only Improve\'s Atlas tab, not a tool card (D3)');
   assert.equal(registry.view('claude').domain, 'improve', 'Claude Code is an ordinary Improve page (N2)');
-  assert.deepEqual(registry.sections('system').map(s => s.label), ['Status', 'Tools', 'Settings', 'History']);
 });
 
 // Improve's strip is Changes · Signals · Research · Claude Code · Atlas (navigation depth, D4): In progress and Shipped light Changes.

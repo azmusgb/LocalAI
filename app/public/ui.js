@@ -4113,12 +4113,47 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
 })();
 
 // ==== tools-page.js ====
-// System › Tools (navigation update, 2 Nov): one card per tool, always shown. Each opens the tool at its own address.
+// Card pages (kit 2.26.0, A27): System › Assistant and Developer tools. A card's page starts with "← <its page>". A tool
+// card says whether it can be used only where the app knows (n8n from /api/status; PowerShell from address and token).
 (()=>{'use strict';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const why=t=>`<span class="tool-card__why">${esc(t)}</span>`,chip=(tone,w,t)=>`<span class="ui-chip ui-chip--${tone}">${esc(w)}</span>`+(t?why(t):'');
+// st: 'loading', null (read failed) or /api/status.
+function known(id,st){
+ if(id==='powershell'){
+  if(!['localhost','127.0.0.1','[::1]'].includes(location.hostname))return chip('unknown','Not on this device','Only on the Windows host itself.');
+  let t='';try{t=sessionStorage.getItem('localAiPowerShellUiToken')||''}catch{}
+  return t?'':chip('unknown','Locked','Needs the local PowerShell token.');
+ }
+ if(id!=='automations')return '';
+ if(st==='loading')return '<span class="ui-skeleton tool-card__wait" aria-hidden="true"></span>'+why('Checking n8n…');
+ const s=Array.isArray(st?.services)?st.services.find(x=>x?.name==='n8n'):null;
+ return !s?chip('unknown','Unknown',"Couldn't check n8n."):s.availability==='available'?chip('ok','Running'):chip('bad','Not answering',s.impact);
+}
+const paint=(host,st)=>host.querySelectorAll('.tool-card__status').forEach(l=>{l.innerHTML=known(l.closest('[data-tool]').dataset.tool,st);l.hidden=!l.innerHTML});
+let busy=0;
+function refresh(host){if(busy)return;busy=1;paint(host,'loading');fetch('/api/status',{cache:'no-store',signal:AbortSignal.timeout(15e3)}).then(r=>r.ok?r.json():null).catch(()=>null).then(j=>{busy=0;paint(host,j)})}
+function card(v){
+ return `<li><a class="tool-card ui-card" href="#${esc(v.id)}" data-tool="${esc(v.id)}"><span class="tool-card__icon" aria-hidden="true">${window.LocalAIKit?.icon(v.svg)||''}</span><span class="tool-card__body"><strong>${esc(v.label)}</strong><small>${esc(v.description)}</small><span class="tool-card__status" hidden></span></span></a></li>`;
+}
+// Models' page is drawn later, so this runs again when main gains a page.
+function backLinks(R){
+ for(const v of R.VIEWS){
+  const pg=v.card&&document.getElementById(v.id);if(!pg||pg.querySelector(':scope>.tool-back'))continue;
+  pg.insertAdjacentHTML('afterbegin',`<p class="tool-back"><a href="#${esc(v.card)}"><span aria-hidden="true">←</span> ${esc(R.label(v.card))}</a></p>`);
+ }
+}
 function mount(){
- const host=document.querySelector('#toolsCards'),R=window.LocalAIViews;if(!host||!R||host.childElementCount)return;
- host.innerHTML=R.tools().map(v=>`<a class="tool-card card" href="#${v.id}" data-tool="${v.id}"><span class="tool-card__icon" aria-hidden="true">${window.LocalAIKit?.icon(v.svg)||''}</span><span><strong>${esc(v.label)}</strong><small>${esc(v.description)}</small></span></a>`).join('');
+ const R=window.LocalAIViews;if(!R)return;
+ for(const host of document.querySelectorAll('[data-cards-of]')){
+  if(host.childElementCount)continue;
+  host.innerHTML=R.cards(host.dataset.cardsOf).map(card).join('')||'<li class="ui-empty">Nothing here.</li>';
+  const pg=host.closest('.view');if(!pg||host.dataset.cardsOf!=='tools')continue;
+  const show=()=>pg.classList.contains('active')&&refresh(host);
+  new MutationObserver(show).observe(pg,{attributes:true,attributeFilter:['class']});show();
+ }
+ backLinks(R);
+ const main=document.querySelector('main');if(main)new MutationObserver(()=>backLinks(R)).observe(main,{childList:true});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
 })();

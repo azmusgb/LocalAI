@@ -17,7 +17,7 @@ async function check(name, fn) {
   }
 }
 
-const DEFAULTS = { home: 'home', work: 'work', projects: 'projects', improve: 'backlog', system: 'status' };
+const DEFAULTS = { home: 'home', work: 'work', projects: 'projects', improve: 'backlog', system: 'system' };
 
 async function open(viewport, hash, { devTools = '1' } = {}) {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 760, hasTouch: viewport.width < 760 });
@@ -63,7 +63,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
     await item(page, 'projects').click();
     await page.waitForSelector('#projects.active', T);
     await item(page, 'system').click();
-    await page.waitForSelector('#status.active', T);
+    await page.waitForSelector('#system.active', T);
     await page.evaluate(() => history.back());
     await page.waitForSelector('#projects.active', T);
     await page.evaluate(() => history.back());
@@ -105,7 +105,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
   });
 
   await check(`${tag}: a domain id in the hash opens that domain's first page`, async () => {
-    for (const [id, view] of [['improve', 'backlog'], ['system', 'status'], ['work', 'work'], ['home', 'home'], ['projects', 'projects']]) {
+    for (const [id, view] of [['improve', 'backlog'], ['system', 'system'], ['work', 'work'], ['home', 'home'], ['projects', 'projects']]) {
       const page = await open(viewport, '#' + id);
       await page.waitForSelector('#' + view + '.active', T);
       assert.equal(await page.evaluate(() => location.hash), '#' + view, id);
@@ -171,22 +171,30 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 860 
   });
 
   if (viewport.width >= 760) {
-    await check(`${tag}: the page strip (Audit log, Models, Status) pushes history and sets the hash`, async () => {
-      const page = await open(viewport, '#status');
-      await page.waitForSelector('#status.active', T);
+    await check(`${tag}: System's cards (Audit log, Models, Status) and the way back push history and set the hash`, async () => {
+      const page = await open(viewport, '#system');
+      await page.waitForSelector('#system.active', T);
       for (const view of ['activity', 'models', 'status']) {
-        const before = await page.evaluate(() => history.length);
-        await page.locator(`#uxPageStrip [data-strip-view="${view}"]`).click();
+        let before = await page.evaluate(() => history.length);
+        await page.locator(`#systemCards [data-tool="${view}"]`).click();
         await page.waitForSelector(`#${view}.active`, T);
         assert.equal(await page.evaluate(() => location.hash), '#' + view);
         assert.equal(await page.evaluate(() => history.length), before + 1, view);
+        before = await page.evaluate(() => history.length);
+        await page.locator(`#${view} > .tool-back a`).click();
+        await page.waitForSelector('#system.active', T);
+        assert.equal(await page.evaluate(() => history.length), before + 1, `${view} back`);
       }
-      await page.locator('#uxPageStrip [data-strip-view="models"]').click();
+      await page.locator('#systemCards [data-tool="status"]').click();
+      await page.waitForSelector('#status.active', T);
+      await page.locator('#status > .tool-back a').click();
+      await page.waitForSelector('#system.active', T);
+      await page.locator('#systemCards [data-tool="models"]').click();
       await page.waitForSelector('#models.active', T);
       await page.reload({ waitUntil: 'domcontentloaded' });
       await page.waitForSelector('#models.active', T);
       await page.evaluate(() => history.back());
-      await page.waitForSelector('#status.active', T);
+      await page.waitForSelector('#system.active', T);
       await page.context().close();
     });
   }

@@ -28,16 +28,18 @@ await check('the first load leaves focus alone and titles the tab', async () => 
 await check('choosing an area titles the tab and moves focus to that page; the strip keeps focus on itself', async () => {
   const { page, context } = await open();
   await page.click('.ux-primary-item[data-domain="system"]');
-  await page.waitForFunction(() => document.title === 'Assistant status · Local AI');
-  await page.waitForFunction(() => !!document.activeElement?.closest('#status'), null, { timeout: 2000 }).catch(() => {});
-  assert.equal(await inView(page, 'status'), true, 'focus is on the Assistant status page');
+  await page.waitForFunction(() => document.title === 'Assistant · Local AI');
+  await page.waitForFunction(() => !!document.activeElement?.closest('#system'), null, { timeout: 2000 }).catch(() => {});
+  assert.equal(await inView(page, 'system'), true, "focus is on System's Assistant page");
   // The strip is a row of tabs: switching from it keeps focus on it, so the next tab is one key away.
-  const models = page.locator('#uxPageStrip [data-strip-view="models"]');
-  await models.focus(); await models.press('Enter');
-  await page.waitForFunction(() => document.title === 'Models · Local AI');
+  await page.click('.ux-primary-item[data-domain="improve"]');
+  await page.waitForSelector('#backlog.active');
+  const research = page.locator('#uxPageStrip [data-strip-view="research"]');
+  await research.focus(); await research.press('Enter');
+  await page.waitForFunction(() => document.title === 'Research · Local AI');
   // The title changes at once; showView puts focus back on the strip's tab a frame later (requestAnimationFrame).
-  await page.waitForFunction(() => document.activeElement?.dataset?.stripView === 'models', null, { timeout: 2000 }).catch(() => {});
-  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.stripView), 'models');
+  await page.waitForFunction(() => document.activeElement?.dataset?.stripView === 'research', null, { timeout: 2000 }).catch(() => {});
+  assert.equal(await page.evaluate(() => document.activeElement?.dataset?.stripView), 'research');
   await context.close();
 });
 
@@ -83,16 +85,16 @@ await check('Home mode sheet: the modes are one radio group; arrows choose, Tab 
 
 await check('the menus are navigation landmarks and mark the current page', async () => {
   const { page, context } = await open();
-  await page.evaluate(() => window.showView('models'));
-  await page.waitForSelector('#models.active');
+  await page.evaluate(() => window.showView('signals'));
+  await page.waitForSelector('#signals.active');
   const primary = page.locator('[role="navigation"][aria-label="Primary"], nav[aria-label="Primary"]').filter({ has: page.locator('.ux-primary-item') });
   assert.equal(await primary.count(), 1, 'the rail is a Primary navigation landmark');
   const pages = page.locator('[role="navigation"][aria-label="Pages in this section"], nav[aria-label="Pages in this section"]').filter({ has: page.locator('[data-strip-view]') });
   assert.equal(await pages.count(), 1, 'the page strip is a navigation landmark');
-  assert.deepEqual(await page.locator('[data-strip-view][aria-current="page"]').evaluateAll(b => b.map(x => x.dataset.stripView)), ['models']);
-  assert.equal(await page.locator('.ux-primary-item[aria-current]').getAttribute('data-domain'), 'system');
-  await page.evaluate(() => window.showView('status'));
-  await page.waitForFunction(() => document.querySelector('[data-strip-view][aria-current="page"]')?.dataset.stripView === 'status');
+  assert.deepEqual(await page.locator('[data-strip-view][aria-current="page"]').evaluateAll(b => b.map(x => x.dataset.stripView)), ['signals']);
+  assert.equal(await page.locator('.ux-primary-item[aria-current]').getAttribute('data-domain'), 'improve');
+  await page.evaluate(() => window.showView('research'));
+  await page.waitForFunction(() => document.querySelector('[data-strip-view][aria-current="page"]')?.dataset.stripView === 'research');
   assert.equal(await page.locator('[data-strip-view][aria-current="page"]').count(), 1);
   await context.close();
 });

@@ -40,12 +40,24 @@ await check('home has one command surface and a short breadcrumb', async () => {
   assert.doesNotMatch(await crumb(), /Local AI \//, 'no breadcrumb');
 });
 
-const SYSTEM_STRIP = ['Status', 'Models', 'Tools', 'Settings', 'Audit log'];
+// System is one page, Assistant, with five cards and no strip row (kit 2.26.0, Pi Hub A27 D3). Each card opens its page,
+// which starts with "← Assistant". Developer tools is a page of five tool cards (A27 D1), each tool with "← Developer tools".
+const SYSTEM_CARDS = ['Assistant status', 'Models', 'Developer tools', 'Assistant settings', 'Audit log'];
+const TOOL_CARDS = ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows'];
+const noStrip = async (pg, why) => assert.equal(await pg.locator('#uxPageStrip').isHidden(), true, `${why}: no strip row`);
+const backTo = (pg, id) => pg.locator(`#${id} > .tool-back a`).getAttribute('href');
 // Status and Connections are one page (navigation depth, D1): the cards sit under Services, the old address still works.
-await check('System: the strip has five items, and Connections is part of Status', async () => {
+await check('System: one page of five cards, no strip row; Assistant status holds Connections', async () => {
   await page.locator('.ux-primary-item[data-domain="system"]').click();
+  await page.waitForSelector('#system.active');
+  assert.equal(await page.evaluate(() => location.hash), '#system');
+  assert.equal(await page.title(), 'Assistant · Local AI');
+  await noStrip(page, 'system');
+  assert.deepEqual(await page.locator('#systemCards .tool-card strong').allInnerTexts(), SYSTEM_CARDS);
+  await page.locator('#systemCards .tool-card', { hasText: 'Assistant status' }).click();
   await page.waitForSelector('#status.active');
-  assert.deepEqual(await stripLabels(), SYSTEM_STRIP);
+  await noStrip(page, 'status');
+  assert.equal(await backTo(page, 'status'), '#system');
   await page.waitForSelector('#statusConnections [data-integration-source-v2="n8n"]');
   assert.equal(await page.locator('#integrations').count(), 0, 'no page of its own');
   assert.equal(await page.locator('#statusRetryBtn').count(), 1, 'one Check again');
@@ -58,7 +70,7 @@ await check('#integrations opens Status, and #integrations?card=workshop brings 
   await page.evaluate(() => { location.hash = '#integrations'; });
   await page.waitForSelector('#status.active');
   assert.equal(await page.evaluate(() => window.LocalAIViews.resolve('integrations')), 'status');
-  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Status');
+  assert.equal(await page.locator('.ux-primary-item[aria-current]').getAttribute('data-domain'), 'system');
   await page.evaluate(() => { location.hash = '#home'; });
   await page.waitForSelector('#home.active');
   await page.evaluate(() => { location.hash = '#integrations?card=workshop'; });
@@ -68,21 +80,40 @@ await check('#integrations opens Status, and #integrations?card=workshop brings 
   assert.ok(r.bottom > 0 && r.top < r.vh, `the Workshop card is on screen: ${JSON.stringify(r)}`);
 });
 
-// System's strip is Status · Models · Tools · Settings · Audit log (Connections joined Status, 9 Nov; before it was Health · Models · Services · Tools · Settings · Audit log (navigation update, 2 Nov). Tools is one
-// page of cards; each System tool opens at its own address with Tools lit. Architecture is Improve's Atlas tab.
-await check('System: Tools lists every tool, each opens at its address with Tools lit; Architecture is Improve › Atlas', async () => {
-  await page.locator('.ux-primary-item[data-domain="system"]').click();
-  await page.waitForSelector('#status.active');
-  assert.deepEqual(await stripLabels(), SYSTEM_STRIP);
+// Every System card opens its page with the way back; Developer tools' cards open each tool at its own address with
+// System lit and no tab; the kit's retired ids (tools-*, assistant-status, the two Changes stages) still land. Atlas is
+// Improve's.
+await check('System cards open their pages; Developer tools lists every tool; retired ids land; Architecture is Improve › Atlas', async () => {
+  const ids = ['status', 'models', 'tools', 'settings', 'activity'];
+  for (const [i, label] of SYSTEM_CARDS.entries()) {
+    await page.evaluate(() => { location.hash = '#system'; });
+    await page.waitForSelector('#system.active');
+    await page.locator('#systemCards .tool-card', { hasText: label }).first().click();
+    await page.waitForSelector(`#${ids[i]}.active`, { timeout: 5000 });
+    assert.equal(await page.evaluate(() => location.hash), '#' + ids[i]);
+    assert.equal(await backTo(page, ids[i]), '#system', `${ids[i]} has the way back`);
+    assert.equal(await page.locator('.ux-primary-item[aria-current]').getAttribute('data-domain'), 'system');
+    await noStrip(page, ids[i]);
+  }
   assert.equal(await page.locator('#uxAdvancedStrip').count(), 0, 'no second strip');
-  await page.locator('#uxPageStrip [data-strip-view="tools"]').click();
+  await page.evaluate(() => { location.hash = '#tools'; });
   await page.waitForSelector('#tools.active', { timeout: 5000 });
-  assert.deepEqual(await page.locator('#toolsCards .tool-card strong').allInnerTexts(), ['Files', 'Repository', 'PowerShell', 'Browser & computer', 'n8n workflows']);
+  assert.deepEqual(await page.locator('#toolsCards .tool-card strong').allInnerTexts(), TOOL_CARDS);
   for (const hash of ['workbench', 'repoTools', 'powershell', 'actions', 'automations']) {
     await page.evaluate(h => { location.hash = '#' + h; }, hash);
     await page.waitForSelector(`#${hash}.active`, { timeout: 5000 });
-    assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Tools', hash);
-    assert.deepEqual(await stripLabels(), SYSTEM_STRIP, `${hash} adds no tab`);
+    assert.equal(await backTo(page, hash), '#tools', `${hash} goes back to Developer tools`);
+    await noStrip(page, hash);
+  }
+  await page.locator('#automations > .tool-back a').click();
+  await page.waitForSelector('#tools.active', { timeout: 5000 });
+  await page.locator('#tools > .tool-back a').click();
+  await page.waitForSelector('#system.active', { timeout: 5000 });
+  for (const [old, now] of [['assistant-status', 'status'], ['tools-files', 'workbench'], ['tools-repository', 'repoTools'], ['tools-powershell', 'powershell'],
+    ['tools-browser', 'actions'], ['tools-n8n', 'automations'], ['changes-in-progress', 'inProgress'], ['changes-shipped', 'shipped']]) {
+    await page.evaluate(h => { location.hash = '#' + h; }, old);
+    await page.waitForSelector(`#${now}.active`, { timeout: 5000 });
+    assert.equal(await page.evaluate(() => location.hash), '#' + now, `#${old} lands on #${now}`);
   }
   await page.evaluate(() => { location.hash = '#tools'; });
   await page.waitForSelector('#tools.active', { timeout: 5000 });
@@ -115,12 +146,11 @@ await check('Improve: Backlog, In progress and Shipped are one Changes page with
   assert.equal(await page.evaluate(() => location.hash), '#inProgress');
 });
 
-// A strip has at most five items in every area (navigation depth). System is at six until Connections joins Status (step 2),
-// which sets its limit to five.
-const STRIP_MAX = { work: 5, projects: 5, improve: 5, system: 6 };
+// A strip has at most five items in every area (navigation depth). System has one page, so no strip row.
+const STRIP_MAX = { work: 5, projects: 5, improve: 5, system: 1 };
 await check('every area strip has at most 5 items', async () => {
   for (const area of ['work', 'projects', 'improve', 'system']) {
-    await page.evaluate(h => { location.hash = '#' + h; }, area === 'improve' ? 'backlog' : area === 'system' ? 'status' : area);
+    await page.evaluate(h => { location.hash = '#' + h; }, area === 'improve' ? 'backlog' : area);
     await page.waitForSelector(`body[data-domain="${area}"]`, { timeout: 5000 });
     const n = await page.locator('#uxPageStrip button').count();
     assert.ok(n <= STRIP_MAX[area], `${area} strip has ${n} items`);
@@ -264,14 +294,14 @@ await check('opening a run keeps you on your page (open is false for an unknown 
 });
 
 await check('the page strip switches pages in the area and marks the open one', async () => {
-  await page.evaluate(() => window.showView('models'));
-  await page.waitForSelector('#models.active');
+  await page.evaluate(() => window.showView('signals'));
+  await page.waitForSelector('#signals.active');
   const strip = await stripLabels();
-  assert.ok(strip.includes('Status') && strip.includes('Models'), strip.join(','));
-  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Models');
-  await page.locator('#uxPageStrip [data-strip-view="status"]').click();
-  await page.waitForSelector('#status.active');
-  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Status');
+  assert.ok(strip.includes('Changes') && strip.includes('Signals'), strip.join(','));
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Signals');
+  await page.locator('#uxPageStrip [data-strip-view="research"]').click();
+  await page.waitForSelector('#research.active');
+  assert.equal(await page.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Research');
   assert.equal(await page.locator('.ux-secondary-nav, #uxSecondaryGroups, .ux-nav-collapse').count(), 0, 'no page list column');
 });
 
@@ -320,16 +350,19 @@ await check('mobile tab pages have no horizontal overflow', async () => {
     assert.ok(dims.sw <= dims.cw + 2, `${view}: scrollWidth ${dims.sw} > clientWidth ${dims.cw}`);
   }
 });
-await check('phone: the page strip switches pages in the section in one tap', async () => {
+await check('phone: System opens its cards; a card opens its page in one tap, and the way back returns', async () => {
   await mobile.locator('#uxMobileNav [data-domain="system"]').tap();
-  await mobile.waitForSelector('#status.active');
+  await mobile.waitForSelector('#system.active');
   assert.equal(await mobile.locator('.ux-context-domain').innerText(), 'System');
-  assert.ok((await mobile.locator('#uxPageStrip button').allInnerTexts()).includes('Models'));
-  await mobile.locator('#uxPageStrip [data-strip-view="models"]').tap();
+  await noStrip(mobile, 'system');
+  const h = await mobile.locator('#systemCards .tool-card').first().evaluate(b => b.getBoundingClientRect().height);
+  assert.ok(h >= 44, `card height ${h}`);
+  await mobile.locator('#systemCards .tool-card', { hasText: 'Models' }).tap();
   await mobile.waitForSelector('#models.active');
-  assert.equal(await mobile.locator('#uxPageStrip [aria-current="page"]').innerText(), 'Models');
-  const h = await mobile.locator('#uxPageStrip button').first().evaluate(b => b.getBoundingClientRect().height);
-  assert.ok(h >= 43.5 && h <= 52, `strip button height ${h}`);
+  const back = mobile.locator('#models > .tool-back a');
+  assert.ok((await back.evaluate(a => a.getBoundingClientRect().height)) >= 44, 'the way back is a full-size target');
+  await back.tap();
+  await mobile.waitForSelector('#system.active');
 });
 await check('chat sends a valid threadId where crypto.randomUUID does not exist (plain http)', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 1000, height: 800 } });
@@ -387,19 +420,22 @@ await check('chat threadId survives a reload and changes after New conversation'
 await mobile.close();
 
 // No switch (D1): a new install sees the same System strip and Tools page as any other, on a phone too.
-await check('phone, a new install: System shows Tools with no switch, and every System tab is reachable', async () => {
+await check('phone, a new install: System shows Developer tools with no switch, and every System card is reachable', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await ctx.addInitScript(() => { localStorage.removeItem('localai.devTools'); localStorage.setItem('localai.firstRun.done', '1'); });
   const pg = await ctx.newPage();
   const errs = []; pg.on('pageerror', e => errs.push(e.message));
-  await pg.goto(base + '/#status', { waitUntil: 'domcontentloaded' });
+  await pg.goto(base + '/#system', { waitUntil: 'domcontentloaded' });
   await pg.waitForFunction(() => typeof window.showView === 'function');
-  await pg.waitForSelector('#status.active');
-  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), SYSTEM_STRIP);
-  await pg.locator('#uxPageStrip [data-strip-view="activity"]').click();
+  await pg.waitForSelector('#system.active');
+  assert.deepEqual(await pg.locator('#systemCards .tool-card strong').allInnerTexts(), SYSTEM_CARDS);
+  await pg.locator('#systemCards .tool-card', { hasText: 'Audit log' }).click();
   await pg.waitForSelector('#activity.active');
-  await pg.locator('#uxPageStrip [data-strip-view="tools"]').click();
+  await pg.locator('#activity > .tool-back a').click();
+  await pg.waitForSelector('#system.active');
+  await pg.locator('#systemCards .tool-card', { hasText: 'Developer tools' }).click();
   await pg.waitForSelector('#tools.active #toolsCards .tool-card');
+  assert.deepEqual(await pg.locator('#toolsCards .tool-card strong').allInnerTexts(), TOOL_CARDS);
   assert.equal(await pg.locator('.dev-tools-pref, [data-dev-tools-toggle]').count(), 0, 'no developer-tools switch');
   assert.deepEqual(errs, []);
   await ctx.close();
@@ -410,7 +446,7 @@ await check('phone 390: the System, Projects and Improve strips have every tab o
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await ctx.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); });
   const pg = await ctx.newPage();
-  for (const view of ['status', 'projects', 'backlog']) {
+  for (const view of ['system', 'projects', 'backlog']) {
     await pg.goto(base + '/#' + view, { waitUntil: 'domcontentloaded' });
     await pg.waitForSelector(`#${view}.active`);
     await pg.waitForTimeout(200);
@@ -422,17 +458,19 @@ await check('phone 390: the System, Projects and Improve strips have every tab o
   }
   await ctx.close();
 });
-await check('phone 390: System has exactly five items, the strip does not overflow, and Status (with its cards) fits the width', async () => {
+await check('phone 390: System has no strip row, and Assistant and Status (with its cards) fit the width', async () => {
   const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   await ctx.addInitScript(() => { localStorage.setItem('localai.firstRun.done', '1'); });
   const pg = await ctx.newPage();
   await pg.goto(base + '/#integrations', { waitUntil: 'domcontentloaded' });
   await pg.waitForSelector('#status.active');
   await pg.waitForSelector('#statusConnections [data-integration-source-v2="n8n"]');
-  assert.deepEqual(await pg.locator('#uxPageStrip button').allInnerTexts(), SYSTEM_STRIP);
-  const r = await pg.evaluate(() => { const s = document.querySelector('#uxPageStrip'); return { sw: s.scrollWidth, cw: s.clientWidth, dw: document.documentElement.scrollWidth, dc: document.documentElement.clientWidth }; });
-  assert.ok(r.sw <= r.cw + 1, `strip scrolls: ${r.sw} > ${r.cw}`);
-  assert.ok(r.dw <= r.dc + 2, `page overflows: ${r.dw} > ${r.dc}`);
+  await noStrip(pg, 'status');
+  for (const view of ['status', 'system', 'tools']) {
+    if (view !== 'status') { await pg.evaluate(h => { location.hash = '#' + h; }, view); await pg.waitForSelector(`#${view}.active`); }
+    const r = await pg.evaluate(() => ({ dw: document.documentElement.scrollWidth, dc: document.documentElement.clientWidth }));
+    assert.ok(r.dw <= r.dc + 2, `${view} overflows: ${r.dw} > ${r.dc}`);
+  }
   await ctx.close();
 });
 // Owner, 2 Nov: diagnostic details are a preference (Settings › Show diagnostic details), on by default, kept per browser.
