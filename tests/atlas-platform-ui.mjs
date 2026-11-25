@@ -61,12 +61,12 @@ await check('the platform map sits above the Systems strip with the six systems 
   assert.match(await desk.locator(`${S} .atlas-platform-canvas [data-node="netmon"]`).innerText(), /Writes files, no HTTP link/);
   assert.match(await desk.locator(`${S} .atlas-platform-canvas [data-node="bambuhelper-smart-display"]`).innerText(), /Firmware source, not parsed/);
   const marks = await desk.locator(`${S} .atlas-platform-canvas button[data-platform-link]`).evaluateAll((els) => els.map((e) => [e.dataset.platformLink, e.dataset.mark, e.innerText.replace(/\s+/g, ' ').trim()]));
-  assert.equal(marks.length, 5, JSON.stringify(marks));
+  assert.equal(marks.length, 6, JSON.stringify(marks));
   assert.match(marks.find((m) => m[0] === 'bambuhelper-smart-display>localai')[2], /^Not checked\s+3 routes/, 'the display reads Local AI too (firmware not parsed)');
   assert.deepEqual(marks.find((m) => m[0] === 'localai>pi-hub').slice(1, 2), ['missing']);
   assert.match(marks.find((m) => m[0] === 'localai>pi-hub')[2], /^Missing/);
   assert.match(marks.find((m) => m[0] === 'home-mcp>pi-hub')[2], /^Not checked/);
-  assert.equal(await desk.locator(`${S} .atlas-platform-canvas path.atlas-platform-edge`).count(), 5, 'one path per link');
+  assert.equal(await desk.locator(`${S} .atlas-platform-canvas path.atlas-platform-edge`).count(), 6, 'one path per link');
   assert.deepEqual(await desk.locator(`${S} .atlas-platform-legend .ui-chip`).allInnerTexts(), ['Confirmed', 'Missing', 'Not checked']);
 });
 
@@ -169,7 +169,7 @@ await check('calls with no declared edge are one closed list, grouped by reposit
   assert.deepEqual(await und.locator('.atlas-platform-undeclared-repo > h3').allInnerTexts(),
     ['Smart display · 40 calls', 'Pi Hub · 34 calls', 'Local AI · 22 calls']);
   assert.match(await und.locator('details summary', { hasText: 'hub/bambuddy.py' }).innerText(), /28 calls/);
-  assert.equal(await desk.locator(`${S} .atlas-platform-canvas button[data-platform-link]`).count(), 5, 'undeclared calls are not links');
+  assert.equal(await desk.locator(`${S} .atlas-platform-canvas button[data-platform-link]`).count(), 6, 'undeclared calls are not links');
 });
 
 await check('reduced motion: nothing in the section animates or transitions', async () => {
@@ -214,7 +214,7 @@ for (const scheme of ['dark', 'light']) {
     assert.equal(await list.isVisible(), true);
     assert.deepEqual(await list.locator('[data-node] .atlas-platform-name').allInnerTexts(),
       ['Pi Hub', 'Local AI', 'Print lab', 'Smart display', 'home-mcp', 'netmon']);
-    assert.equal(await list.locator('button[data-platform-link]').count(), 5);
+    assert.equal(await list.locator('button[data-platform-link]').count(), 6);
     await list.locator('[data-platform-link="print-lab>pi-hub"]').click();
     const shown = list.locator('[data-node="print-lab"] .atlas-platform-detail');
     assert.match(await shown.innerText(), /Print lab → Pi Hub/, 'the detail opens under the chosen system');

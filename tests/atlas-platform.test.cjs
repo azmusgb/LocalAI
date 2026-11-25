@@ -73,6 +73,28 @@ test('the layout gives one position per node and one path per link', () => {
   for (let i = 1; i < marks.length; i++) assert.ok(marks[i] - marks[i - 1] >= 100, 'marks never crowd each other');
 });
 
+test('a provider that is also a consumer (Pi Hub calling Local AI) keeps its mark clear of a second consumer of the same provider', () => {
+  const local = (id, path, consumers) => ({ ...edge(id, path, consumers), provider: { repo: 'localai', module: 'app/server.js', method: 'GET', path, state: 'checked', detail: '' } });
+  const m = platform.platformModel(null, contracts([
+    edge('now-summary', '/api/now', [['localai', 'app/pi-hub.js', 'checked']]),
+    edge('display-feed-hub', '/api/display/feed', [['bambuhelper-smart-display', 'firmware/feed.cpp', 'not_checked']]),
+    local('display-feed', '/api/display/feed', [['bambuhelper-smart-display', 'firmware/feed.cpp', 'not_checked']]),
+    local('pi-hub-status', '/api/contract/status', [['pi-hub', 'hub/assistant_api.py', 'not_checked']]),
+    local('pi-hub-models', '/api/contract/models', [['pi-hub', 'hub/assistant_api.py', 'not_checked']])
+  ]));
+  const ids = m.links.map((l) => l.id);
+  assert.ok(ids.includes('pi-hub>localai') && ids.includes('bambuhelper-smart-display>localai'), 'both consumers link to Local AI');
+  const lay = platform.platformLayout(m.nodes, m.links);
+  const pos = Object.fromEntries(lay.nodes.map((n) => [n.id, n]));
+  const { MARK_W, MARK_H, MARK_GAP, FRAME_MIN_PX, CANVAS_PX } = platform.MARK;
+  const same = lay.paths.find((p) => p.id === 'pi-hub>localai'), up = lay.paths.find((p) => p.id === 'bambuhelper-smart-display>localai');
+  assert.ok(same.my > pos['pi-hub'].y, 'a link between two top-row nodes marks below its node, where the bottom row does not reach');
+  for (const width of [FRAME_MIN_PX, 900, 1200]) {
+    const gapX = Math.abs(same.mx - up.mx) * width / lay.width - MARK_W, gapY = Math.abs(same.my - up.my) * CANVAS_PX / lay.height - MARK_H;
+    assert.ok(Math.max(gapX, gapY) >= MARK_GAP, `the two marks come within ${MARK_GAP}px at ${width}px wide`);
+  }
+});
+
 test('a layout with no links still places every node', () => {
   const m = platform.platformModel(null, contracts([]));
   const lay = platform.platformLayout(m.nodes, m.links);

@@ -102,5 +102,8 @@ async function loadOllamaModelRuntime({ baseUrl, fetchWithTimeout, defaultModel,
 
 module.exports = {
   buildRuntimeSnapshot,
-  loadOllamaModelRuntime
+  installedModel,
+  loadedModel,
+  loadOllamaModelRuntime,
+  readJson
 };

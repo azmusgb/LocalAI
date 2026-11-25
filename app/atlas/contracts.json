@@ -536,5 +536,309 @@
       }
     ],
     "source": "localai app/server.js:634 (open path app/signin.js:11); bambuhelper-smart-display firmware/platform/localai/workshop_localai_feed.cpp:800 (default backend Local AI, workshop_localai_feed_core.hpp:101)"
+  },
+  {
+    "id": "pi-hub-localai-contract-status",
+    "contract": null,
+    "label": "Assistant status (Pi Hub)",
+    "provider": {
+      "repo": "localai",
+      "module": "app/server.js",
+      "method": "GET",
+      "path": "/api/contract/status"
+    },
+    "consumers": [
+      {
+        "repo": "pi-hub",
+        "module": "hub/assistant_api.py"
+      }
+    ],
+    "key": "hub",
+    "cache": "owner",
+    "request": {},
+    "response": {
+      "status": 200,
+      "always": true,
+      "fields": [
+        "as_of",
+        "contract_version",
+        "sources",
+        "overall",
+        "services",
+        "serviceSummary",
+        "gridcraft",
+        "artcraft",
+        "workshop",
+        "watch"
+      ],
+      "sources": [
+        "services",
+        "gridcraft",
+        "artcraft",
+        "workshop",
+        "watch"
+      ],
+      "states": [
+        "ok",
+        "failed",
+        "unknown"
+      ],
+      "note": "always 200; a source that did not answer is failed with an error and its data is null"
+    },
+    "source": "amendment A34 (Pi Hub draws the Assistant), Amendment 1 requirements 6 and 7; localai app/server.js (hub-key allow-list in the sign-in routeKeys), app/server/contract.js"
+  },
+  {
+    "id": "pi-hub-localai-contract-models",
+    "contract": null,
+    "label": "Assistant models (Pi Hub)",
+    "provider": {
+      "repo": "localai",
+      "module": "app/server.js",
+      "method": "GET",
+      "path": "/api/contract/models"
+    },
+    "consumers": [
+      {
+        "repo": "pi-hub",
+        "module": "hub/assistant_api.py"
+      }
+    ],
+    "key": "hub",
+    "cache": "owner",
+    "request": {},
+    "response": {
+      "status": 200,
+      "always": true,
+      "fields": [
+        "as_of",
+        "contract_version",
+        "sources",
+        "default",
+        "protectedModels",
+        "installed",
+        "loaded",
+        "defaultInstalled",
+        "defaultLoaded",
+        "pulls",
+        "routing"
+      ],
+      "sources": [
+        "installed",
+        "loaded",
+        "pulls",
+        "routing"
+      ],
+      "states": [
+        "ok",
+        "failed",
+        "unknown"
+      ],
+      "note": "always 200; GET /api/models stays 502 when Ollama is down and is not part of this contract"
+    },
+    "source": "amendment A34 (Pi Hub draws the Assistant), Amendment 1 requirements 6 and 7; localai app/server.js (hub-key allow-list in the sign-in routeKeys), app/server/contract.js"
+  },
+  {
+    "id": "pi-hub-localai-mission-start",
+    "contract": null,
+    "label": "Start a Mission (Pi Hub)",
+    "provider": {
+      "repo": "localai",
+      "module": "app/server.js",
+      "method": "POST",
+      "path": "/api/agents/missions/start"
+    },
+    "consumers": [
+      {
+        "repo": "pi-hub",
+        "module": "hub/assistant_api.py"
+      }
+    ],
+    "key": "hub",
+    "cache": "none",
+    "request": {
+      "body": {
+        "required": [
+          "goal"
+        ],
+        "optional": [
+          "projectId",
+          "agentIds",
+          "webSearch",
+          "workerModel"
+        ],
+        "fixed": {
+          "async": true
+        }
+      }
+    },
+    "response": {
+      "status": 202,
+      "fields": [
+        "runId",
+        "threadId"
+      ],
+      "errors": {
+        "400": "goal required, or unknown model",
+        "503": "model unchecked"
+      }
+    },
+    "source": "amendment A34 (Pi Hub draws the Assistant), Amendment 1 requirements 6 and 7; localai app/server.js (hub-key allow-list in the sign-in routeKeys), app/server/contract.js"
+  },
+  {
+    "id": "pi-hub-localai-runs",
+    "contract": null,
+    "label": "Follow a run, list recent runs (Pi Hub)",
+    "provider": {
+      "repo": "localai",
+      "module": "app/server.js",
+      "method": "GET",
+      "path": "/api/runs"
+    },
+    "consumers": [
+      {
+        "repo": "pi-hub",
+        "module": "hub/assistant_api.py"
+      }
+    ],
+    "key": "hub",
+    "cache": "none",
+    "request": {
+      "query": {
+        "optional": [
+          "id",
+          "limit",
+          "status",
+          "type",
+          "kind",
+          "threads",
+          "projectId",
+          "threadId",
+          "before"
+        ]
+      }
+    },
+    "response": {
+      "status": 200,
+      "fields": [
+        "item"
+      ],
+      "listFields": [
+        "items",
+        "summary"
+      ],
+      "itemFields": [
+        "id",
+        "threadId",
+        "type",
+        "title",
+        "status",
+        "progress",
+        "events",
+        "cancellable",
+        "error",
+        "summary",
+        "createdAt",
+        "startedAt",
+        "finishedAt",
+        "meta"
+      ],
+      "statuses": [
+        "queued",
+        "running",
+        "streaming",
+        "awaiting_approval",
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "errors": {
+        "404": "run not found"
+      }
+    },
+    "source": "amendment A34 (Pi Hub draws the Assistant), Amendment 1 requirements 6 and 7; localai app/server.js (hub-key allow-list in the sign-in routeKeys), app/server/contract.js"
+  },
+  {
+    "id": "pi-hub-localai-run-cancel",
+    "contract": null,
+    "label": "Cancel a run (Pi Hub)",
+    "provider": {
+      "repo": "localai",
+      "module": "app/server.js",
+      "method": "POST",
+      "path": "/api/runs/cancel"
+    },
+    "consumers": [
+      {
+        "repo": "pi-hub",
+        "module": "hub/assistant_api.py"
+      }
+    ],
+    "key": "hub",
+    "cache": "none",
+    "request": {
+      "body": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    "response": {
+      "status": 200,
+      "fields": [
+        "item"
+      ],
+      "errors": {
+        "404": "run not found, or a legacy run",
+        "409": "not cancellable or already finished"
+      }
+    },
+    "source": "amendment A34 (Pi Hub draws the Assistant), Amendment 1 requirements 6 and 7; localai app/server.js (hub-key allow-list in the sign-in routeKeys), app/server/contract.js"
+  },
+  {
+    "id": "pi-hub-localai-mission",
+    "contract": null,
+    "label": "Mission detail (Pi Hub)",
+    "provider": {
+      "repo": "localai",
+      "module": "app/server.js",
+      "method": "GET",
+      "path": "/api/agents/mission"
+    },
+    "consumers": [
+      {
+        "repo": "pi-hub",
+        "module": "hub/assistant_api.py"
+      }
+    ],
+    "key": "hub",
+    "cache": "none",
+    "request": {
+      "query": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    "response": {
+      "status": 200,
+      "fields": [
+        "mission"
+      ],
+      "missionFields": [
+        "id",
+        "goal",
+        "status",
+        "timeline",
+        "workers",
+        "results"
+      ],
+      "missionFieldsWhenFinished": [
+        "answer"
+      ],
+      "errors": {
+        "404": "mission not found"
+      }
+    },
+    "source": "amendment A34 (Pi Hub draws the Assistant), Amendment 1 requirements 6 and 7; localai app/server.js (hub-key allow-list in the sign-in routeKeys), app/server/contract.js"
   }
 ]

@@ -191,8 +191,10 @@ function platformLayout(nodes,links){
     if(!a||!b)continue;
     const k=seen.get(a.id)||0;seen.set(a.id,k+1);
     const down=a.y>b.y,bend=down?BEND_Y:a.y+BEND_Y-TOP_Y,mid=(b.y+bend)/2;
-    // A mark sits clear of its node's box (MARK_GAP above it) when the link comes up from below, then stacks upward.
-    const my=(down?a.y-NODE_EDGE-MARK.MARK_GAP-MARK.MARK_H/2:(bend+a.y)/2)-k*MARK_STEP;
+    // A mark sits clear of its node's box (MARK_GAP above it) when the link comes up from below, then stacks upward. A link
+    // between two nodes of the top row (a repository that is also a provider, like Pi Hub calling Local AI) sits MARK_GAP
+    // below its node's box and stacks downward, clear of the marks of the links that come up from the bottom row.
+    const my=down?a.y-NODE_EDGE-MARK.MARK_GAP-MARK.MARK_H/2-k*MARK_STEP:a.y+NODE_EDGE+MARK.MARK_GAP+MARK.MARK_H/2+k*MARK_STEP;
     paths.push({id:l.id,d:`M${b.x} ${b.y} C${b.x} ${mid} ${a.x} ${mid} ${a.x} ${bend} L${a.x} ${a.y}`,mx:a.x,my});
   }
   return {width:WIDTH,height:HEIGHT,nodes:pos,paths};

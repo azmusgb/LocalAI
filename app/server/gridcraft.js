@@ -42,6 +42,26 @@ function createGridcraft(ctx) {
       return { bridge: false, excel: null };
     }
   }
+  // For the contract reads (app/server/contract.js): the bridge's health and ArtCraft's status, each throwing with the
+  // reason when the bridge did not answer, answered an error or sent something unreadable, so the caller can tell a failed
+  // read from a bridge that answered "not connected". Same calls and fields as the two routes above, shorter deadlines.
+  const bridgeReadError = (e, who) => bridgeTimedOut(e) ? new Error(`${who} took too long to answer`) : new Error(`${who} unavailable${e?.cause?.code ? ` (${e.cause.code})` : ''}`);
+  async function bridgeRead(pathname, who, timeoutMs) {
+    let r, data;
+    try { r = await bridgeFetch(pathname, { cache: 'no-store' }, timeoutMs); data = await bridgeJson(r, null); } catch (e) { throw bridgeReadError(e, who); }
+    if (!r.ok) throw new Error(`${who} answered HTTP ${r.status}`);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error(`${who} answered with something unreadable`);
+    return data;
+  }
+  async function gridcraftHealthRead(timeoutMs = 4000) {
+    const data = await bridgeRead('/health', 'GridCraft bridge', timeoutMs);
+    return { ok: data.ok === true, gridcraftConnected: data.gridcraftConnected === true, ...(data.model ? { model: String(data.model) } : {}) };
+  }
+  async function artcraftStatusRead(timeoutMs = 5000) {
+    const d = await bridgeRead('/artcraft', 'Windows computer bridge', timeoutMs);
+    if (!d.ok) throw new Error(String(d.error || 'The bridge did not report ArtCraft').slice(0, 300));
+    return { ok: true, installed: d.installed === true, running: d.running === true, version: typeof d.version === 'string' ? d.version.slice(0, 40) : null };
+  }
   // A request's record: what was asked, in which mode, and what it changed (the agent's journal), so the page can show the
   // changes and the owner can keep or discard a Review request later, also from another device.
   const GRIDCRAFT_RUN_PREFIX = 'gridcraft:run:';
@@ -364,19 +384,22 @@ function createGridcraft(ctx) {
   // is, and (with the read-only token) what the printer is doing. Read-only; the portal itself is never proxied
   // (app/workshop.js, docs/WORKSHOP-DISPLAY.md). ?part=printer (Home) answers from the poller's last read only, so it
   // never sends the display a request. printer is null when no token is set.
-  async function apiWorkshopStatus(req, res, urlObj) {
+  async function workshopStatusRead() {
     const printer = workshopPrinter.current();
-    if (urlObj.searchParams.get('part') === 'printer') return json(res, 200, { printer });
     const status = await workshop.workshopStatus();
     if (printer?.access === 'ok') status.signIn = true; // the token only exists on firmware that has the sign-in
     const cam = await workshop.cameraStatus();
     // codeAccess: whether the card offers Show sign-in code (LOCALAI_WORKSHOP_CODE_TOKEN set); never the token itself.
-    json(res, 200, {
+    return {
       ...status,
       printer,
       codeAccess: Boolean(status.portalUrl && workshop.codeToken()),
       camera: { available: cam.available, reason: cam.reason, endpoint: '/api/workshop/camera' }
-    });
+    };
+  }
+  async function apiWorkshopStatus(req, res, urlObj) {
+    if (urlObj.searchParams.get('part') === 'printer') return json(res, 200, { printer: workshopPrinter.current() });
+    json(res, 200, await workshopStatusRead());
   }
 
   // Services › Workshop display › Camera: stream live JPEG frames from the Pi / Mac chamber camera bridge
@@ -415,7 +438,7 @@ function createGridcraft(ctx) {
     recordActivity('workshop', 'Workshop sign-in code shown', 'Services › Workshop display');
     send(200, { code: r.code, address });
   }
-  return { bridgeHealth, gridcraftRuns, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftDownload, apiGridcraftHealth, apiGridcraftNew, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftUpload, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopCamera, apiWorkshopPortalCode, apiWorkshopStatus };
+  return { artcraftStatusRead, bridgeHealth, gridcraftHealthRead, gridcraftRuns, workshopStatusRead, apiArtcraftOpen, apiArtcraftStatus, apiGridcraftCell, apiGridcraftDecide, apiGridcraftDownload, apiGridcraftHealth, apiGridcraftNew, apiGridcraftOpen, apiGridcraftProgress, apiGridcraftRun, apiGridcraftRuns, apiGridcraftUpload, apiGridcraftWorkbook, apiGridcraftWorkbooks, apiWorkshopCamera, apiWorkshopPortalCode, apiWorkshopStatus };
 }
 
 module.exports = { createGridcraft };

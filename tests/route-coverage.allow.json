@@ -13,7 +13,6 @@
   "/api/powershell/host/result",
   "/api/powershell/jobs",
   "/api/quality/scan",
-  "/api/repo/inspect",
   "/api/workbench/diff",
   "/api/workbench/read",
   "/api/workbench/search",
