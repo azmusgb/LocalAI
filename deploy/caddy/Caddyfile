@@ -23,6 +23,24 @@
 (appliance) {
 	import ca_download
 
+	# Compress the app shell and API answers (ui.js is ~380 KB raw, ~120 KB gzipped). The type list is explicit on
+	# purpose: Caddy's default list takes text/*, which includes text/event-stream, and a compressed stream reaches the
+	# browser in encoder frames instead of as plain events. Chat replies and the mission feed stay uncompressed.
+	encode {
+		zstd
+		gzip
+		match {
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type text/plain*
+			header Content-Type text/javascript*
+			header Content-Type application/javascript*
+			header Content-Type application/json*
+			header Content-Type application/manifest+json*
+			header Content-Type image/svg+xml*
+		}
+	}
+
 	handle {
 		# Streams (chat replies) pass straight through; long image runs have no proxy timeout.
 		# A deploy recreates the appliance; while it is gone its name doesn't resolve ("dial tcp: lookup
