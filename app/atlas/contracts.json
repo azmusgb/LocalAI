@@ -561,6 +561,7 @@
       "always": true,
       "fields": [
         "as_of",
+        "contract_version",
         "sources",
         "overall",
         "services",
@@ -610,6 +611,7 @@
       "always": true,
       "fields": [
         "as_of",
+        "contract_version",
         "sources",
         "default",
         "protectedModels",

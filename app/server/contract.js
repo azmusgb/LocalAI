@@ -12,6 +12,10 @@ const { installedModel, loadedModel, readJson } = require('../model-runtime');
 // Workshop display 3 s plus its camera check). The status read waits on probes that each end within 5 s.
 const TIMEOUTS = { services: 6000, gridcraft: 4000, artcraft: 5000, workshop: 5000, watch: 3000, installed: 5000, loaded: 5000, pulls: 3000, routing: 3000 };
 
+// The shape of these two replies. Pi Hub compares it with the one it was built for and shows "Assistant out of date" when
+// they differ; raise it only for a change that removes or renames a documented field (atlas/contracts.json, consumer pi-hub).
+const CONTRACT_VERSION = 1;
+
 const UNKNOWN = Symbol('unknown');
 const unknown = reason => ({ [UNKNOWN]: true, reason });
 
@@ -67,6 +71,7 @@ function createContract({ now = () => new Date(), getStatus, gridcraftHealthRead
     const services = m.value('services');
     return {
       as_of: m.as_of,
+      contract_version: CONTRACT_VERSION,
       sources: m.sources,
       overall: services ? services.overall : null,
       services: services ? services.services : null,
@@ -95,6 +100,7 @@ function createContract({ now = () => new Date(), getStatus, gridcraftHealthRead
     const installed = m.value('installed'), loaded = m.value('loaded');
     return {
       as_of: m.as_of,
+      contract_version: CONTRACT_VERSION,
       sources: m.sources,
       default: defaultModel,
       protectedModels: protectedModels(),
@@ -110,4 +116,4 @@ function createContract({ now = () => new Date(), getStatus, gridcraftHealthRead
   return { status, models };
 }
 
-module.exports = { createContract, TIMEOUTS };
+module.exports = { createContract, CONTRACT_VERSION, TIMEOUTS };

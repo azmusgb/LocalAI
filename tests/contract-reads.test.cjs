@@ -4,7 +4,7 @@
 // The merge (app/server/contract.js) with stubbed sources: every source up, each down singly, all down, a timeout.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { createContract } = require('../app/server/contract');
+const { createContract, CONTRACT_VERSION } = require('../app/server/contract');
 
 const SERVICES = { overall: 'HEALTHY', services: [{ name: 'ollama', state: 'HEALTHY' }], serviceSummary: { core: 1, coreUnhealthy: 0 } };
 const TAGS = { models: [{ name: 'test-model', digest: 'd1', size: 5 }, { name: 'other:7b' }] };
@@ -197,3 +197,15 @@ for (const [read, name, down, keys] of EACH) {
     for (const k of Object.keys(up).filter(k => k !== 'as_of' && k !== 'sources' && !keys.includes(k))) assert.deepEqual(r[k], up[k], `${k} is unaffected by ${name} being down`);
   });
 }
+
+test('contract_version is an integer, the same in both reads, and present when every source is down', async () => {
+  assert.equal(CONTRACT_VERSION, 1);
+  const up = [await make().status(), await make().models()];
+  const down = [await make({ stubs: Object.assign({}, ...Object.values(DOWN)) }).status(),
+    await make({ ollama: { '/api/tags': new Error('x'), '/api/ps': new Error('x') }, stubs: { pullsList: boom('x'), routingRead: boom('y') } }).models()];
+  for (const r of [...up, ...down]) {
+    assert.ok(Number.isInteger(r.contract_version), 'an integer');
+    assert.equal(r.contract_version, CONTRACT_VERSION);
+  }
+  assert.equal(up[0].contract_version, up[1].contract_version);
+});
