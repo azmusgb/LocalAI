@@ -171,3 +171,29 @@ test('a source error carries the cause code when the message is only "fetch fail
   const r = await make({ ollama: { '/api/tags': e } }).models();
   assert.equal(r.sources.installed.error, 'fetch failed (ECONNREFUSED)');
 });
+
+// Every source of both reads, taken down one at a time (table-driven): the read still resolves (the route answers it with
+// a fixed 200), that source is failed with its error text and null data, and every other source stays ok with its data.
+const EACH = [
+  ['status', 'services', DOWN.services, ['overall', 'services', 'serviceSummary']],
+  ['status', 'gridcraft', DOWN.gridcraft, ['gridcraft']],
+  ['status', 'artcraft', DOWN.artcraft, ['artcraft']],
+  ['status', 'workshop', DOWN.workshop, ['workshop']],
+  ['status', 'watch', DOWN.watch, ['watch']],
+  ['models', 'installed', MODEL_DOWN.installed, ['installed', 'defaultInstalled']],
+  ['models', 'loaded', MODEL_DOWN.loaded, ['loaded', 'defaultLoaded']],
+  ['models', 'pulls', MODEL_DOWN.pulls, ['pulls']],
+  ['models', 'routing', MODEL_DOWN.routing, ['routing']]
+];
+for (const [read, name, down, keys] of EACH) {
+  test(`${read} read: only ${name} down -> it is failed with its error and null data, the rest ok`, async () => {
+    const all = read === 'status' ? STATUS_SOURCES : MODEL_SOURCES;
+    const r = await make(read === 'status' ? { stubs: down } : down)[read]();
+    assertShape(r, all);
+    for (const n of all) assert.equal(r.sources[n].state, n === name ? 'failed' : 'ok', `${n} state`);
+    assert.match(r.sources[name].error, /\S/);
+    for (const k of keys) assert.equal(r[k], null, `${k} is null for a failed source, not empty`);
+    const up = await make()[read]();
+    for (const k of Object.keys(up).filter(k => k !== 'as_of' && k !== 'sources' && !keys.includes(k))) assert.deepEqual(r[k], up[k], `${k} is unaffected by ${name} being down`);
+  });
+}
