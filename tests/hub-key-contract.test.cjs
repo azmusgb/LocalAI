@@ -42,6 +42,7 @@ test('the contract reads answer 200 with Ollama and the bridges down, naming eac
   const models = await call('GET', '/api/contract/models', H);
   assert.equal(models.status, 200);
   assert.ok(!Number.isNaN(Date.parse(models.value.as_of)));
+  assert.equal(models.value.contract_version, 1);
   assert.equal(models.value.sources.installed.state, 'failed');
   assert.equal(models.value.sources.loaded.state, 'failed');
   assert.equal(typeof models.value.sources.installed.error, 'string');
@@ -59,6 +60,7 @@ test('the contract reads answer 200 with Ollama and the bridges down, naming eac
   assert.equal(status.status, 200);
   assert.ok(!Number.isNaN(Date.parse(status.value.as_of)));
   assert.deepEqual(Object.keys(status.value.sources).sort(), ['artcraft', 'gridcraft', 'services', 'watch', 'workshop']);
+  assert.equal(status.value.contract_version, 1);
   assert.equal(status.value.sources.services.state, 'ok');
   assert.equal(status.value.overall, 'DOWN');
   assert.equal(status.value.services.find(s => s.name === 'ollama').state, 'DOWN');
