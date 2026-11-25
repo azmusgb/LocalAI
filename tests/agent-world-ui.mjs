@@ -455,7 +455,11 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await check(`${label}: Escape closes the sheet and focus returns`, async () => {
     await page.keyboard.press('Escape');
     await page.locator('#awStart').waitFor({ state: 'hidden' });
-    assert.equal(await page.evaluate(() => document.activeElement.id), startBtn.slice(1));
+    // Closing pops the sheet's history entry (LocalAIUI.showSheet). The browser drops focus when that history.back()
+    // lands, a few ms after the sheet hides, and openStart puts it back once the pop settles (afterSheetPop). Read focus
+    // once the pop has settled, not in between (on a busy machine the pop landed after the read: CI flake, 25 Nov).
+    const settled = await page.waitForFunction(id => !history.state?.localaiSheet && document.activeElement.id === id, startBtn.slice(1), { timeout: 3000 }).then(() => true, () => false);
+    assert.equal(await page.evaluate(() => document.activeElement.id), startBtn.slice(1), settled ? '' : 'focus never came back once the sheet’s history entry was popped');
   });
   await check(`${label}: Try a demo mission runs the city, and the faceplate says it is a demo`, async () => {
     await page.locator('#awEmptyDemo').click();
