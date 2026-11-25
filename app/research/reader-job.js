@@ -15,6 +15,7 @@ const { buildReaderPrompt, validateFindingOutput } = require('./reader');
 
 const SYSTEM = 'You are a careful research analyst. You have no tools. Answer with one JSON object and nothing else.';
 const CURSOR = 'reader.cursor';
+const COUNTS = 'reader.counts';
 const FAIL_LIMIT = 3, HOLD_MS = 15 * 60 * 1000;
 // A feed entry that carries a teaser or nothing has no evidence to quote; reading it only spends a model call.
 const MIN_TEXT_CHARS = 200;
@@ -36,7 +37,24 @@ function createReaderJob({ store, topics, budget, runModel, busy = () => ({ busy
 
   let running = false, lastTickAt = 0, last = { code: 'none', reason: 'has not run' };
   let holdUntil = 0, failing = { seq: 0, count: 0 };
-  const counts = { read: 0, findings: 0, outOfScope: 0, failed: 0, tooThin: 0, sourceInactive: 0, notRelevant: 0, quoteRejected: 0, unparsable: 0 };
+  // The tallies live in the store, so a deploy does not wipe them. A tally that cannot be read is an error, never zero.
+  const ZERO = { read: 0, findings: 0, outOfScope: 0, failed: 0, tooThin: 0, sourceInactive: 0, notRelevant: 0, quoteRejected: 0, unparsable: 0 };
+  function readCounts() {
+    const raw = store.getMeta(COUNTS);
+    if (raw === null) return { ...ZERO };
+    const v = JSON.parse(raw);
+    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('reader counts are not an object');
+    const out = { ...ZERO };
+    for (const k of Object.keys(ZERO)) if (Number.isSafeInteger(v[k]) && v[k] >= 0) out[k] = v[k];
+    return out;
+  }
+  // Best effort: a tally that fails to save must not stop the reader or make it read a document twice.
+  function bump(key) {
+    try { const c = readCounts(); c[key]++; store.setMeta(COUNTS, JSON.stringify(c)); } catch (e) { safeLog('research reader: could not record a count', e && e.message); }
+  }
+  function note(doc, outcome, why = '') {
+    try { store.addRead(doc.id, outcome, why); } catch (e) { safeLog('research reader: could not record a read', e && e.message); }
+  }
 
   const result = (code, reason, extra = {}) => { last = { code, reason, at: new Date(now()).toISOString(), ...extra }; return last; };
 
@@ -68,11 +86,11 @@ function createReaderJob({ store, topics, budget, runModel, busy = () => ({ busy
       const seqBefore = cursor();
       const doc = store.nextDocumentAfter(seqBefore);
       if (!doc) return result('idle', 'nothing new to read');
-      if (String(doc.text || '').trim().length < minTextChars) { counts.tooThin++; advance(doc.seq); return result('too_thin', 'the document has too little text to hold a finding; not read', { documentId: doc.id }); }
+      if (String(doc.text || '').trim().length < minTextChars) { bump('tooThin'); note(doc, 'too_thin'); advance(doc.seq); return result('too_thin', 'the document has too little text to hold a finding; not read', { documentId: doc.id }); }
       const source = store.getSource(doc.sourceId);
-      if (source && source.status !== 'active') { counts.sourceInactive++; advance(doc.seq); return result('source_inactive', `the source is ${source.status}; its documents are not read`, { documentId: doc.id }); }
+      if (source && source.status !== 'active') { bump('sourceInactive'); note(doc, 'source_inactive', source.status); advance(doc.seq); return result('source_inactive', `the source is ${source.status}; its documents are not read`, { documentId: doc.id }); }
       const candidates = topicsFor(source);
-      if (!candidates.length) { counts.outOfScope++; advance(doc.seq); return result('out_of_scope', 'no active topic covers this source', { documentId: doc.id }); }
+      if (!candidates.length) { bump('outOfScope'); note(doc, 'out_of_scope'); advance(doc.seq); return result('out_of_scope', 'no active topic covers this source', { documentId: doc.id }); }
 
       const prompt = buildReaderPrompt(doc);
       let reserved = null, refusal = null;
@@ -92,26 +110,28 @@ function createReaderJob({ store, topics, budget, runModel, busy = () => ({ busy
       catch (e) {
         failing = failing.seq === doc.seq ? { seq: doc.seq, count: failing.count + 1 } : { seq: doc.seq, count: 1 };
         safeLog('research reader: model call failed', e && e.message);
-        if (failing.count >= FAIL_LIMIT) { counts.failed++; advance(doc.seq); failing = { seq: 0, count: 0 }; return result('failed', 'the model failed three times on this document; it was skipped', { documentId: doc.id }); }
+        if (failing.count >= FAIL_LIMIT) { bump('failed'); note(doc, 'failed'); advance(doc.seq); failing = { seq: 0, count: 0 }; return result('failed', 'the model failed three times on this document; it was skipped', { documentId: doc.id }); }
         holdUntil = now() + HOLD_MS;
         return result('model_failed', 'the model call failed; will retry', { documentId: doc.id });
       }
       failing = { seq: 0, count: 0 };
 
-      counts.read++;
+      bump('read');
       const parsed = parseAnswer(answer);
       const finding = validateFindingOutput(doc, parsed);
       if (finding) {
         store.addFinding({ documentId: doc.id, sourceId: doc.sourceId, claim: finding.claim, quote: finding.quote, targetProject: finding.targetProject, relevance: finding.relevance });
-        counts.findings++;
+        bump('findings');
       }
       advance(doc.seq);
+      if (finding) note(doc, 'finding');
       if (finding) return result('finding', 'one finding stored', { documentId: doc.id, topicId: reserved.id });
       // Say why nothing was stored: a model that finds nothing relevant is working; one whose quote is rejected or whose
       // answer is not JSON is a prompt or model problem, and the counts must not blur the two.
       const why = !parsed ? 'unparsable' : parsed.relevant === false ? 'not_relevant' : 'quote_rejected';
-      if (why === 'unparsable') counts.unparsable++; else if (why === 'not_relevant') counts.notRelevant++; else counts.quoteRejected++;
+      if (why === 'unparsable') bump('unparsable'); else if (why === 'not_relevant') bump('notRelevant'); else bump('quoteRejected');
       const reason = { unparsable: 'the model did not return a JSON answer', not_relevant: 'the model judged the document not relevant', quote_rejected: 'the model reported a finding but its quote was not in the document' }[why];
+      note(doc, 'no_finding', why);
       return result('no_finding', reason, { documentId: doc.id, topicId: reserved.id, why });
     } catch (e) {
       safeLog('research reader: tick failed', e && e.message);
@@ -123,9 +143,13 @@ function createReaderJob({ store, topics, budget, runModel, busy = () => ({ busy
   function state() {
     try {
       const c = cursor();
-      return { enabled: isEnabled(), unreadable: false, running, cursor: c, lastTickAt: lastTickAt ? new Date(lastTickAt).toISOString() : '', last, counts: { ...counts }, dailyFindings };
+      const base = { enabled: isEnabled(), unreadable: false, running, cursor: c, lastTickAt: lastTickAt ? new Date(lastTickAt).toISOString() : '', last, dailyFindings };
+      let counts = null, recent = null;
+      try { counts = readCounts(); } catch { /* shown as unreadable below, never as zero */ }
+      try { recent = store.listReads(10); } catch { /* same */ }
+      return { ...base, counts, recent, countsUnreadable: counts === null, recentUnreadable: recent === null };
     } catch {
-      return { enabled: isEnabled(), unreadable: true, running, last, counts: { ...counts }, dailyFindings };
+      return { enabled: isEnabled(), unreadable: true, running, last, counts: null, recent: null, countsUnreadable: true, recentUnreadable: true, dailyFindings };
     }
   }
 

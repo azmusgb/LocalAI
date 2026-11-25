@@ -14,6 +14,7 @@ const KEEP_DOCUMENTS = 2000, KEEP_FETCHES = 50, QUARANTINE_AFTER = 5, BACKOFF_CA
 const ID_MAX = 512, CODE_MAX = 40, PUBLISHED_MAX = 40;
 const TOPICS_MAX = 20, TOPIC_MAX = 60;
 const TRUST = ['official', 'primary', 'secondary', 'unrated'];
+const READS_KEPT = 200;
 const SETTABLE_STATUS = ['active', 'paused', 'retired'];
 
 const SCHEMA = `
@@ -43,6 +44,7 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS research_outcomes (id TEXT PRIMARY KEY, finding_id TEXT NOT NULL, change_id TEXT NOT NULL,
     metric_name TEXT NOT NULL, before_val REAL NOT NULL, after_val REAL NOT NULL, verdict TEXT NOT NULL, notes TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE INDEX IF NOT EXISTS research_outcomes_finding ON research_outcomes (finding_id);
+  CREATE TABLE IF NOT EXISTS research_reads (seq INTEGER PRIMARY KEY AUTOINCREMENT, document_id TEXT NOT NULL, outcome TEXT NOT NULL, why TEXT NOT NULL DEFAULT '', at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS research_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`;
 
 function fail(status, message) { return Object.assign(new Error(message), { status }); }
@@ -118,6 +120,10 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     insertOutcome: db.prepare(`INSERT INTO research_outcomes (id, finding_id, change_id, metric_name, before_val, after_val, verdict, notes, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
     listOutcomes: db.prepare('SELECT * FROM research_outcomes WHERE finding_id = ? ORDER BY created_at DESC'),
+    insertRead: db.prepare('INSERT INTO research_reads (document_id, outcome, why, at) VALUES (?,?,?,?)'),
+    trimReads: db.prepare('DELETE FROM research_reads WHERE seq <= COALESCE((SELECT seq FROM research_reads ORDER BY seq DESC LIMIT 1 OFFSET ?), 0)'),
+    listReads: db.prepare(`SELECT r.seq, r.document_id, r.outcome, r.why, r.at, d.title, d.source_id FROM research_reads r
+      LEFT JOIN research_documents d ON d.id = r.document_id ORDER BY r.seq DESC LIMIT ?`),
     getMeta: db.prepare('SELECT value FROM research_meta WHERE key = ?'),
     setMeta: db.prepare('INSERT INTO research_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'),
   };
@@ -344,12 +350,20 @@ function createResearchStore({ db, now = Date.now, timeZone = 'UTC' } = {}) {
     return { ids, newToday: ids.length, cap, waiting: pending.length - take.length };
   }
 
+  // One row per document the reader passed over or read: what it decided and why. Kept to the newest READS_KEPT.
+  function addRead(documentId, outcome, why = '') {
+    st.insertRead.run(String(documentId), String(outcome), String(why), nowIso());
+    st.trimReads.run(READS_KEPT);
+  }
+  const listReads = (limit = 20) => st.listReads.all(Math.max(1, Math.min(READS_KEPT, Number(limit) || 20)))
+    .map(r => ({ documentId: r.document_id, sourceId: r.source_id || '', title: r.title || '', outcome: r.outcome, why: r.why, at: r.at }));
+
   const getMeta = key => { const r = st.getMeta.get(String(key)); return r ? r.value : null; };
   const setMeta = (key, value) => { st.setMeta.run(String(key), String(value)); };
 
   return {
     addSource, updateSource, listSources, getSource, dueSources, recordFetch, saveEntries,
-    listDocuments, getDocument, nextDocumentAfter, fetchesToday, listFetches, getMeta, setMeta,
+    listDocuments, getDocument, nextDocumentAfter, fetchesToday, listFetches, getMeta, setMeta, addRead, listReads,
     addFinding, getFinding, listFindings, countFindingsToday, inbox, decideFinding, recordOutcome, listOutcomes
   };
 }
