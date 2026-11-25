@@ -154,6 +154,27 @@ for (const vp of [{ width: 390, height: 844 }, { width: 360, height: 740 }]) for
   });
 }
 
+// The bell's count sits beside the icon, never over it, at any text size and phone width.
+for (const w of [320, 360, 390, 430]) for (const label of ['2', '99+']) {
+  await check(`${w}px, text at 200%: the bell count (${label}) does not touch the bell icon and the header does not overflow`, async () => {
+    const page = await open({ width: w, height: 800 }, '#home', { text: true });
+    await page.evaluate(t => { document.getElementById('uxInboxBtn').dataset.empty = 'false'; document.getElementById('uxInboxCount').textContent = t; }, label); // geometry only: the count's value is not what is tested
+    await page.waitForTimeout(200);
+    const r = await page.evaluate(() => {
+      const btn = document.getElementById('uxInboxBtn'), b = document.getElementById('uxInboxCount'), ico = btn.querySelector('svg');
+      const box = e => { const x = e.getBoundingClientRect(); return { l: x.left, r: x.right, t: x.top, b: x.bottom, w: x.width, h: x.height }; };
+      const bar = document.getElementById('uxContextBar');
+      return { badge: box(b), icon: box(ico), btn: box(btn), shown: getComputedStyle(b).display !== 'none', overflowX: document.documentElement.scrollWidth > innerWidth, barScroll: bar.scrollWidth > bar.clientWidth + 1, vw: innerWidth };
+    });
+    assert.ok(r.shown && r.badge.w > 0, 'the count is shown: ' + JSON.stringify(r));
+    const ix = Math.min(r.badge.r, r.icon.r) - Math.max(r.badge.l, r.icon.l), iy = Math.min(r.badge.b, r.icon.b) - Math.max(r.badge.t, r.icon.t);
+    assert.ok(!(ix > 0 && iy > 0), `badge overlaps the bell icon by ${ix.toFixed(1)}x${iy.toFixed(1)}: ${JSON.stringify(r)}`);
+    assert.ok(r.badge.r <= r.vw + 0.5 && r.badge.l >= -0.5, 'badge inside the screen');
+    assert.equal(r.overflowX, false); assert.equal(r.barScroll, false);
+    await page.context().close();
+  });
+}
+
 // (2) Scrolling with a taller bar: 200% text and a notch (safe-area top inset). The strip must sit exactly under the bar.
 for (const [label, opts] of [['normal', {}], ['text at 200%', { text: true }], ['safe-area top 47px', { inset: 47 }], ['text at 200% and safe-area top 47px', { text: true, inset: 47 }]]) {
   await check(`scrolling (${label}): the document scrolls; header and page strip stay stacked with no gap or overlap`, async () => {
