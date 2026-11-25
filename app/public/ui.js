@@ -8,14 +8,14 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&
 function icon(name,cls){return '<svg class="icon'+(cls?' '+esc(cls):'')+'" aria-hidden="true"><use href="#i-'+esc(name)+'"/></svg>'}
 function statusBadge(status){const key=String(status??'').trim().toLowerCase();const hit=STATUS[key];if(hit)return{label:hit[0],tone:hit[1]};const raw=String(status??'').trim().replace(/[_-]+/g,' ');return{label:raw?raw.charAt(0).toUpperCase()+raw.slice(1).toLowerCase():'Unknown',tone:'neutral'}}
 function badgeHtml(status){const b=statusBadge(status);return '<span class="badge badge--'+b.tone+'">'+esc(b.label)+'</span>'}
-window.LocalAIKit=Object.freeze({icon,statusBadge,badgeHtml});
+window.LocalAIKit=Object.freeze({icon,statusBadge,badgeHtml,esc});
 })();
 
 // ==== agent-specialists.js ====
 (()=>{'use strict';
 let catalog=[],selected='ux_analyst',source=null,currentMission=null,history=[],activeInspectorId='';
 const $=id=>document.getElementById(id);
-// One shared mission EventSource per tab (agent-specialists.js and agent-world-city.js both subscribe; whichever loads first creates it).
+// One shared mission EventSource per tab; agent-world-city.js, later in this file, subscribes to it too.
 const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{
  // Open only while Missions is on screen and the tab is visible: nothing else shows live mission state, and a stream
  // held open on every page keeps phones' connections awake and the page from ever going network-idle. Each (re)open
@@ -28,7 +28,7 @@ const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=((
  function watch(){const v=document.getElementById('agents');if(v)new MutationObserver(sync).observe(v,{attributes:true,attributeFilter:['class']});document.addEventListener('visibilitychange',sync);sync()}
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',watch,{once:true});else watch();
  return{subscribe(onMessage,onError,onOpen){const sub={onMessage,onError,onOpen};subs.add(sub);try{sync()}catch(e){subs.delete(sub);throw e}return()=>{subs.delete(sub);sync()}},isOpen:()=>!!es}})());
-const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const esc=LocalAIKit.esc;
 async function req(u,o){const r=await fetch(u,o),j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error||('HTTP '+r.status));return j}
 function notice(kind,text,actions=''){const el=$('agentInlineNotice');if(!el)return;el.dataset.kind=kind||'info';el.innerHTML='<div><strong>'+esc(kind==='error'?'Needs attention':kind==='success'?'Complete':'Status')+'</strong><span>'+esc(text)+'</span></div>'+actions;el.hidden=false}
 function clearNotice(){const el=$('agentInlineNotice');if(el)el.hidden=true}
@@ -231,7 +231,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
   const TRUTH_RETRY_MS = 5000;
   let truthRefreshTimer = 0;
   let lastTruthSnapshot = null;
-  const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  const esc=LocalAIKit.esc;
 
   function activateView(view) {
     const target = document.getElementById(view);
@@ -907,7 +907,7 @@ document.addEventListener('DOMContentLoaded',()=>init().catch(e=>notice('error',
       }
     }
   }
-  window.LocalAIModels = { startPull: startModelPull, pollPulls: pollModelPulls };
+  window.LocalAIModels = { startPull: startModelPull };
 
   // One failed check is often a blip (a restart on the way, a dropped request): look again shortly before saying so.
   let truthFailures = 0;
@@ -1160,21 +1160,9 @@ if(document.readyState==='complete')init();else window.addEventListener('load',i
 // ==== agent-world-city.js ====
 (()=>{'use strict';
 const W=1280,H=760,T=32,COLS=Math.floor(W/T),ROWS=Math.floor(H/T);
-const $=(s,r=document)=>r.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const $=(s,r=document)=>r.querySelector(s),esc=LocalAIKit.esc;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n)),key=(x,y)=>x+','+y,now=()=>performance.now();
-// One shared mission EventSource per tab (agent-specialists.js and agent-world-city.js both subscribe; whichever loads first creates it).
-const missionStream=window.LocalAIMissionStream||(window.LocalAIMissionStream=(()=>{
- // Open only while Missions is on screen and the tab is visible: nothing else shows live mission state, and a stream
- // held open on every page keeps phones' connections awake and the page from ever going network-idle. Each (re)open
- // calls subscribers' onOpen, so they refetch what happened while it was closed.
- const subs=new Set();let es=null;
- const wanted=()=>document.visibilityState==='visible'&&!!document.querySelector('#agents.active');
- function open(){if(es)return;const s=new EventSource('/api/agents/missions/events');es=s;s.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}for(const x of[...subs])try{x.onMessage?.(m)}catch{}};s.onopen=()=>{for(const x of[...subs])try{x.onOpen?.()}catch{}};s.onerror=e=>{for(const x of[...subs])try{x.onError?.(e)}catch{}}}
- function close(){if(!es)return;es.close();es=null}
- function sync(){if(subs.size&&wanted())open();else close()}
- function watch(){const v=document.getElementById('agents');if(v)new MutationObserver(sync).observe(v,{attributes:true,attributeFilter:['class']});document.addEventListener('visibilitychange',sync);sync()}
- if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',watch,{once:true});else watch();
- return{subscribe(onMessage,onError,onOpen){const sub={onMessage,onError,onOpen};subs.add(sub);try{sync()}catch(e){subs.delete(sub);throw e}return()=>{subs.delete(sub);sync()}},isOpen:()=>!!es}})());
+const missionStream=window.LocalAIMissionStream; // created by agent-specialists.js, earlier in this file
 
 const DISTRICTS={
  command:{name:'Command Center',short:'Command',x:17,y:9,w:6,h:5,accent:'#71b7ff',roof:'#315f94',icon:'⌂',kind:'hq'},
@@ -1200,7 +1188,7 @@ const DEMO_STAGES=[
 ];
 
 let root,canvas,ctx,current=null,liveSnapshot=null,sourceType='idle',selected=null,hovered=null,raf=0,last=0;
-let roads=new Set(),reach=new Set(),agents=new Map(),artifacts=[],packets=[],pulses=[],traffic=[],sparks=[],dust=[],events=[],clouds=[],arcs=[],birds=[],confetti=[];
+let roads=new Set(),reach=new Set(),agents=new Map(),artifacts=[],packets=[],pulses=[],traffic=[],sparks=[],dust=[],clouds=[],arcs=[],birds=[],confetti=[];
 let view={zoom:1,panX:0,panY:0,targetZoom:1,targetPanX:0,targetPanY:0};
 let drag=null,pointers=new Map(),pinch=null,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 let display={labels:true,flows:true,night:false,crew:true,follow:true};
@@ -1308,7 +1296,6 @@ function spawnSpark(x,y,color,n=12){if(!reduced)for(let i=0;i<n;i++)sparks.push(
 // Notes float over the city's top-left for 4 s, three at most; the story keeps them all.
 function note(text,state){notes.unshift({text,state,at:now()});notes=notes.slice(0,3);syncNotes();setTimeout(syncNotes,4100)}
 function syncNotes(){const h=$('#awcToasts');if(!h)return;const t=now();notes=notes.filter(n=>t-n.at<4000);h.innerHTML=notes.map(n=>`<li data-state="${esc(n.state)}">${esc(n.text)}</li>`).join('')}
-function addEvent(text){events.unshift({text,at:new Date()});events=events.slice(0,12);syncEventFeed()}
 function loadReplay(){try{const saved=JSON.parse(localStorage.getItem(REPLAY_KEY)||'null');if(saved&&Array.isArray(saved.frames)){replay.frames=saved.frames.slice(-120);replay.index=Math.max(0,replay.frames.length-1);replay.speed=saved.speed||1;replay.sourceMissionId=saved.sourceMissionId||''}}catch{}}
 function persistReplay(){try{localStorage.setItem(REPLAY_KEY,JSON.stringify({frames:replay.frames.slice(-120),speed:replay.speed,sourceMissionId:replay.sourceMissionId}))}catch{}}
 function timelineMission(base,event){
@@ -1321,7 +1308,7 @@ function primeMissionReplay(m){
  replay.frames=timeline.map((e,i)=>({at:Date.parse(e.at)||Date.now()+i,reason:e.type||'state',detail:e.detail||'',workerId:e.workerId||'',sig:e.sig||String(i),mission:timelineMission(m,e)})).slice(-120);
  replay.index=Math.max(0,replay.frames.length-1);replay.sourceMissionId=m.id||'';persistReplay();syncReplay();return true
 }
-function loadMissionReplay(m){if(!m)return;if(!primeMissionReplay(m)){const n=normalizeMission(m);replay.frames=[{at:Date.parse(n.updatedAt)||Date.now(),reason:'snapshot',detail:'Historical mission snapshot',workerId:'',sig:n.id,mission:n}];replay.index=0;replay.sourceMissionId=n.id||'';persistReplay();syncReplay()}addEvent('Replay loaded: '+(m.goal||m.id||'mission'))}
+function loadMissionReplay(m){if(!m)return;if(!primeMissionReplay(m)){const n=normalizeMission(m);replay.frames=[{at:Date.parse(n.updatedAt)||Date.now(),reason:'snapshot',detail:'Historical mission snapshot',workerId:'',sig:n.id,mission:n}];replay.index=0;replay.sourceMissionId=n.id||'';persistReplay();syncReplay()}}
 // A demo is not recorded: the replay and its saved copy stay the real mission's.
 function recordReplayFrame(reason){
  if(replay.active||demo.active||!current)return;const sig=(current.workers||[]).map(w=>w.id+':'+w.state).join('|')+'|'+current.status;const last=replay.frames.at(-1);if(last?.sig===sig)return;
@@ -1365,9 +1352,8 @@ function applyMission(m){
  if(!m||demo.active)return;const prev=current,next=normalizeMission(m),wasComplete=prev?.status==='complete';
  if(!prev||prev.id!==next.id){agents.clear();artifacts=[];packets=[];sparks=[];dust=[]}
  current=next;liveSnapshot=next;sourceType='mission';current.workers.forEach(ensureAgent);
- if(!prev||prev.id!==current.id)addEvent('Mission entered Agent World');
  if(next.timeline?.length)primeMissionReplay(next);else recordReplayFrame('mission');
- if(next.status==='complete'&&!wasComplete&&prev?.id===next.id&&!reduced){const p=districtCenter('command');spawnSpark(p.x,p.y,'#75dfa2',54);celebrate();addEvent('Mission complete · the summary is ready')}
+ if(next.status==='complete'&&!wasComplete&&prev?.id===next.id&&!reduced){const p=districtCenter('command');spawnSpark(p.x,p.y,'#75dfa2',54);celebrate()}
  syncHud()
 }
 function engWorkers(run){const s=run.status||'idle';return[{id:'engineer',name:'Engineer',state:s==='running'?'running':s==='needs_attention'?'error':s==='applied'?'complete':'pending'},{id:'validator',name:'Validator',state:s==='running'?'running':s==='awaiting_approval'?'complete':'pending'},{id:'reviewer',name:'Reviewer',state:s==='awaiting_approval'?'running':['approved','apply_requested','applied'].includes(s)?'complete':'pending'},{id:'deployer',name:'Deployer',state:['approved','apply_requested'].includes(s)?'running':s==='applied'?'complete':'pending'},{id:'operator',name:'Operator',state:s==='applied'?'complete':'pending'}]}
@@ -1377,7 +1363,7 @@ function demoMission(){
  if(demo.scenario==='failure'&&demo.stage>=2){workers.find(w=>w.id==='documentation').state='error';workers.find(w=>w.id==='synthesis').state='blocked'}
  return{type:'mission',id:'demo-city-mission',status:demo.scenario==='failure'&&demo.stage>=2?'needs_attention':demo.stage===4?'complete':'running',goal:demo.scenario==='failure'?'Demo: recover a failed documentation handoff':'Demo: audit and improve Local AI mobile UX',workers,error:demo.scenario==='failure'&&demo.stage>=2?'Documentation Agent needs attention':''}
 }
-function applyDemo(){const next=demoMission();if(!demo.active||current?.id!==next.id){agents.clear();artifacts=[];packets=[];sparks=[]}current=next;sourceType='demo';current.workers.forEach(ensureAgent);syncHud();if(next.status==='complete'&&!reduced)celebrate();addEvent('Demo: '+DEMO_STAGES[demo.stage].label);recordReplayFrame('demo-stage-'+demo.stage);
+function applyDemo(){const next=demoMission();if(!demo.active||current?.id!==next.id){agents.clear();artifacts=[];packets=[];sparks=[]}current=next;sourceType='demo';current.workers.forEach(ensureAgent);syncHud();if(next.status==='complete'&&!reduced)celebrate();recordReplayFrame('demo-stage-'+demo.stage);
  // The Story's frames: as a real mission's timeline, at seconds since the demo began (an ISO duration, "PT12S").
  const kind=next.status==='complete'?'mission-complete':next.status==='needs_attention'?'mission-attention':'stage';demo.log.push({at:'PT'+Math.round((now()-demo.t0)/1000)+'S',type:demo.log.some(e=>e.type===kind)?'stage':kind,workers:next.workers});demoSaid(true)}
 function startDemo(){document.querySelector('.aw-page')?.classList.add('is-demo');demo.active=true;demo.running=true;demo.paused=false;demo.stage=0;demo.lastAdvance=demo.t0=now();demo.log=[];applyDemo();fitWorld();syncDemoControls()}
@@ -1407,7 +1393,6 @@ function avatar(w){
  try{const c=document.createElement('canvas'),g=c.getContext('2d');c.width=c.height=48;g.imageSmoothingEnabled=false;g.drawImage(sheetFor(s),4,0,12,12,0,0,48,48);url=c.toDataURL()}catch{}
  portraits.set(s.key,url);return url
 }
-function syncEventFeed(){if(!root)return;const h=$('#awcEventFeed');if(h)h.innerHTML=events.length?events.slice(0,4).map(e=>`<div><span>${esc(e.text)}</span><time>${e.at.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time></div>`).join(''):'<div><span>Waiting for activity</span></div>'}
 let externalFocus=false;
 function syncSelection(){
  if(!root)return;const h=$('#awcSelection');h.dataset.empty=String(!selected);if(!selected){h.innerHTML='<span>Select a worker or building</span><small>Inspect district state and focus the camera.</small>';return}
@@ -1507,7 +1492,7 @@ function mount(){
   // the walk a worker would take to a zone (inside: to a desk; else to a spot on its apron), from where it stands now
   // or, given `from`, from its desk inside that district. Nothing moves.
   route(id,zone,inside,from){let a=agents.get(id);if(!a)return null;if(from){const d=workerTarget({id,state:'running'},from);a={...a,x:d.x,y:d.y,inside:true,insideZone:from}}const t=workerTarget({id,state:inside?'running':'complete'},zone);return{inside:!!(a.inside&&a.insideZone),from:a.inside?a.insideZone:a.zone,door:a.inside&&a.insideZone?districtDoor(a.insideZone):null,points:[{x:a.x,y:a.y},...routeToTarget(a,t,zone)]}}}}}catch{}
- document.body.classList.add('agent-world-city-ready');buildRoads();plantScenery();seedAmbient();syncDemoControls();syncHud();syncEventFeed();resize();start();bootstrap()
+ document.body.classList.add('agent-world-city-ready');buildRoads();plantScenery();seedAmbient();syncDemoControls();syncHud();resize();start();bootstrap()
 }
 const IDLE=[['router','Team lead'],['ux_analyst','UX Analyst'],['documentation','Documentation Agent'],['research_agent','Research Agent'],['engineer','Engineer']];
 function idleCrew(){if(current||agents.size)return;for(const[id,name]of IDLE)ensureAgent({id,name,state:'pending'})}
@@ -1548,7 +1533,7 @@ function update(dt,ts){
   a.x+=dx/d*speed*dt;a.y+=dy/d*speed*dt;
   spawnRunDust(a,ts,running)
  }
- for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<3){p.i++;if(p.i>=p.path.length){p.done=true;spawnSpark(p.x,p.y,p.color,8);if(p.label==='HANDOFF'){addEvent('Handoff received');pulses.push({x:p.x,y:p.y,t:ts})}}continue}p.x+=dx/d*150*dt;p.y+=dy/d*150*dt}packets=packets.filter(p=>!p.done);pulses=pulses.filter(q=>ts-q.t<(q.big?1100:700));
+ for(const p of packets){if(p.done||!p.path[p.i])continue;const t=p.path[p.i],dx=t.x-p.x,dy=t.y-p.y,d=Math.hypot(dx,dy);if(d<3){p.i++;if(p.i>=p.path.length){p.done=true;spawnSpark(p.x,p.y,p.color,8);if(p.label==='HANDOFF')pulses.push({x:p.x,y:p.y,t:ts})}continue}p.x+=dx/d*150*dt;p.y+=dy/d*150*dt}packets=packets.filter(p=>!p.done);pulses=pulses.filter(q=>ts-q.t<(q.big?1100:700));
  updateConstruction(dt,ts);updateCrew(dt);
  if(reduced){sparks=[];dust=[];confetti=[];arcs=[]}
  for(const s of sparks){s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy+=90*dt;s.life-=dt}sparks=sparks.filter(s=>s.life>0);for(const d of dust){d.x+=d.vx*dt;d.y+=d.vy*dt;d.r+=dt*5;d.life-=dt}dust=dust.filter(d=>d.life>0);
@@ -1694,7 +1679,7 @@ function updateConstruction(dt,ts){
   b.level+=(target-b.level)*Math.min(1,dt*(f.done?1.4:.9));
   const x=d.x*T,y=d.y*T,w=d.w*T,h=d.h*T,top=y+h-h*b.level;
   if(f.active&&b.level<.995&&ts-b.lastSpark>140){b.lastSpark=ts;spawnSpark(x+10+Math.random()*(w-20),top,Math.random()<.5?'#ffd36b':'#ffffff',3)}
-  if(f.done&&!b.topped&&b.level>.97){b.topped=ts;spawnSpark(x+w/2,y+4,'#3ed598',18);spawnSpark(x+w/2,y+4,'#ffb224',12);addEvent(d.name+' topped out')}
+  if(f.done&&!b.topped&&b.level>.97){b.topped=ts;spawnSpark(x+w/2,y+4,'#3ed598',18);spawnSpark(x+w/2,y+4,'#ffb224',12)}
   if(!f.done)b.topped=0
  }
 }
@@ -2205,7 +2190,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
     ['working', 'Claude is working', (f) => f.status === 'in_progress'], ['done', 'Done', (f) => f.status === 'fixed'],
     ['aside', 'Set aside', (f) => f.status === 'deferred' || f.status === 'rejected'], ['all', 'All', () => true]];
   const catLabel = (c) => ({ ux: 'UX', api: 'API', ci: 'CI' })[c] || c;
-  const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  const esc=LocalAIKit.esc;
   const view = { data: null, session: '', statusFilter: '', noteId: '', toastTimer: 0, category: '', severity: '', timer: 0, busy: false, openIds: new Set() };
   const $ = (id) => document.getElementById(id);
 
@@ -4121,7 +4106,7 @@ if(/[?&]watch=1\b/.test(location.search))setTimeout(()=>W({fullscreen:false}),80
 // Card pages (kit 2.26.0, A27): System › Assistant and Developer tools. A card's page starts with "← <its page>". A tool
 // card says whether it can be used only where the app knows (n8n from /api/status; PowerShell from address and token).
 (()=>{'use strict';
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=LocalAIKit.esc;
 const why=t=>`<span class="tool-card__why">${esc(t)}</span>`,chip=(tone,w,t)=>`<span class="ui-chip ui-chip--${tone}">${esc(w)}</span>`+(t?why(t):'');
 // st: 'loading', null (read failed) or /api/status.
 function known(id,st){
@@ -4169,7 +4154,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 const q=(s,r=document)=>r.querySelector(s);
 const DONE_KEY='localai.firstRun.done',DIAG_KEY='localai.diagnostics';
 const pref={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=LocalAIKit.esc;
 async function getJson(url){const r=await fetch(url,{cache:'no-store'});return r.json()}
 let config=null;
 async function loadConfig(){if(!config)config=await getJson('/api/config').catch(()=>({}));return config}
@@ -4291,7 +4276,6 @@ function mountPagesOpened(){
  if(sec.classList.contains('active')){was=true;load()}
 }
 function init(){applyDiagnostics(pref.get(DIAG_KEY)!=='0');mountHomeLocation();mountDiagnostics();mountPagesOpened();mountFirstRun()}
-window.LocalAIFirstRun={DONE_KEY,DIAG_KEY,applyDiagnostics};
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
 
@@ -4300,7 +4284,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // how to set that up. HTTPS is served by Caddy on ports 443/80 (deploy/Install-LocalAI-HTTPS.ps1).
 (()=>{'use strict';
 const q=(s,r=document)=>r.querySelector(s);
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=LocalAIKit.esc;
 const root=window,host=location.hostname,isLocal=/^(localhost|127\.0\.0\.1|::1|\[::1\])$/.test(host);
 const httpsUrl=`https://${host}/`,caUrl=`http://${host}/localai-ca.crt`;
 // A no-cors request succeeds only if TLS succeeds, i.e. this device trusts the certificate. An untrusted certificate
@@ -4381,7 +4365,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // plus a one-time notice after an update. The deploy records release notes (deploy/Deployment-LocalAI.ps1).
 (()=>{'use strict';
 const q=(s,r=document)=>r.querySelector(s);
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=LocalAIKit.esc;
 const SEEN_KEY='localai.seenVersion';
 const pref={get(){try{return localStorage.getItem(SEEN_KEY)}catch{return null}},set(v){try{localStorage.setItem(SEEN_KEY,v)}catch{}}};
 const when=iso=>{const d=new Date(iso);return Number.isNaN(d.getTime())?'':d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})};
@@ -4418,7 +4402,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 // with the Local AI certificate trusted.
 (()=>{'use strict';
 const q=(s,r=document)=>r.querySelector(s);
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=LocalAIKit.esc;
 const isIOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 const standalone=()=>navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
 const supported=()=>'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;

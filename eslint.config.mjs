@@ -10,7 +10,7 @@ const localAIGlobals = Object.fromEntries([
   'LocalAIUI', 'LocalAIRouter', 'LocalAIRuns', 'LocalAIRunBodies', 'LocalAIViews', 'LocalAIHome', 'LocalAIImprove',
   'LocalAIKit', 'LocalAIShell', 'LocalAIChat', 'LocalAIChatCore', 'LocalAIChanges', 'LocalAICommand', 'LocalAIPalette',
   'LocalAIImages', 'LocalAILegacy', 'LocalAIMissions', 'LocalAIMissionStream', 'LocalAIModels', 'LocalAISpecialists',
-  'LocalAIFirstRun', 'LocalAIFocusNext', 'LocalAIOpen', 'LocalAIQR',
+  'LocalAIFocusNext', 'LocalAIOpen', 'LocalAIQR',
 ].map(name => [name, 'writable']));
 
 const correctness = {
