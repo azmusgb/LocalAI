@@ -203,7 +203,9 @@ const KB = 1024;
 // System section and its menu entry (index.html +78), the card styles (app.css +158) and the registry's cards and kit
 // aliases (view-registry.js +260). main (#619) had 383,544 bytes, ui.js 120,219, index.html 17,466; 387,764 bytes
 // (378.7 KB) measured, ui.js 121,066, index.html 17,544.
-const TOTAL = 379 * KB;
+// 2026-11-25: 379 → 380 KB for the kit at 2.31.1 (#625): the synced stylesheets and scripts grew the shell to 379.6 KB
+// gzipped (main failed this test with only the kit sync added); nothing else changed.
+const TOTAL = 380 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
