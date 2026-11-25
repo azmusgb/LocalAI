@@ -66,6 +66,10 @@ function createChat(ctx) {
     };
   }
 
+  // The model name comes from the request, so only a plain model name is ever written into the system prompt;
+  // anything else (a newline, a sentence) is left out rather than quoted to the model.
+  const promptModelName = name => (typeof name === 'string' && /^[\w.:\/-]{1,100}$/.test(name) ? name : '');
+
   // The turn's record for conversationBlock, from what prepareChat did. A cloud model is never given the snapshot.
   function turnRecord(prep, where) {
     const searched = prep.searched === true;
@@ -74,7 +78,7 @@ function createChat(ctx) {
       sources: prep.sources.length,
       snapshot: where === 'cloud' ? 'withheld' : prep.capabilityFailed ? 'failed' : 'given',
       // The snapshot is read before this PC's model is asked, so it can list no loaded model while that model answers.
-      model: where === 'local' && typeof prep.model === 'string' ? prep.model : ''
+      model: where === 'local' ? promptModelName(prep.model) : ''
     };
   }
 
@@ -140,7 +144,7 @@ function createChat(ctx) {
     // same as a snapshot with nothing in it.
     let capabilityContext = '', capabilityFailed = false;
     try {
-      capabilityContext = capabilityPrompt(await getCapabilitiesSnapshot(), { answering: typeof model === 'string' ? model : '' });
+      capabilityContext = capabilityPrompt(await getCapabilitiesSnapshot(), { answering: promptModelName(model) });
       throwIfAborted();
     } catch (error) {
       if (signal?.aborted) throw error;

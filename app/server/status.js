@@ -238,7 +238,8 @@ function createStatus(ctx) {
     const installedText = Array.isArray(textModels.installed) ? textModels.installed : [];
     const loadedText = Array.isArray(textModels.loaded) ? textModels.loaded : [];
     const loadedNames = loadedText.map(x => `${x.name}${x.contextLength ? ` [ctx ${x.contextLength}]` : ''}`);
-    const answeringNow = answering && !loadedText.some(x => x.name === answering) ? `${answering} (answering this turn)` : '';
+    const tagged = name => (String(name).includes(':') ? String(name) : `${name}:latest`); // Ollama lists a tagless name as :latest
+    const answeringNow = answering && !loadedText.some(x => tagged(x.name) === tagged(answering)) ? `${answering} (answering this turn)` : '';
     const loadedLine = failed('models') ? `${UNKNOWN}${answeringNow ? `, apart from ${answeringNow}` : ''}`
       : [...loadedNames, answeringNow].filter(Boolean).join(', ') || 'none when this was checked (a model loads when it is asked to answer)';
     const serviceText = (snapshot?.services || []).map(x => `${x.name}:${x.state}${x.required === false ? ':optional' : ':core'}`).join(', ');
