@@ -69,7 +69,7 @@ try {
       const reader = await text('#researchReader');
       assert.match(reader, /Last result[\s\S]*No finding/);
       assert.match(reader, /Documents read\s*12/);
-      assert.match(reader, /Judged not relevant\s*7/); assert.match(reader, /Quote not in document\s*2/); assert.match(reader, /Too little text\s*4/); assert.match(reader, /Source paused or retired\s*3/); assert.match(await text('#researchRecentReads'), /ESP-IDF v5\.5 released[\s\S]*Not relevant[\s\S]*No finding/);
+      assert.match(reader, /Judged not relevant\s*7/); assert.match(reader, /Quote not in document\s*2/); assert.match(reader, /Too little text\s*4/); assert.match(reader, /Source paused or retired\s*3/); await page.locator('#researchReader ~ details > summary', { hasText: 'Recent reads' }).click(); assert.match(await text('#researchRecentReads'), /ESP-IDF v5\.5 released[\s\S]*Not relevant[\s\S]*No finding/);
       assert.equal(await page.locator('#researchMeasures tbody tr').count(), 6);
       assert.equal(await page.locator('#researchBudget tbody tr').count(), 3);
       assert.match(await text('#researchBudget'), /Model calls today\s*7\s*20/);
