@@ -175,9 +175,6 @@ function setupStart(){const d=$('awStart');if(!d)return;$('awStartClose').onclic
  $('awNew')?.addEventListener('click',openStart);$('awEmptyDemo')?.addEventListener('click',()=>window.LocalAIAgentWorld?.demo?.());window.LocalAIAgentStart={open:openStart}}
 async function runSpecialist(){const goal=$('agentGoal')?.value.trim();if(!goal){notice('error','Enter an objective first.');return}const b=$('specialistRunBtn');if(b)b.disabled=true;try{const j=await req('/api/agents/specialist/run',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({agentId:selected,goal,projectId:$('agentProject')?.value||''})});renderRun(j.run)}catch(e){notice('error',e.message)}finally{if(b)b.disabled=false}}
 function setupAdvanced(){const toggle=$('agentAdvancedToggle'),panel=$('agentAdvancedPanel');if(toggle&&panel)toggle.onclick=()=>{const open=panel.hidden;panel.hidden=!open;if(open)loadWorkerModels();toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'Hide advanced':'Advanced'};$('manualRouteToggle')?.addEventListener('change',e=>{$('manualRouteOptions').hidden=!e.target.checked})}
-// Mission control (/aw/mission-control.js) loads on demand and says so once, with localai:mission-control-ready. The
-// listener is added before init waits on anything (the list of workers can answer after the module), and if the module
-// has already run, Mission control draws now.
 async function init(){if(!$('specialistRegistry'))return;setupSheet();const historyLoaded=loadHistory();setupAdvanced();setupMenu();setupStart();for(const id of ['awPrimary','awPeekAction'])$(id)?.addEventListener('click',e=>doPrimary(e.currentTarget.dataset.action));for(const id of ['awRetry','awPeekRetry'])$(id)?.addEventListener('click',retryMission);window.addEventListener('localai:agentworld-follow',()=>renderHead(currentMission));window.addEventListener('localai:agentworld-services',paintSources);window.addEventListener('localai:mission-control-ready',renderControl);if(window.LocalAIMissionControl)renderControl();window.addEventListener('localai:agentworld-demo',()=>{renderHead(currentMission);renderTimeline(currentMission);renderControl();renderResults();renderInspector()});$('routePreviewBtn')?.addEventListener('click',()=>preview().catch(e=>notice('error',e.message)));$('specialistRunBtn')?.addEventListener('click',runSpecialist);$('missionRunBtn')?.addEventListener('click',startMission);loadCatalog();await historyLoaded;try{source=source||missionStream.subscribe(m=>{const ix=history.findIndex(x=>x.id===m.id);if(ix>=0)history[ix]=m;else history.unshift(m);if(!currentMission||m.id===currentMission.id)renderMission(m)},()=>pageNotice('feed','The live mission feed isn’t answering. Reconnecting; what is shown may be behind.'),()=>{feedSeen=true;pageNotice('feed','');loadHistory()})}catch{pageNotice('feed','The live mission feed isn’t available here. Missions show as they were when the page loaded.')}}
 // ---- Phone: everything but the city is a bottom sheet over it, with three snaps ----
 // peek (the status sentence and the crew's portraits), half, full. Drag the top of the sheet, tap the handle to step
@@ -1439,8 +1436,7 @@ function resize(){
  const first=!cam.w,s=sc(view.targetZoom),cx=first?W/2:(cam.w/2-view.targetPanX)/s,cy=first?H/2:(cam.h/2-view.targetPanY)/s;
  WS=matchMedia(WS_Q).matches?1.25:1;cam={w,h,dpr,base:Math.max(w/W,h/H)};canvas.width=bw;canvas.height=bh;ctx=canvas.getContext('2d');
  focusPoint(cx,cy,view.targetZoom);view.zoom=view.targetZoom;view.panX=view.targetPanX;view.panY=view.targetPanY;
- // Setting the size cleared the canvas: draw now even while the loop runs, not on its next frame (paint() leaves a
- // running loop to draw), or a resize shows a blank city for a frame.
+ // The resize cleared the canvas: draw now, not on the running loop’s next frame.
  draw(now())
 }
 function paint(){if(ctx&&cam.w&&!raf)draw(now())}
