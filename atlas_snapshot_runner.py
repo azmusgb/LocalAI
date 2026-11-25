@@ -136,13 +136,13 @@ class SnapshotRunner:
                 job.update(state="running", startedAt=now())
                 self._running = job
             try:
-                job["commit"] = self._snapshot(job["repo"], job["ref"])
-                job["state"] = "done"
+                outcome = {"commit": self._snapshot(job["repo"], job["ref"]), "state": "done"}
             except Exception as error:  # a failed run is reported on its job, never kills the worker
-                job["state"] = "failed"
-                job["error"] = str(error).strip()[:300] or error.__class__.__name__
-            job["finishedAt"] = now()
+                outcome = {"state": "failed", "error": str(error).strip()[:300] or error.__class__.__name__}
+            finished_at = now()
             with self._lock:
+                # Publish the complete terminal record and retire the running job atomically.
+                job.update(outcome, finishedAt=finished_at)
                 self._recent.appendleft(job)
                 self._running = None
 
