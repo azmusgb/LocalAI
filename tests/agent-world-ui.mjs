@@ -1351,6 +1351,74 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await context.close();
 }
 
+// The controls work before the list of workers arrives: GET /api/agents/catalog is held until the checks are done.
+// Run specialist waits for the list (loading), and says so when it can't load or is empty.
+async function heldCatalog(contextOpts, answer) {
+  const context = await newContext({ serviceWorkers: 'block', ...contextOpts });
+  await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
+  const page = await context.newPage();
+  const errors = []; page.on('pageerror', e => errors.push(e.message));
+  let release; const held = new Promise(r => { release = r; });
+  await page.route(u => u.pathname === '/api/agents/catalog', async r => { await held; await answer(r).catch(() => {}); });
+  await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FAILED] }) }));
+  const bodies = [];
+  await page.route(u => u.pathname === '/api/agents/missions/start', r => { bodies.push(r.request().postDataJSON()); r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"stubbed"}' }); });
+  await page.route(u => u.pathname === '/api/agents/dispatch', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ routing: { mode: 'auto', workers: [] } }) }));
+  await page.goto(base + '/', { waitUntil: 'load' });
+  await page.waitForFunction(() => typeof window.showView === 'function');
+  await page.evaluate(() => window.showView('agents'));
+  await page.waitForFunction(g => document.getElementById('awTitle')?.textContent === g, FAILED.goal);
+  return { context, page, errors, bodies, release };
+}
+const runBtn = page => page.evaluate(() => { const b = document.getElementById('specialistRunBtn'); return { text: b.textContent, disabled: b.disabled, registry: document.getElementById('specialistRegistry').innerText.trim() }; });
+{
+  const CATALOG = { items: [{ id: 'ux_analyst', name: 'UX Analyst', description: 'Reviews screens for usability', capabilities: ['ux'] }, { id: 'router', name: 'Mission Router', infrastructure: true }] };
+  const { context, page, errors, bodies, release } = await heldCatalog({ viewport: { width: 1440, height: 900 } }, r => r.fulfill({ contentType: 'application/json', body: JSON.stringify(CATALOG) }));
+  await check('1440px, list of workers held: Retry mission works', async () => {
+    assert.equal(await page.locator('#awPrimary').innerText(), 'Retry mission');
+    await page.locator('#awPrimary').click();
+    for (let i = 0; i < 30 && !bodies.length; i++) await page.waitForTimeout(100);
+    assert.equal(bodies[0]?.goal, FAILED.goal);
+  });
+  await check('1440px, list of workers held: New mission opens the sheet, Advanced opens', async () => {
+    await page.locator('#awNew').click();
+    await page.locator('#awStart').waitFor({ state: 'visible', timeout: 3000 });
+    await page.locator('#agentAdvancedToggle').click();
+    assert.equal(await page.locator('#agentAdvancedToggle').getAttribute('aria-expanded'), 'true');
+  });
+  await check('1440px, list of workers held: Run specialist waits for the list', async () => {
+    assert.deepEqual(await runBtn(page), { text: 'Run specialist', disabled: true, registry: 'Loading specialists…' });
+  });
+  release();
+  await check('1440px, list of workers arrived: the cards show and Run names the worker', async () => {
+    await page.waitForFunction(() => !document.getElementById('specialistRunBtn').disabled, null, { timeout: 4000 });
+    assert.equal(await page.locator('#specialistRegistry [data-spec]').count(), 1, 'infrastructure stays out of the list');
+    assert.equal((await runBtn(page)).text, 'Run UX Analyst');
+  });
+  await check('1440px, list of workers held then arrived: no script errors', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+for (const [label, answer, registry] of [
+  ['failed', r => r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"stubbed"}' }), /^Couldn’t load the list of workers\./],
+  ['empty', r => r.fulfill({ contentType: 'application/json', body: '{"items":[]}' }), /^No specialists to run\./]
+]) {
+  const { context, page, errors, release } = await heldCatalog({ viewport: { width: 1440, height: 900 } }, answer);
+  release();
+  await check(`1440px, list of workers ${label}: the list says so and Run specialist stays off`, async () => {
+    await page.waitForFunction(() => document.getElementById('specialistRegistry').innerText.trim() !== 'Loading specialists…', null, { timeout: 4000 });
+    const s = await runBtn(page);
+    assert.match(s.registry, registry);
+    assert.equal(s.disabled, true);
+    assert.equal(s.text, 'Run specialist');
+  });
+  await check(`1440px, list of workers ${label}: New mission still opens the sheet`, async () => {
+    await page.locator('#awNew').click();
+    await page.locator('#awStart').waitFor({ state: 'visible', timeout: 3000 });
+  });
+  await check(`1440px, list of workers ${label}: no script errors`, async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
 await browser.close();
 if (failures.length) { console.error('\nAgent World failures:\n' + failures.map(x => ' - ' + x).join('\n')); process.exit(1); }
 console.log('\nAll Agent World checks passed.');
