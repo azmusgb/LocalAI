@@ -36,7 +36,7 @@ await check('home has one command surface and a short breadcrumb', async () => {
   await page.waitForSelector('#home.active');
   assert.equal(await page.locator('#home .quick').count(), 0);
   assert.equal(await page.locator('#commandInput').getAttribute('placeholder'), 'Ask anything, or describe a task…');
-  assert.deepEqual(await stripLabels(), ['Home', 'Decisions'], 'Home has its area\'s page strip');
+  assert.deepEqual(await stripLabels(), ['Overview', 'Decisions'], 'Home has its area\'s page strip');
   assert.doesNotMatch(await crumb(), /Local AI \//, 'no breadcrumb');
 });
 

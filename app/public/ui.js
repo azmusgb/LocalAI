@@ -1029,8 +1029,10 @@ function buildDesktopNav(){
 function buildContext(){
  const main=q('main');if(!main||q('#uxContextBar'))return;
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
- bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><small id="uxContextGreeting"></small><strong>Local AI</strong></span></span><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" data-state="checking" aria-label="Needs you, checking">'+icon('bell','ux-ico')+'<span>Needs you</span><b id="uxInboxCount"></b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search pages and past work">'+icon('search','ux-ico')+'<span>Search pages and past work</span><kbd>⌘K</kbd></button></div>';
+ bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><strong>Local AI</strong></span></span><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" data-state="checking" aria-label="Needs you, checking">'+icon('bell','ux-ico')+'<span>Needs you</span><b id="uxInboxCount"></b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search pages and past work">'+icon('search','ux-ico')+'<span>Search pages and past work</span><kbd>⌘K</kbd></button></div>';
  main.prepend(bar);
+ // The page strip sticks right under this bar at any text size or notch: its top is the bar's own height.
+ if(window.ResizeObserver)new ResizeObserver(()=>{const s=q('#uxPageStrip');if(s)s.style.top=Math.round(bar.getBoundingClientRect().height)+'px'}).observe(bar);
  // "← Pi Hub" (the kit's back bar, Pi Hub A22 6.4) is the first thing in the page, with Pi Hub's address in the markup. This keeps it
  // in step with the tool registry, and a visitor who came from a Pi Hub page goes back to that page (the kit's backbar.js).
  const hub=q('#uxPiHubLink');if(hub&&window.LocalAIAskContext){const home=window.LocalAIAskContext.homeUrl(location.hostname);hub.href=window.ApplianceBackbar?window.ApplianceBackbar.target(home,document.referrer):home}
@@ -1054,11 +1056,10 @@ function buildContext(){
 const headerActions=new Map();
 function syncHeaderAction(view){const b=q('#uxHeaderAction');if(!b)return;const a=headerActions.get(REG.view(view||activeView())?.id||view||activeView());b.hidden=!a;q('#uxContextBar')?.classList.toggle('ux-context-has-action',!!a);if(!a){b.onclick=null;return}b.innerHTML=icon(a.icon,'ux-ico');b.setAttribute('aria-label',a.label);b.onclick=a.onClick}
 window.LocalAIShell={setAction(view,action){headerActions.set(view,action);syncHeaderAction()},clearAction(view){headerActions.delete(view);syncHeaderAction()}};
-function greeting(){const h=new Date().getHours();return h<12?'Good morning':h<18?'Good afternoon':'Good evening'}
 function buildPageStrip(){
  const bar=q('#uxContextBar');if(!bar||q('#uxPageStrip'))return;
  const strip=document.createElement('nav');strip.id='uxPageStrip';strip.className='ux-page-strip';strip.setAttribute('aria-label','Pages in this section');
- bar.after(strip);
+ bar.after(strip);strip.style.top=Math.round(bar.getBoundingClientRect().height)+'px';
  strip.addEventListener('scroll',()=>fadeStrip(strip),{passive:true});window.addEventListener('resize',()=>fadeStrip(strip),{passive:true});
  strip.addEventListener('click',e=>{const b=e.target.closest('[data-strip-view]');if(b)navigate(b.dataset.stripView)});
 }
@@ -1115,7 +1116,7 @@ function sync(forced){
  const view=REG.view(forced||activeView())?.id||forced||activeView(),d=domainForView(view);document.body.dataset.domain=d.id;document.body.dataset.view=view;
  // A hidden page (Missions, Chat, Images) names itself in the top bar and lights the area that owns it.
  const hidden=REG.view(view)?.domain==='hidden',page=pageForView(view),viewLabel=labelForView(page),navPage=menuPage(view);renderPageStrip(d,navPage,view);q('#uxContextDomain').textContent=d.label;q('#uxContextView').textContent=viewLabel;{const single=listedGroups(d).flatMap(g=>g.views).filter(v=>viewButton(v)).length<2;q('#uxContextBar')?.classList.toggle('ux-context-same',!hidden&&(single||viewLabel===d.label))} // the bar names the area; a hidden page (Missions) names itself
- q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);syncHeaderAction(view);{const g=q('#uxContextGreeting');if(g)g.textContent=greeting()};
+ q('#uxContextBar')?.classList.toggle('ux-context-has-strip',!q('#uxPageStrip')?.hidden);syncHeaderAction(view);
  qa('.ux-primary-item').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  qa('#uxMobileNav [data-domain]').forEach(b=>{const on=b.dataset.domain===d.id;b.dataset.active=String(on);if(on)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current')});
  countOpen(view);

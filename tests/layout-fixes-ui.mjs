@@ -58,7 +58,7 @@ await check('desktop: one rail and one strip on every page; the top bar names th
   assert.deepEqual(await page.locator('#uxPageStrip button').allInnerTexts(), ['Work', 'Agent World', 'Assistant automations']);
   // The page strip is in every area with more than one page, Home included. System is one page of cards (A27 step 2a),
   // so it has none; checked below.
-  for (const [hash, id, tabs] of [['#home', 'home', ['Home', 'Decisions']], ['#projects', 'projects', null], ['#backlog', 'backlog', null]]) {
+  for (const [hash, id, tabs] of [['#home', 'home', ['Overview', 'Decisions']], ['#projects', 'projects', null], ['#backlog', 'backlog', null]]) {
     await page.evaluate(h => LocalAIRouter.go(h), hash);
     await page.waitForSelector(`#${id}.active`, T);
     await page.waitForTimeout(300);

@@ -2,7 +2,9 @@
 // The desktop rail, mobile sheet, breadcrumb, command palette and page headings all read from here.
 // `aka` keeps old names searchable in the command palette after a rename.
 // A view with `parent` is a tab of that page: it has no nav entry of its own. Its heading is its own name (Pi Hub A22 2.3).
-// `tab` is the label a page uses in its parent's tab strip (the parent's own tab included).
+// `tab` is the label a page uses in its parent's tab strip (the parent's own tab included), or in its area's page strip when
+// the full label would repeat the area's name: Home's own strip item is Overview, so there is one Home (the area) and Decisions
+// sits beside Overview, not beside a second Home.
 // A domain's `icon` and a view's `svg` name symbols in the index.html sprite; every menu draws them from here.
 // `short` is a page's label in a page strip when its full one would push the strip past a phone's width.
 // `card` puts a card for the page on another page, in registry order (kit 2.26.0, Pi Hub A27 D1 and D3): the five admin
@@ -21,7 +23,7 @@ const DOMAINS=[
  {id:'system',label:'System',icon:'system',tagline:'Status and history',defaultView:'system'}
 ];
 const VIEWS=[
- {id:'home',svg:'home',domain:'home',section:'Overview',label:'Home',description:'Start something, or pick up where you left off.',aka:['overview']},
+ {id:'home',svg:'home',domain:'home',section:'Overview',label:'Home',tab:'Overview',description:'Start something, or pick up where you left off.',aka:['overview']},
  // One queue (D8): you decide approvals in Home › Needs you; Decisions is the history (alerts and decisions). Its id and address stay `inbox`; old #approvals links open it.
  {id:'inbox',svg:'inbox',domain:'home',section:'Overview',label:'Decisions',description:'Alerts, approvals and what was decided.',aka:['inbox','notifications','alerts','approvals']},
  {id:'work',svg:'work',domain:'work',section:'Work',label:'Work',tab:'Work',description:'Everything running and done, in one place.',aka:['runs']},
