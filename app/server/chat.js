@@ -21,13 +21,35 @@ function createChat(ctx) {
   const { ANSWER_RESERVE, CHAT_MODEL_TIMEOUT_MS, MODEL, OLLAMA_URL, coordinator, TEXT_KEEP_ALIVE, TEXT_NUM_CTX, aboutApplianceBlock, accessAddresses, activeRunControllers, capabilityPrompt, createChatExecution, factSuggestions, fitMessages, getCapabilitiesSnapshot, isAboutLocalAi, json, keepLongAnswer, modelFetch, modelFetchWithTimeout, projectNotes, projectStore, readBody, recordActivity, recordTurnArtifact, runLedger, sanitizeMessages, searxSearch, selfChange, storageError, voiceFacts, voiceTimeZone, piHub } = ctx;
   const chatReaders = piHub ? createChatReaders({ piHub }) : [];
 
-  function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '', sourceHost = '') {
+  // What this turn can and did do, from the request the server holds, never from the model: a chat turn has no tools, so
+  // it cannot have changed, run or tested anything, and it cannot see the appliance beyond the snapshot it is given.
+  // Without this the model guesses in both directions: it reports work as done, or says the whole appliance can't do it.
+  // turn: { search: 'used' | 'empty' | 'off', sources, snapshot: 'given' | 'failed' | 'withheld' }.
+  function conversationBlock(turn) {
+    if (!turn) return '';
+    const search = turn.search === 'used' ? `A web search ran for this turn and returned ${turn.sources} result${turn.sources === 1 ? '' : 's'}, given below; nothing else was fetched.`
+      : turn.search === 'empty' ? 'A web search ran for this turn and returned no results; say so, and do not cite sources.'
+      : 'No web search or other network request ran for this turn.';
+    const snapshot = turn.snapshot === 'given' ? ''
+      : turn.snapshot === 'failed' ? " The appliance's capability check failed for this turn: its models, services and state are unknown to you. Say you could not check; do not describe them."
+      : " The appliance's details (models, services, files, state) were not shared with you for this turn: say you cannot see them from here; do not describe them or say what the appliance lacks.";
+    return 'THIS CONVERSATION (recorded by the appliance, authoritative):\n' +
+      'This is a text conversation with no tools. In this conversation you cannot read or write files, run commands or tests, use git, open a shell, or change the appliance, and you have done none of those. ' +
+      'Never say you edited, wired, ran, tested, fixed, deployed or verified anything; describe what could be done, or give the text to use. ' +
+      'That limit is about this conversation only. It says nothing about the appliance, which has other pages that act (Work starts a task, Improve prepares a change): never say the appliance has no files, repositories, shell or network. ' +
+      `${search}${snapshot} ` +
+      'When you lack the evidence for something, say it is unknown rather than guessing either way.';
+  }
+
+  function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '', sourceHost = '', turn = null) {
+    const conversation = conversationBlock(turn);
     return {
       role: 'system',
       content:
         'You are the assistant inside a private local AI appliance. Be concise, technically precise, useful, and action-oriented. ' +
         'Do not expose infrastructure implementation details unless the user asks. Do not claim an action was executed unless it actually was. ' +
         'When discussing this appliance, use the supplied runtime capability snapshot as authoritative and do not invent installed models, versions, services, or completed actions.' +
+        (conversation ? `\n\n${conversation}` : '') +
         (capabilityContext ? `\n\n${capabilityContext}` : '') +
         (facts ? `\n\n${facts}` : '') +
         (researchContext
@@ -39,11 +61,21 @@ function createChat(ctx) {
     };
   }
 
+  // The turn's record for conversationBlock, from what prepareChat did. A cloud model is never given the snapshot.
+  function turnRecord(prep, where) {
+    const searched = prep.searched === true;
+    return {
+      search: !searched ? 'off' : prep.sources.length ? 'used' : 'empty',
+      sources: prep.sources.length,
+      snapshot: where === 'cloud' ? 'withheld' : prep.capabilityFailed ? 'failed' : 'given'
+    };
+  }
+
   // The messages for this PC's model: system prompt, the owner's facts and the project's notes (one block), research
   // sources, then the conversation, fitted to the shared context (sources are trimmed first, then the oldest turns, then
   // the block). → {messages, notesSent, factsSent}: false when there were none, or fitting had to leave the block out.
   function chatMessages(prep) {
-    const system = systemPrompt('', prep.capabilityContext, prep.brief, prep.voice ? voiceFacts({ now: new Date(), timeZone: voiceTimeZone(), includeZone: true }) : '', prep.sourceHost);
+    const system = systemPrompt('', prep.capabilityContext, prep.brief, prep.voice ? voiceFacts({ now: new Date(), timeZone: voiceTimeZone(), includeZone: true }) : '', prep.sourceHost, turnRecord(prep, 'local'));
     const notes = prep.memory?.state === 'used' ? prep.memory.notes : [], facts = prep.facts?.state === 'used' ? prep.facts.facts : [];
     const memory = notes.length || facts.length ? projectMemory.memoryMessage({ project: prep.memory?.project, notes, facts }) : null;
     const sources = prep.researchContext
@@ -58,7 +90,7 @@ function createChat(ctx) {
   // and never project notes (a turn with notes is private, so it doesn't get here; this keeps them out regardless) or the
   // owner's facts (D1: a turn going to a cloud model is answered without them, and its line says so).
   function cloudMessages(prep) {
-    const system = systemPrompt('', '', prep.brief, '', prep.sourceHost);
+    const system = systemPrompt('', '', prep.brief, '', prep.sourceHost, turnRecord(prep, 'cloud'));
     const sources = prep.researchContext
       ? [{ role: 'system', kind: 'sources', content: `Current metasearch results are below. Use them when relevant and cite source numbers like [1].\n\n${prep.researchContext}` }]
       : [];
@@ -97,12 +129,15 @@ function createChat(ctx) {
       }
     }
 
-    let capabilityContext = '';
+    // A capability check that throws is its own state (capabilityFailed), told to the model as unknown; it is never the
+    // same as a snapshot with nothing in it.
+    let capabilityContext = '', capabilityFailed = false;
     try {
       capabilityContext = capabilityPrompt(await getCapabilitiesSnapshot());
       throwIfAborted();
     } catch (error) {
       if (signal?.aborted) throw error;
+      capabilityFailed = true;
     }
     throwIfAborted();
     // Questions about Local AI itself also get the "About this appliance" facts (where things run and live, addresses, updates).
@@ -139,7 +174,7 @@ function createChat(ctx) {
     });
     // Read after routing, so the facts never decide where the turn goes; read each turn, never cached.
     const facts = ownerFacts.forTurn(() => projectNotes(''));
-    return { model, route, messages, sources, researchContext, capabilityContext, memory, facts, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
+    return { model, route, messages, sources, researchContext, capabilityContext, capabilityFailed, searched: sources.length > 0 || body.webSearch === true, memory, facts, brief: body.brief === true, voice: body.voice === true, sourceHost: typeof body.sourceHost === 'string' ? body.sourceHost : '' };
   }
 
   // Which project a turn's notes come from: a valid projectId on the request, else the newest filed run of the thread.

@@ -224,7 +224,12 @@ function createStatus(ctx) {
     }));
   }
 
+  // A source the snapshot could not read is "unknown (the check failed)", never "none", 0 or unavailable: the model
+  // repeats what it is given, so a failed read written as an empty one becomes a false statement about the appliance.
   function capabilityPrompt(snapshot) {
+    const failed = name => snapshot?.sources?.[name] === 'failed';
+    const UNKNOWN = 'unknown (the check failed this turn)';
+    const count = v => (Number.isFinite(v) ? String(v) : 'unknown');
     const images = snapshot?.images?.models || [];
     const imageEngineList = snapshot?.images?.engines || [];
     const textModels = snapshot?.models || {};
@@ -235,18 +240,19 @@ function createStatus(ctx) {
       'RUNTIME CAPABILITY SNAPSHOT (authoritative for this response):',
       `Local AI version: ${snapshot?.version || APP_VERSION}`,
       `Configured local model: ${snapshot?.model || MODEL}`,
-      `Appliance state: ${snapshot?.overall || 'UNKNOWN'}`,
-      `Services: ${serviceText || 'unavailable'}`,
-      `Installed text models: ${installedText.length ? installedText.map(x => x.name).join(', ') : 'none verified'}`,
-      `Loaded text models: ${loadedText.length ? loadedText.map(x => `${x.name}${x.contextLength ? ` [ctx ${x.contextLength}]` : ''}`).join(', ') : 'none currently resident'}`,
+      `Appliance state: ${failed('status') ? UNKNOWN : snapshot?.overall || 'UNKNOWN'}`,
+      `Services: ${failed('status') ? UNKNOWN : serviceText || 'unknown (none reported)'}`,
+      `Installed text models: ${failed('models') ? UNKNOWN : installedText.length ? installedText.map(x => x.name).join(', ') : 'none verified'}`,
+      `Loaded text models: ${failed('models') ? UNKNOWN : loadedText.length ? loadedText.map(x => `${x.name}${x.contextLength ? ` [ctx ${x.contextLength}]` : ''}`).join(', ') : 'none currently resident'}`,
       `Model runtime detail: ${textModels.runtimeAvailable ? 'available' : 'unavailable'}`,
-      `Image engines (Images page): ${imageEngineList.length ? imageEngineList.map(x => `${x.label} = ${x.model} (${x.files.join(', ')})`).join('; ') : 'none discovered'}`,
-      `Installed image checkpoints: ${images.length ? images.map(x => `${x.checkpoint} [${x.familyLabel || x.family}]`).join(', ') : 'none discovered'}`,
-      `Projects: ${snapshot?.projects?.count ?? 0}`,
-      `Engineering: ${snapshot?.engineering?.active ?? 0} active; ${snapshot?.engineering?.awaitingApproval ?? 0} awaiting approval`,
-      `Changes: ${snapshot?.changes?.pending ?? 0} pending`,
-      `Issues: ${snapshot?.issues?.open ?? 0} open`,
-      `PowerShell Workbench: ${snapshot?.powershell?.configured ? 'configured' : 'not configured'}`,
+      `Image engines (Images page): ${failed('images') ? UNKNOWN : imageEngineList.length ? imageEngineList.map(x => `${x.label} = ${x.model} (${x.files.join(', ')})`).join('; ') : 'none discovered'}`,
+      `Installed image checkpoints: ${failed('images') ? UNKNOWN : images.length ? images.map(x => `${x.checkpoint} [${x.familyLabel || x.family}]`).join(', ') : 'none discovered'}`,
+      `Projects: ${count(snapshot?.projects?.count)}`,
+      `Engineering: ${count(snapshot?.engineering?.active)} active; ${count(snapshot?.engineering?.awaitingApproval)} awaiting approval`,
+      `Changes: ${count(snapshot?.changes?.pending)} pending`,
+      `Issues: ${count(snapshot?.issues?.open)} open`,
+      `PowerShell Workbench: ${snapshot?.powershell?.configured ? 'configured on the appliance (a separate page; this conversation cannot use it)' : 'not configured'}`,
+      'A line that says unknown is unknown: say you could not check it, and never fill it in.',
       'Use this snapshot instead of guessing. Never claim a text or image model is installed unless it appears above. A text model can be installed without being currently loaded because Ollama may unload idle models. Never report a hard-coded appliance version. Image models are not Ollama models: they are files in ComfyUI on the Windows computer (its models folders: checkpoints, diffusion_models, text_encoders, vae), so never suggest installing one with Ollama. Image generation is available only when a discovered image engine or supported checkpoint is present. Local AI can prepare self-changes through Engineering -> Change Intelligence -> approval -> host self-update; never claim a change was applied unless the runtime reports it.'
     ].join('\n');
   }
@@ -286,8 +292,10 @@ function createStatus(ctx) {
     const changes = changeStore();
     const issues = issueStore();
     const engineeringRuns = effectiveEngineeringRuns();
+    const read = r => (r.status === 'fulfilled' ? 'ok' : 'failed');
     const snapshot = {
       appliance: 'Local AI', version: APP_VERSION, model: MODEL,
+      sources: { status: read(statusResult), images: read(imageResult), models: read(modelResult) },
       overall: status.overall, services: status.services || [], serviceSummary: status.serviceSummary || {},
       models: modelRuntime,
       images: { ...imageCatalog, available: imageCatalog.models.some(x => x.supported) || imageCatalog.engines.length > 0 },
