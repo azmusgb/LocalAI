@@ -28,11 +28,14 @@ async function seeded(context) {
   const page = await context.newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [MISSION] }) }));
-  await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  await page.goto(base + '/', { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.showView === 'function');
   await page.evaluate(() => window.showView('agents'));
   await page.waitForSelector('#agents.active #awcCanvas');
   await page.waitForFunction(() => document.querySelector('#awcRoster [data-awc-roster]'));
+  // The on-demand modules (/aw/kit, landmarks, mission-control: ui.js AW_MODS, in that order) load once the city is
+  // on screen; the page is whole when the last has run (Mission control draws the mission then).
+  await page.waitForFunction(() => !!window.LocalAIMissionControl);
   return { page, errors };
 }
 // The canvas has a real backing store (CSS size x device pixels, capped at 2) and something is drawn on it.
@@ -136,7 +139,7 @@ for (const name of ['iPhone 14', 'iPhone SE']) {
 for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 900 }]) {
   const page = await (await newContext({ serviceWorkers: 'block', viewport, isMobile: viewport.width < 500, hasTouch: viewport.width < 500 })).newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
-  await page.goto(base + '/#work', { waitUntil: 'domcontentloaded' });
+  await page.goto(base + '/#work', { waitUntil: 'load' });
   await page.waitForSelector('#work.active');
   await check(`${viewport.width}px: the Agent World link shows only on Work › Missions`, async () => {
     await page.locator('[data-work-kind="all"]').click();
@@ -172,6 +175,25 @@ for (const deviceScaleFactor of [1, 2]) {
   await context.close();
 }
 
+// A resize while the city animates: setting the canvas size clears it, and it is drawn again at once, not on the
+// loop's next frame (under load that frame came late and CI read a blank city, 24-25 Nov).
+{
+  const context = await newContext({ serviceWorkers: 'block', viewport: { width: 1440, height: 900 } });
+  const { page, errors } = await seeded(context);
+  await check('1440px: a resize while the city animates never leaves it blank', async () => {
+    await page.waitForFunction(() => { const c = document.getElementById('awcCanvas'); return c.getContext('2d').getImageData(c.width >> 1, c.height >> 1, 1, 1).data[3] > 0; }, null, { timeout: 5000 });
+    const s = await page.evaluate(() => {
+      const c = document.getElementById('awcCanvas'), wrap = c.parentElement, before = c.width;
+      wrap.style.width = (wrap.clientWidth - 40) + 'px'; dispatchEvent(new Event('resize'));
+      return { resized: c.width !== before, alpha: c.getContext('2d').getImageData(c.width >> 1, c.height >> 1, 1, 1).data[3] };
+    });
+    assert.ok(s.resized, 'the backing store followed the box');
+    assert.ok(s.alpha > 0, 'the city is drawn straight after the resize');
+  });
+  await check('1440px: no script errors (resize)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
+
 // Story-first layout (design PR 2): header sentence and one action, crew + worker card + story, history in Work.
 const T0 = Date.now() - 400e3, t = s => new Date(T0 + s * 1000).toISOString();
 const snapW = (u, c, ux = {}) => [{ id: 'router', name: 'Mission Router', state: 'complete', dependsOn: [] }, { id: 'ux_analyst', name: 'UX Analyst', state: u, dependsOn: ['router'], model: 'qwen3:4b-instruct-32k', routingMeta: { capabilityScore: 0, modelScore: 38 }, ...ux }, { id: 'synthesis', name: 'Coordinator', state: c, dependsOn: ['ux_analyst'] }];
@@ -191,16 +213,20 @@ const CONTROL = {
     { at: t(40), type: 'fallback', detail: 'Documentation Agent completed a fallback review.' }
   ]
 };
-async function withMission(contextOpts, mission) {
+async function withMission(contextOpts, mission, prepare = async () => {}) {
   const context = await newContext({ serviceWorkers: 'block', ...contextOpts });
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage();
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [mission] }) }));
-  await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  await prepare(page);
+  await page.goto(base + '/', { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.showView === 'function');
   await page.evaluate(() => window.showView('agents'));
   await page.waitForFunction(g => document.getElementById('awTitle')?.textContent === g, mission.goal);
+  // The on-demand modules (/aw/kit, landmarks, mission-control: ui.js AW_MODS, in that order) load once the city is
+  // on screen; the page is whole when the last has run (Mission control draws the mission then).
+  await page.waitForFunction(() => !!window.LocalAIMissionControl);
   return { context, page, errors };
 }
 {
@@ -333,6 +359,20 @@ async function withMission(contextOpts, mission) {
   await check('1440px: no script errors (mission control)', async () => assert.deepEqual(errors, []));
   await context.close();
 }
+// The list of workers (/api/agents/catalog) can answer after the on-demand modules have loaded, as it does on a busy
+// server (it failed CI's first attempt on 24-25 Nov). Mission control's module says it is ready only once: the page
+// is listening by then, so it still draws the mission.
+{
+  let release; const held = new Promise(r => { release = r; });
+  const { context, page, errors } = await withMission({ viewport: { width: 1440, height: 900 } }, CONTROL,
+    page => page.route(u => u.pathname === '/api/agents/catalog', async r => { await held; await r.continue().catch(() => {}); }));
+  await check('1440px: a slow list of workers doesn’t hold up Mission control', async () => {
+    await page.waitForFunction(() => /Evidence\s+2 records/.test(document.getElementById('awControlBody').innerText), null, { timeout: 5000 });
+  });
+  release();
+  await check('1440px: no script errors (slow list of workers)', async () => assert.deepEqual(errors, []));
+  await context.close();
+}
 {
   const { context, page, errors } = await withMission({ viewport: { width: 900, height: 1100 } }, FAILED);
   await check('900px: the sections are under the faceplate, crew beside the story', async () => {
@@ -374,7 +414,7 @@ async function emptyPage(contextOpts) {
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) }));
   await page.route(u => u.pathname === '/api/agents/dispatch', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ routing: { mode: 'auto', workers: [{ agentId: 'ux_analyst', name: 'UX Analyst' }] } }) }));
   await page.route(u => u.pathname === '/api/agents/missions/start', r => { sent.push(r.request().postDataJSON()); r.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"stubbed"}' }); });
-  await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  await page.goto(base + '/', { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.showView === 'function');
   await page.evaluate(() => window.showView('agents'));
   await page.waitForSelector('#agents.active #awcCanvas');
@@ -444,7 +484,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
     await page.locator('#awControlDirection').fill('Review the phone flow before visual polish.');
     await page.getByRole('button', { name: 'Save direction' }).click();
     await page.getByText('Plan revisions (2)', { exact: true }).waitFor();
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: 'load' });
     await page.waitForFunction(() => typeof window.showView === 'function');
     await page.evaluate(() => window.showView('agents'));
     await page.locator('#awEmptyDemo').click();
@@ -637,7 +677,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [PAIR()] }) }));
-  await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  await page.goto(base + '/', { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.showView === 'function');
   await page.evaluate(() => window.showView('agents'));
   await page.waitForFunction(() => window.__awcLayout?.().workers.length === 3 && window.__awcLayout().workers.every(w => w.frame !== undefined));
@@ -684,7 +724,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   const { page, errors } = await (async () => { await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
     const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
     await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [CROWD] }) }));
-    await page.goto(base + '/', { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => typeof window.showView === 'function');
+    await page.goto(base + '/', { waitUntil: 'load' }); await page.waitForFunction(() => typeof window.showView === 'function');
     await page.evaluate(() => window.showView('agents')); await page.waitForFunction(() => window.__awcLayout?.().workers.length === 8); return { page, errors }; })();
   await check('1440px: no name tag or bubble covers a district sign or another bubble', async () => {
     await page.evaluate(() => window.LocalAIAgentWorld.follow(false));
@@ -725,7 +765,7 @@ async function cityWithFlow(opts) {
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); } catch {} });
   const page = await context.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FLOW()] }) }));
-  await page.goto(base + '/', { waitUntil: 'domcontentloaded' }); await page.waitForFunction(() => typeof window.showView === 'function');
+  await page.goto(base + '/', { waitUntil: 'load' }); await page.waitForFunction(() => typeof window.showView === 'function');
   await page.evaluate(() => window.showView('agents')); await page.waitForFunction(() => window.__awcLayout?.().workers.length === 6);
   await page.evaluate(() => { window.LocalAIAgentWorld.follow(false); window.LocalAIAgentWorld.view('fit'); });
   await page.waitForFunction(() => window.__awcLayout().workers.every(w => !w.moving), null, { timeout: 20000 });
@@ -1317,7 +1357,7 @@ for (const [label, opts] of [['1440px', { viewport: { width: 1440, height: 900 }
   await context.addInitScript(() => { try { localStorage.setItem('localai.firstRun.done', '1'); localStorage.removeItem('localai.agentworld.replay.v2'); } catch {} });
   const page = await context.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.route(u => u.pathname === '/api/agents/missions', r => r.fulfill({ contentType: 'application/json', body: '{"items":[]}' }));
-  await page.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  await page.goto(base + '/', { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.showView === 'function');
   await page.evaluate(() => window.showView('agents'));
   await page.waitForSelector('#agents.active #awcCanvas');
