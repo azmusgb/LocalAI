@@ -192,3 +192,13 @@ test('the route is served by the Atlas facade', () => {
   assert.match(src, /p === '\/api\/atlas\/systems'/);
   assert.match(fs.readFileSync(path.join(__dirname, '..', 'app', 'server.js'), 'utf8'), /atlas-systems\.json/);
 });
+
+test('invalid source timestamps do not discard a valid live host list', async () => {
+  for (const as_of of [1e100, -1, null, true, {}, 'not a date']) {
+    const { body, status } = await setup({ hub: { ...HUB, as_of } }).systems.read();
+    assert.equal(status, 200);
+    assert.equal(body.source, 'live');
+    assert.equal(body.hubAsOf, null);
+    assert.equal(body.hosts.length, HUB.hosts.length);
+  }
+});

@@ -33,8 +33,9 @@ function clean(body, repos) {
       };
     }),
   }));
-  const asOf = Number(body.as_of);
-  return { hosts, hubAsOf: Number.isFinite(asOf) && asOf > 0 ? new Date(asOf * 1000).toISOString() : null };
+  const asOf = typeof body.as_of === 'number' ? body.as_of : NaN;
+  const date = new Date(asOf * 1000);
+  return { hosts, hubAsOf: asOf > 0 && Number.isFinite(date.getTime()) ? date.toISOString() : null };
 }
 
 // How the newest map compares with the running release. Commit ancestry needs git, and the runner's mirror lives on the
