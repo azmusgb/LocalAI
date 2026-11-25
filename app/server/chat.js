@@ -68,7 +68,7 @@ function createChat(ctx) {
 
   // The model name comes from the request, so only a plain model name is ever written into the system prompt;
   // anything else (a newline, a sentence) is left out rather than quoted to the model.
-  const promptModelName = name => (typeof name === 'string' && /^[\w.:\/-]{1,100}$/.test(name) ? name : '');
+  const promptModelName = name => (typeof name === 'string' && /^[\w.:/-]{1,100}$/.test(name) ? name : '');
 
   // The turn's record for conversationBlock, from what prepareChat did. A cloud model is never given the snapshot.
   function turnRecord(prep, where) {
