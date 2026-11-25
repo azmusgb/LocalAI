@@ -135,6 +135,25 @@ for (const [view, sel] of [['#home', '#commandInput'], ['#ask', '#chatInput']]) 
   });
 }
 
+// The composer must clear the tab bar at any text size: at 200% the bar is taller than the stylesheet's first guess.
+for (const vp of [{ width: 390, height: 844 }, { width: 360, height: 740 }]) for (const [view, wrap, field] of [['#ask', '.view.active .composer-wrap', '#chatInput'], ['#home', '#homeComposer', '#commandInput']]) for (const keyboard of [false, true]) {
+  await check(`${vp.width}x${vp.height}, text at 200%, ${view} ${keyboard ? 'keyboard open' : 'keyboard closed'}: the composer clears the tab bar and its field is fully visible`, async () => {
+    const page = await open(vp, '#home', { text: true });
+    if (view === '#ask') await page.evaluate(() => window.showView('ask')); // #ask is an alias of Home's address; the Chat page opens by showView
+    await page.waitForTimeout(500);
+    if (keyboard) { await page.focus(field); await page.setViewportSize({ width: vp.width, height: Math.round(vp.height * 0.5) }); await page.waitForTimeout(500); }
+    const r = await page.evaluate(([w, f]) => {
+      const box = e => { const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, left: b.left, right: b.right }; };
+      const nav = document.getElementById('uxMobileNav'), navShown = getComputedStyle(nav).display !== 'none';
+      return { wrap: box(document.querySelector(w)), field: box(document.querySelector(f)), nav: navShown ? box(nav) : null, vh: innerHeight };
+    }, [wrap, field]);
+    if (r.nav) assert.ok(r.wrap.bottom <= r.nav.top + 0.5 || r.wrap.top >= r.nav.bottom, `composer ${Math.round(r.wrap.top)}-${Math.round(r.wrap.bottom)} meets tab bar ${Math.round(r.nav.top)}-${Math.round(r.nav.bottom)}: ${JSON.stringify(r)}`);
+    assert.ok(r.field.top >= -0.5 && r.field.bottom <= r.vh + 0.5, `field not fully on screen: ${JSON.stringify(r)}`);
+    if (r.nav) assert.ok(r.field.bottom <= r.nav.top + 0.5, `field under the tab bar: ${JSON.stringify(r)}`);
+    await page.context().close();
+  });
+}
+
 // (2) Scrolling with a taller bar: 200% text and a notch (safe-area top inset). The strip must sit exactly under the bar.
 for (const [label, opts] of [['normal', {}], ['text at 200%', { text: true }], ['safe-area top 47px', { inset: 47 }], ['text at 200% and safe-area top 47px', { text: true, inset: 47 }]]) {
   await check(`scrolling (${label}): the document scrolls; header and page strip stay stacked with no gap or overlap`, async () => {
