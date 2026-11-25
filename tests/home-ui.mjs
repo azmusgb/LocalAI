@@ -302,6 +302,40 @@ await check('the bell says checking until Needs you is read, couldn\'t check whe
   await ctx.close();
 });
 
+// 25 Nov: the bell is built on window load (ui.js), but Home sends its count as soon as Needs you is read. On a slow
+// load (visual-ui.mjs under CI load, a phone on a weak link) the count came first, nobody was listening, and the bell
+// said "checking" for good. A late image holds load here until Home has sent its count.
+await check('a count Home sends before the page finishes loading still reaches the bell', async () => {
+  const ctx = await browser.newContext({ serviceWorkers: 'block', viewport: desk });
+  await ctx.addInitScript(() => {
+    try { localStorage.setItem('localai.firstRun.done', '1'); } catch {}
+    window.__counts = [];
+    window.addEventListener('localai:needs-count', e => window.__counts.push({ ...e.detail, bell: !!document.querySelector('#uxInboxBtn') }));
+    document.addEventListener('DOMContentLoaded', () => { const i = new Image(); i.src = '/__hold-load.png'; document.body.append(i); });
+  });
+  const page = await ctx.newPage();
+  const fulfil = (r, body, status = 200) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  await page.route(u => ['/api/approvals', '/api/activity'].includes(u.pathname), r => fulfil(r, { items: [] }));
+  await page.route(u => u.pathname === '/api/home/hub-needs', r => fulfil(r, { items: [] }));
+  await page.route(u => u.pathname === '/api/improve/items', r => fulfil(r, { items: [], signals: [] }));
+  await page.route(u => u.pathname === '/api/capabilities', r => fulfil(r, capabilities()));
+  const rows = needs();
+  await page.route(u => u.pathname === '/api/runs', r => new URL(r.request().url()).searchParams.get('threads') ? fulfil(r, { items: six(), summary: {} }) : fulfil(r, { items: rows, summary: {} }));
+  let release; const held = new Promise(res => { release = res; });
+  await page.route(u => u.pathname === '/__hold-load.png', async r => { await held; await r.fulfill({ status: 204 }); });
+  await page.goto(base + '/#home', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.__counts.some(c => Number.isFinite(c.n)), null, T);
+  const sent = await page.evaluate(() => window.__counts.filter(c => Number.isFinite(c.n)));
+  assert.equal(sent.some(c => c.bell), false, 'the count was sent before the bell existed (load still held)');
+  release();
+  await page.waitForFunction(() => document.readyState === 'complete' && document.querySelector('#uxInboxBtn'), null, T);
+  const n = sent.at(-1).n;
+  assert.ok(n > 0);
+  assert.equal(await page.locator('#uxInboxBtn').getAttribute('aria-label'), `Needs you, ${n} waiting`);
+  assert.equal(await page.locator('#uxInboxCount').innerText(), String(n));
+  await ctx.close();
+});
+
 // A28: a failed read is its own state. Improve's and the approvals' reads were dropped without a word: the new-signals row
 // went (or kept its old count) and approvals kept old rows as if current. Now a muted note under Needs you says what may be
 // missing; the count Home did read stays (only an unread run list blanks it).
