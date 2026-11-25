@@ -1024,9 +1024,9 @@ kbd{font:600 var(--ui-fs-1)/1 var(--ui-mono);padding:2px 6px;border-radius:var(-
   body.ux-v3 main::before{display:none}
   .ux-context-inbox{min-height:44px;padding:0 14px}
 
-  /* Chat: the composer sits on the docked tab bar (70px plus the home-indicator inset), like Home's. */
-  .chat-shell{min-height:calc(100svh - 215px);grid-template-rows:minmax(240px,1fr) auto}
-  .composer-wrap{bottom:calc(70px + env(safe-area-inset-bottom));padding:16px 0 6px}
+  /* Chat: the composer sits on the docked tab bar (64px plus the home-indicator inset), like Home's. */
+  .chat-shell{min-height:calc(100svh - 211px);grid-template-rows:minmax(240px,1fr) auto}
+  .composer-wrap{bottom:calc(64px + env(safe-area-inset-bottom));padding:16px 0 6px}
   .toggle{min-height:44px;font-size:var(--ui-fs-4)}
   .toggle input{width:22px;height:22px}
 
@@ -1278,7 +1278,7 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:4.75rem}
 @media(max-width:760px){
   body{background:var(--ui-bg)}
   /* Header: section name + page switcher on the left; page action, search and inbox on the right. */
-  body.ux-v3 .ux-context-bar{position:sticky;top:0;z-index:45;height:auto;backdrop-filter:blur(18px);display:flex;align-items:center;justify-content:flex-start;gap:0;min-height:52px;margin:0 -13px;padding:calc(4px + env(safe-area-inset-top)) 8px 4px 16px;background:var(--ui-bg);border-bottom:0}
+  body.ux-v3 .ux-context-bar{position:sticky;top:0;z-index:45;height:auto;backdrop-filter:blur(18px);display:flex;align-items:center;justify-content:flex-start;gap:0;min-height:48px;margin:0 -13px;padding:calc(var(--ui-s-1)/2 + env(safe-area-inset-top)) var(--ui-s-2) calc(var(--ui-s-1)/2) var(--ui-s-4);background:var(--ui-bg);border-bottom:0}
   body.ux-v3 .ux-context-bar:not(.ux-context-has-strip){margin-bottom:8px}
   body.ux-v3 .ux-context-bar .ux-context-domain,body.ux-v3 .ux-context-bar .ux-context-view{font-size:var(--ui-fs-5)!important;font-weight:650;letter-spacing:-.01em;color:var(--ui-text)}
   body.ux-v3 .ux-context-bar:not(.ux-context-has-strip) .ux-context-domain{display:none!important}
@@ -1290,15 +1290,15 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:4.75rem}
   body.ux-v3 .ux-context-action[hidden]{display:none!important}
   body.ux-v3 .ux-context-action{order:2}
   body.ux-v3 .ux-context-search{order:3}
-  body.ux-v3 .ux-context-inbox{order:4}
+  body.ux-v3 .ux-context-inbox{order:4;width:auto;padding:0 var(--ui-s-1);grid-auto-flow:column;gap:var(--ui-s-1)}
   body.ux-v3 .ux-context-search>span,body.ux-v3 .ux-context-search kbd,body.ux-v3 .ux-context-inbox>span{display:none}
-  body.ux-v3 .ux-context-inbox b{position:absolute;top:7px;right:7px;min-width:16px;height:16px;padding:0 4px;border-radius:var(--ui-r-2);background:var(--ui-bad);color:var(--ui-bg);font-size:var(--ui-fs-2);font-weight:700;line-height:16px}
+  body.ux-v3 .ux-context-inbox b{min-width:0;height:auto;padding:0 var(--ui-s-1);border-radius:var(--ui-r-2);background:var(--ui-bad);color:var(--ui-bg);font-size:min(var(--ui-fs-1),3.2cqi);font-weight:700;line-height:min(var(--ui-s-5),5cqi)}
   body.ux-v3 .ux-context-inbox[data-empty="true"] b{display:none}
   body.ux-v3 .ux-context-search:active,body.ux-v3 .ux-context-inbox:active,body.ux-v3 .ux-context-action:active{background:var(--ui-surface)}
 
   /* Pages in the section: underline tabs under the header. Compact on a phone (13 px labels, 16 px gaps; owner, 2 Nov) so
      six tabs fit at 390 px; they still scroll sideways if a strip ever grows past that. */
-  body.ux-v3 .ux-page-strip{gap:16px;height:44px;margin:0 -13px 14px;padding:0 16px;border-bottom:1px solid var(--ui-line);scroll-padding:0 16px;position:sticky;top:calc(52px + env(safe-area-inset-top));z-index:44;background:var(--ui-bg);align-items:stretch}
+  body.ux-v3 .ux-page-strip{gap:16px;height:44px;margin:0 -13px 14px;padding:0 16px;border-bottom:1px solid var(--ui-line);scroll-padding:0 16px;position:sticky;top:calc(48px + env(safe-area-inset-top));z-index:44;background:var(--ui-bg);align-items:stretch}
   body.ux-v3 .ux-page-strip button{min-height:44px;height:44px;padding:0;border:0;border-radius:0;background:transparent;color:var(--ui-muted);font-size:var(--ui-fs-2);font-weight:500}
   body.ux-v3 .ux-page-strip button.active{background:transparent;color:var(--ui-text);font-weight:650;box-shadow:inset 0 -2px 0 var(--ui-accent)}
 
@@ -1313,13 +1313,14 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:4.75rem}
   body.ux-v3 .view>.topbar>.actions{flex:1;display:flex;align-items:center;gap:8px;flex-wrap:nowrap}
   body.ux-v3 .view>.topbar>.actions>:is(button,a):not(:is(button,a)~:is(button,a)){margin-left:auto}
 
-  /* Tab bar: flush to the bottom edge, the active icon in a pill. */
-  body.ux-v3 .ux-mobile-nav{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:1fr;left:0;right:0;bottom:0;border:0;border-top:1px solid var(--ui-line);border-radius:0;padding:6px 6px env(safe-area-inset-bottom);background:var(--ui-bg);box-shadow:none}
-  body.ux-v3 .ux-mobile-nav button{min-height:52px;padding:4px 0 6px;gap:3px;color:var(--ui-muted);font-size:var(--ui-fs-2);font-weight:500;align-content:start;background:transparent}
-  body.ux-v3 .ux-mobile-nav button b{display:grid;place-items:center;width:52px;height:30px;border-radius:999px}
+  body.ux-v3 .ux-mobile-nav{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);left:0;right:0;bottom:0;border:0;border-top:1px solid var(--ui-line);border-radius:0;padding:var(--ui-s-1) var(--ui-s-1) env(safe-area-inset-bottom);background:var(--ui-bg);box-shadow:none}
+  body.ux-v3 .ux-mobile-nav button{min-width:0;min-height:52px;padding:var(--ui-s-1) 0 var(--ui-s-1);gap:var(--ui-s-1);color:var(--ui-muted);font-size:min(var(--ui-fs-2),4.6vw);font-weight:500;align-content:start;background:transparent;border-radius:0;border-top:calc(var(--ui-s-1)/2) solid transparent}
+  body.ux-v3 .ux-mobile-nav button>span{max-width:100%;overflow-wrap:anywhere;text-align:center;line-height:1.15}
+  body.ux-v3 .ux-mobile-nav button b{display:grid;place-items:center;width:min(100%,52px);height:30px;border-radius:var(--ui-r-pill)}
   body.ux-v3 .ux-mobile-nav button b .icon{width:22px;height:22px}
-  body.ux-v3 .ux-mobile-nav button[data-active="true"]{background:transparent;color:var(--ui-accent-text);font-weight:600}
-  body.ux-v3 .ux-mobile-nav button[data-active="true"] b{background:rgba(130,228,233,.16)}
+  body.ux-v3 .ux-mobile-nav button[data-active="true"]{background:transparent;color:var(--ui-accent-text);font-weight:700;border-top-color:var(--ui-accent)}
+  body.ux-v3 .ux-mobile-nav button[data-active="true"] b{background:var(--ui-accent-soft)}
+  body.ux-v3 .ux-mobile-nav button[data-active="true"] b .icon{stroke-width:2.6}
 }
 /* The icon sprite renders inline otherwise and pushes the page down a line. Kept in the tree (not display:none) so <use> resolves everywhere. */
 body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
@@ -1350,12 +1351,12 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 .whatsnew-open{border:0;background:transparent;color:var(--ui-accent);font-weight:650;cursor:pointer;padding:6px 4px;min-height:36px}
 /* Phone shell follow-ups: after the shell block so they settle ties with it. */
 @media(max-width:760px){
-  /* Home: the brand and a greeting stand in for the section name and page menu. */
+  /* Home: the brand stands in for the section name. */
   body.ux-v3[data-view="home"] .ux-context-brand{display:flex;align-items:center;gap:10px}
   body.ux-v3[data-view="home"] .ux-context-left{margin-right:auto}
   body.ux-v3[data-view="home"] .ux-context-bar .ux-context-domain,body.ux-v3[data-view="home"] .ux-context-bar .ux-context-view{display:none!important}
   .ux-context-mark{width:30px;height:30px;border-radius:var(--ui-r-2);box-shadow:none}.ux-context-mark svg{width:17px;height:17px}
-  .ux-context-brand-names{display:grid;line-height:1.15}.ux-context-brand-names small{font-size:var(--ui-fs-2);color:var(--ui-muted)}.ux-context-brand-names strong{font-size:var(--ui-fs-4);font-weight:650;color:var(--ui-text)}
+  .ux-context-brand-names{display:grid;line-height:1.15}.ux-context-brand-names strong{font-size:var(--ui-fs-4);font-weight:650;color:var(--ui-text)}
 }
 .secure-setup{margin-top:12px}.secure-setup .secure-nudge-off{margin-top:12px;min-height:44px}.secure-phone{margin-top:12px}.secure-phone>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ui-accent-text);font-weight:600}.secure-phone__steps{margin:10px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;align-items:start}.secure-phone__steps li{display:grid;gap:10px;align-content:start}.secure-phone__steps .qr{width:168px;height:168px;border-radius:var(--ui-r-2)}.secure-phone__steps p{margin:0;font-size:var(--ui-fs-2);color:var(--ui-muted)}.secure-phone__steps p b:first-child{color:var(--ui-text)}
 .secure-addresses{margin-top:12px}.secure-addresses dl{margin:0;display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;font-size:var(--ui-fs-2)}.secure-addresses dt{font-weight:650}.secure-addresses dd{margin:0;overflow-wrap:anywhere}.secure-addresses a{color:var(--ui-accent);text-decoration:underline}.secure-addresses .meta{margin:8px 0 0}

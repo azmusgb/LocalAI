@@ -205,6 +205,8 @@ const KB = 1024;
 // (378.7 KB) measured, ui.js 121,066, index.html 17,544.
 // 2026-11-25: 379 → 380 KB for the kit at 2.31.1 (#625): the synced stylesheets and scripts grew the shell to 379.6 KB
 // gzipped (main failed this test with only the kit sync added); nothing else changed.
+// 2026-11-25: within 380 KB: the phone shell fixes (measured tab bar, strip and composer heights, the bell count beside
+// its icon) measure 379.7 KB gzipped on top of the kit at 2.31.1, so the budget does not move.
 const TOTAL = 380 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
