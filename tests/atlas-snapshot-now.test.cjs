@@ -140,3 +140,50 @@ test('the proxy forwards snapshot requests, and starting one needs sign-in', () 
   assert.equal(page.snapshotStateText({ repo: 'print-lab', state: 'failed', error: 'git clone failed' }), 'The snapshot of Print lab failed: git clone failed');
   assert.equal(page.snapshotStateText(null), '');
 });
+
+test('snapshot completion is published atomically for success and failure', { skip: !PY }, () => {
+  const out = py(`
+import threading
+results = []
+for fail in (False, True):
+    finishing = threading.Event(); release = threading.Event()
+    original_now = m.now
+    calls = [0]
+    def clock():
+        calls[0] += 1
+        if calls[0] == 3:
+            finishing.set()
+            if not release.wait(10):
+                raise RuntimeError('test completion gate timed out')
+        return original_now()
+    def snapshot(repo, ref):
+        if fail: raise RuntimeError('scan failed')
+        return 'a' * 40
+    m.now = clock
+    r = m.SnapshotRunner(remotes={'pi-hub': 'x'})
+    r._snapshot = snapshot
+    try:
+        r.request('pi-hub', 'main')
+        assert finishing.wait(10), 'worker did not reach completion gate'
+        mid = r.status()
+    finally:
+        release.set()
+        r.wait(10)
+        m.now = original_now
+    results.append({'mid': mid, 'final': r.status()})
+print(json.dumps(results))`);
+  for (const [i, entry] of out.entries()) {
+    assert.equal(entry.mid.running.state, 'running');
+    assert.equal(entry.mid.running.finishedAt, undefined);
+    assert.equal(entry.mid.running.commit, undefined);
+    assert.equal(entry.mid.running.error, undefined);
+    assert.deepEqual(entry.mid.recent, []);
+    assert.equal(entry.final.running, null);
+    assert.equal(entry.final.recent.length, 1);
+    const job = entry.final.recent[0];
+    assert.equal(job.state, i === 0 ? 'done' : 'failed');
+    assert.ok(job.finishedAt);
+    if (i === 0) assert.equal(job.commit, 'a'.repeat(40));
+    else assert.equal(job.error, 'scan failed');
+  }
+});
