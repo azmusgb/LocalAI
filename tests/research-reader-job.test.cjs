@@ -175,3 +175,24 @@ test('a read with no finding says why: not relevant, quote rejected, or not an a
   r = await s.job.tick();
   assert.equal(r.code, 'finding'); assert.equal(r.why, undefined);
 });
+
+test('the tallies and recent reads survive a restart; an unreadable tally is an error, never zero', async () => {
+  const t = setup(); t.addDoc('a'); t.ctl.answer = '{"relevant": false}';
+  await t.job.tick(); t.addDoc('thin', 'short'); await t.job.tick();
+  const again = createReaderJob({ store: t.store, topics: t.topics, budget: t.budget, runModel: async () => '{}', enabled: true, now: () => T });
+  const st = again.state();
+  assert.equal(st.counts.read, 1); assert.equal(st.counts.notRelevant, 1); assert.equal(st.counts.tooThin, 1);
+  assert.deepEqual(st.recent.map(r => [r.outcome, r.why]), [['too_thin', ''], ['no_finding', 'not_relevant']], 'newest first');
+  assert.equal(st.recent[1].title, 'Node a'); assert.equal(st.countsUnreadable, false);
+  t.store.setMeta('reader.counts', 'not json');
+  const bad = again.state();
+  assert.equal(bad.counts, null); assert.equal(bad.countsUnreadable, true); assert.equal(bad.unreadable, false, 'the cursor is still fine');
+  t.addDoc('b'); assert.equal((await again.tick()).code, 'no_finding', 'a broken tally does not stop the reader');
+});
+
+test('the recent-reads list is trimmed to the newest 200', () => {
+  const t = setup();
+  for (let i = 0; i < 205; i++) t.store.addRead('doc-' + i, 'too_thin');
+  const all = t.store.listReads(500);
+  assert.equal(all.length, 200); assert.equal(all[0].documentId, 'doc-204'); assert.equal(all[199].documentId, 'doc-5');
+});

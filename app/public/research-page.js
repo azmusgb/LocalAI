@@ -56,12 +56,17 @@
     const last = r.last && typeof r.last === 'object' ? r.last : null, c = r.counts && typeof r.counts === 'object' ? r.counts : {};
     const status = r.unreadable ? chip('unknown', "Can't read") : r.enabled ? chip('ok', r.running ? 'Reading now' : 'On') : chip('', 'Off');
     const detail = [last?.documentId && `Document ${last.documentId}`, r.unreadable ? '' : `Cursor: ${r.cursor === undefined || r.cursor === null ? NR : typeof r.cursor === 'object' ? JSON.stringify(r.cursor) : r.cursor}`, last?.holdUntil && `Held until ${when(last.holdUntil)}`].filter(Boolean).join(' · ');
-    return `${r.unreadable ? bad("The reader's place in the documents couldn't be read, so how far it has read is not shown.") : ''}
+    const recent = Array.isArray(r.recent) ? r.recent : null;
+    const recentList = r.recentUnreadable || !recent ? bad("The reader's recent reads couldn't be read, so they are not shown.")
+      : !recent.length ? '<p class="research-mono">No documents read yet.</p>'
+      : `<ul class="ui-rows" id="researchRecentReads">${recent.map(x => `<li class="ui-row"><span><span class="ui-row__title">${esc(x.title || x.documentId || 'Document')}</span><span class="ui-row__detail">${esc(when(x.at))}${x.why ? ` · ${esc(words(x.why))}` : ''}</span></span>${chip(x.outcome === 'finding' ? 'ok' : '', words(x.outcome))}</li>`).join('')}</ul>`;
+    return `${r.countsUnreadable ? bad("The reader's tallies couldn't be read, so they are not shown.") : ''}${r.unreadable ? bad("The reader's place in the documents couldn't be read, so how far it has read is not shown.") : ''}
       <ul class="ui-rows" id="researchReader">
         <li class="ui-row ui-row--lamp"><span><span class="ui-row__title">Reader</span><span class="ui-row__detail">Reads stored documents with the model on this PC. It never fetches anything.</span></span>${status}</li>
         <li class="ui-row ui-row--lamp"><span><span class="ui-row__title">Last result</span><span class="ui-row__detail">${esc(cap(last?.reason) || 'Not reported')}${last?.at ? ` · ${esc(when(last.at))}` : ''}</span></span>${last?.code ? chip(LAST_TONE[last.code] || '', words(last.code)) : chip('unknown', NR)}</li>
         ${row('Documents read', num(c.read))}${row('Findings stored', num(c.findings))}${row('Judged not relevant', num(c.notRelevant))}${row('Quote not in document', num(c.quoteRejected))}${row('Answer was not JSON', num(c.unparsable))}${row('Too little text', num(c.tooThin))}${row('Source paused or retired', num(c.sourceInactive))}${row('Out of scope', num(c.outOfScope))}${row('Failed', num(c.failed))}${row('Findings allowed each day', num(r.dailyFindings))}
       </ul>
+      <details class="ui-disclosure"><summary class="ui-disclosure__summary">Recent reads</summary><div class="ui-disclosure__body">${recentList}</div></details>
       <details class="ui-disclosure"><summary class="ui-disclosure__summary">Details</summary><div class="ui-disclosure__body"><p class="research-mono">${esc(detail || 'Nothing more to report.')}</p><p class="research-mono">${esc(last?.code ? `Result code: ${last.code}` : '')}${r.lastTickAt ? esc(` · Last run ${when(r.lastTickAt)}`) : ''}</p></div></details>`;
   }
 

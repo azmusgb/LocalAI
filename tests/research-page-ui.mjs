@@ -34,7 +34,7 @@ const GOOD = {
     { name: 'day.calls', limit: 20, used: 7, resetsAt: '2026-11-21T00:00:00.000Z' },
     { name: 'day.chars', limit: 100000, used: 0, resetsAt: '2026-11-21T00:00:00.000Z' },
     { name: 'tier2.day.calls', limit: 0, used: 0, resetsAt: '2026-11-21T00:00:00.000Z' }] },
-  reader: { enabled: true, unreadable: false, running: false, cursor: 41, lastTickAt: '2026-11-20T09:31:00.000Z', last: { code: 'no_finding', reason: 'nothing relevant, or the quote was not in the document', at: '2026-11-20T09:31:00.000Z', documentId: 'doc-1' }, counts: { read: 12, findings: 2, notRelevant: 7, quoteRejected: 2, unparsable: 1, tooThin: 4, sourceInactive: 3, outOfScope: 1, failed: 0 }, dailyFindings: 10 },
+  reader: { enabled: true, unreadable: false, running: false, cursor: 41, lastTickAt: '2026-11-20T09:31:00.000Z', last: { code: 'no_finding', reason: 'nothing relevant, or the quote was not in the document', at: '2026-11-20T09:31:00.000Z', documentId: 'doc-1' }, counts: { read: 12, findings: 2, notRelevant: 7, quoteRejected: 2, unparsable: 1, tooThin: 4, sourceInactive: 3, outOfScope: 1, failed: 0 }, dailyFindings: 10, recent: [{ documentId: 'doc-1', title: 'ESP-IDF v5.5 released', outcome: 'no_finding', why: 'not_relevant', at: '2026-11-20T09:31:00.000Z' }] },
   measures: { unreadable: false, measures: {
     costPerValidatedImprovement: { noData: true, value: null, num: 0, den: 0, unit: 'model calls per validated finding', note: 'all model spend divided by validated findings' },
     modelCallsAvoided: measure(),
@@ -69,7 +69,7 @@ try {
       const reader = await text('#researchReader');
       assert.match(reader, /Last result[\s\S]*No finding/);
       assert.match(reader, /Documents read\s*12/);
-      assert.match(reader, /Judged not relevant\s*7/); assert.match(reader, /Quote not in document\s*2/); assert.match(reader, /Too little text\s*4/); assert.match(reader, /Source paused or retired\s*3/);
+      assert.match(reader, /Judged not relevant\s*7/); assert.match(reader, /Quote not in document\s*2/); assert.match(reader, /Too little text\s*4/); assert.match(reader, /Source paused or retired\s*3/); await page.locator('#researchReader ~ details > summary', { hasText: 'Recent reads' }).click(); assert.match(await text('#researchRecentReads'), /ESP-IDF v5\.5 released[\s\S]*Not relevant[\s\S]*No finding/);
       assert.equal(await page.locator('#researchMeasures tbody tr').count(), 6);
       assert.equal(await page.locator('#researchBudget tbody tr').count(), 3);
       assert.match(await text('#researchBudget'), /Model calls today\s*7\s*20/);
