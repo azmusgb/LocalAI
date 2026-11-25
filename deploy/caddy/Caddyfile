@@ -21,6 +21,9 @@
 }
 
 (appliance) {
+	# The appliance (Node on :3080) compresses nothing; tests/budgets.test.cjs budgets the shell as gzip. Clients that
+	# send no Accept-Encoding still get plain bytes; chat streams stay streamed (encode flushes with the proxy).
+	encode zstd gzip
 	import ca_download
 
 	handle {

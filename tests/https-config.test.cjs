@@ -81,6 +81,15 @@ test('the HTTPS front end rides over an appliance restart', () => {
   assert.doesNotMatch(html, /[{}]/);
 });
 
+// 25 Nov: the front served /ui.js as 381,685 plain bytes per load while tests/budgets.test.cjs budgets the shell as
+// gzip, and the appliance itself (Node on :3080) compresses nothing. Caddy compresses for both appliance sites.
+test('the HTTPS front end compresses what it serves', () => {
+  const caddy = read('deploy/caddy/Caddyfile');
+  const appliance = caddy.slice(caddy.indexOf('(appliance) {'), caddy.indexOf('\n}\n', caddy.indexOf('(appliance) {')));
+  assert.match(appliance, /^\tencode zstd gzip$/m, 'encode at the top of the appliance snippet');
+  assert.equal((caddy.match(/^\s*import appliance$/gm) || []).length, 2, 'LAN and Tailscale sites both import it');
+});
+
 // /healthz lists the addresses a phone can switch to; the appliance needs both the LAN IP and the Tailscale name.
 test('the appliance gets the host IP and the Tailscale name from stack.env', () => {
   const compose = read('deploy/stack/compose.yml');
