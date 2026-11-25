@@ -24,7 +24,7 @@ function createChat(ctx) {
   // What this turn can and did do, from the request the server holds, never from the model: a chat turn has no tools, so
   // it cannot have changed, run or tested anything, and it cannot see the appliance beyond the snapshot it is given.
   // Without this the model guesses in both directions: it reports work as done, or says the whole appliance can't do it.
-  // turn: { search: 'used' | 'empty' | 'off', sources, snapshot: 'given' | 'failed' | 'withheld' }.
+  // turn: { search: 'used' | 'empty' | 'off', sources, snapshot: 'given' | 'failed' | 'withheld', model? (this PC's, when it answers) }.
   function conversationBlock(turn) {
     if (!turn) return '';
     const search = turn.search === 'used' ? `A web search ran for this turn and returned ${turn.sources} result${turn.sources === 1 ? '' : 's'}, given below; nothing else was fetched.`
@@ -33,12 +33,17 @@ function createChat(ctx) {
     const snapshot = turn.snapshot === 'given' ? ''
       : turn.snapshot === 'failed' ? " The appliance's capability check failed for this turn: its models, services and state are unknown to you. Say you could not check; do not describe them."
       : " The appliance's details (models, services, files, state) were not shared with you for this turn: say you cannot see them from here; do not describe them or say what the appliance lacks.";
+    // Short lines, each fact stated positively: a small model that reads "this conversation has no shell" beside "never
+    // say the appliance has no shell" merges the two and says the appliance has none (18 of 24 answers, qwen3:4b).
+    const answering = turn.model ? `\n- This answer is being written by ${turn.model} on this PC, so that model is loaded right now, whatever a snapshot taken earlier says.` : '';
     return 'THIS CONVERSATION (recorded by the appliance, authoritative):\n' +
-      'This is a text conversation with no tools. In this conversation you cannot read or write files, run commands or tests, use git, open a shell, or change the appliance, and you have done none of those. ' +
-      'Never say you edited, wired, ran, tested, fixed, deployed or verified anything; describe what could be done, or give the text to use. ' +
-      'That limit is about this conversation only. It says nothing about the appliance, which has other pages that act (Work starts a task, Improve prepares a change): never say the appliance has no files, repositories, shell or network. ' +
-      `${search}${snapshot} ` +
-      'When you lack the evidence for something, say it is unknown rather than guessing either way.';
+      '- This is a text conversation with no tools. In this conversation you cannot read or write files, run commands or tests, use git, open a shell, or change the appliance, and you have done none of those.\n' +
+      '- Never say you edited, wired, ran, tested, fixed, deployed or verified anything; describe what could be done, or give the text to use.\n' +
+      '- The appliance itself is a full computer: it has a filesystem, repositories, a shell and a network, and other pages that act (Work starts a task, Improve prepares a change). Only this chat is limited.\n' +
+      '- So the subject of a refusal is "I" or "this chat", never "the appliance": say "I can\'t do that from this chat; the Work page can", and never say the appliance has no files, repositories, shell or network.' +
+      `${answering}\n` +
+      `- ${search}${snapshot}\n` +
+      '- When you lack the evidence for something, say it is unknown rather than guessing either way.';
   }
 
   function systemPrompt(researchContext = '', capabilityContext = '', brief = false, facts = '', sourceHost = '', turn = null) {
@@ -61,13 +66,19 @@ function createChat(ctx) {
     };
   }
 
+  // The model name comes from the request, so only a plain model name is ever written into the system prompt;
+  // anything else (a newline, a sentence) is left out rather than quoted to the model.
+  const promptModelName = name => (typeof name === 'string' && /^[\w.:/-]{1,100}$/.test(name) ? name : '');
+
   // The turn's record for conversationBlock, from what prepareChat did. A cloud model is never given the snapshot.
   function turnRecord(prep, where) {
     const searched = prep.searched === true;
     return {
       search: !searched ? 'off' : prep.sources.length ? 'used' : 'empty',
       sources: prep.sources.length,
-      snapshot: where === 'cloud' ? 'withheld' : prep.capabilityFailed ? 'failed' : 'given'
+      snapshot: where === 'cloud' ? 'withheld' : prep.capabilityFailed ? 'failed' : 'given',
+      // The snapshot is read before this PC's model is asked, so it can list no loaded model while that model answers.
+      model: where === 'local' ? promptModelName(prep.model) : ''
     };
   }
 
@@ -133,7 +144,7 @@ function createChat(ctx) {
     // same as a snapshot with nothing in it.
     let capabilityContext = '', capabilityFailed = false;
     try {
-      capabilityContext = capabilityPrompt(await getCapabilitiesSnapshot());
+      capabilityContext = capabilityPrompt(await getCapabilitiesSnapshot(), { answering: promptModelName(model) });
       throwIfAborted();
     } catch (error) {
       if (signal?.aborted) throw error;

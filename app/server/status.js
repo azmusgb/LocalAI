@@ -226,7 +226,9 @@ function createStatus(ctx) {
 
   // A source the snapshot could not read is "unknown (the check failed)", never "none", 0 or unavailable: the model
   // repeats what it is given, so a failed read written as an empty one becomes a false statement about the appliance.
-  function capabilityPrompt(snapshot) {
+  // answering: the model on this PC that will write the answer. The snapshot is read before it is asked, so it can be
+  // missing from the loaded list while it is the one answering; it is added, marked, so the list is true when read.
+  function capabilityPrompt(snapshot, { answering = '' } = {}) {
     const failed = name => snapshot?.sources?.[name] === 'failed';
     const UNKNOWN = 'unknown (the check failed this turn)';
     const count = v => (Number.isFinite(v) ? String(v) : 'unknown');
@@ -235,6 +237,11 @@ function createStatus(ctx) {
     const textModels = snapshot?.models || {};
     const installedText = Array.isArray(textModels.installed) ? textModels.installed : [];
     const loadedText = Array.isArray(textModels.loaded) ? textModels.loaded : [];
+    const loadedNames = loadedText.map(x => `${x.name}${x.contextLength ? ` [ctx ${x.contextLength}]` : ''}`);
+    const tagged = name => (String(name).includes(':') ? String(name) : `${name}:latest`); // Ollama lists a tagless name as :latest
+    const answeringNow = answering && !loadedText.some(x => tagged(x.name) === tagged(answering)) ? `${answering} (answering this turn)` : '';
+    const loadedLine = failed('models') ? `${UNKNOWN}${answeringNow ? `, apart from ${answeringNow}` : ''}`
+      : [...loadedNames, answeringNow].filter(Boolean).join(', ') || 'none when this was checked (a model loads when it is asked to answer)';
     const serviceText = (snapshot?.services || []).map(x => `${x.name}:${x.state}${x.required === false ? ':optional' : ':core'}`).join(', ');
     return [
       'RUNTIME CAPABILITY SNAPSHOT (authoritative for this response):',
@@ -243,7 +250,7 @@ function createStatus(ctx) {
       `Appliance state: ${failed('status') ? UNKNOWN : snapshot?.overall || 'UNKNOWN'}`,
       `Services: ${failed('status') ? UNKNOWN : serviceText || 'unknown (none reported)'}`,
       `Installed text models: ${failed('models') ? UNKNOWN : installedText.length ? installedText.map(x => x.name).join(', ') : 'none verified'}`,
-      `Loaded text models: ${failed('models') ? UNKNOWN : loadedText.length ? loadedText.map(x => `${x.name}${x.contextLength ? ` [ctx ${x.contextLength}]` : ''}`).join(', ') : 'none currently resident'}`,
+      `Loaded text models: ${loadedLine}`,
       `Model runtime detail: ${textModels.runtimeAvailable ? 'available' : 'unavailable'}`,
       `Image engines (Images page): ${failed('images') ? UNKNOWN : imageEngineList.length ? imageEngineList.map(x => `${x.label} = ${x.model} (${x.files.join(', ')})`).join('; ') : 'none discovered'}`,
       `Installed image checkpoints: ${failed('images') ? UNKNOWN : images.length ? images.map(x => `${x.checkpoint} [${x.familyLabel || x.family}]`).join(', ') : 'none discovered'}`,
