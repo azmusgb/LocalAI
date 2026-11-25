@@ -238,6 +238,8 @@ async function shoot(viewport, view, missions, ready, scheme = 'dark') {
   if (ready) await page.locator(ready).first().waitFor({ timeout: 8000 });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(600); // lists load after the page shows
+  // The header bell's badge is Home's Needs-you count; a shot taken before it is painted loses the "5" (25 Nov).
+  await page.waitForFunction(() => { const b = document.querySelector('#uxInboxBtn'); return !b || b.dataset.state !== 'checking'; }, null, { timeout: 8000 });
   if (missions) await page.addStyleTag({ content: '#awcCanvas,.awc__sky{visibility:hidden}' }); // the city (and its sky) animates; its box and everything over it stay
   const mask = missions ? [...masks(page), page.locator('#agentTimeline time')] : masks(page);
   const shot = await page.screenshot({ animations: 'disabled', caret: 'hide', mask, maskColor: '#ff00ff' });

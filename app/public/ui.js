@@ -982,6 +982,9 @@ const REG=window.LocalAIViews;
 const DOMAINS=REG.DOMAINS.map(d=>({...d,groups:REG.sections(d.id)}));
 const q=(s,r=document)=>r.querySelector(s),qa=(s,r=document)=>[...r.querySelectorAll(s)];
 let allButtons=new Map();
+// Home's Needs-you count for the bell. Heard from the start: the bell is built on load, and on a slow load Home's count
+// came first and the bell said "checking" for good (25 Nov). The last count is painted when the bell is built.
+let bellLast,paintBell=()=>{};window.addEventListener('localai:needs-count',e=>paintBell(bellLast=e.detail));
 // Sprite icons (index.html) for the phone header and tab bar; decorative, every button also has a text label.
 const icon=(name,cls)=>window.LocalAIKit?.icon(name,cls)||'';
 
@@ -1048,7 +1051,7 @@ function buildContext(){
  const bell=q('#uxInboxBtn');
  // Not read yet: checking, no badge; a failed read: "?". Never "nothing waiting" (A28). detail: {n} or {state}.
  const BELL={checking:'Needs you, checking',unavailable:"Needs you, couldn't check"};
- window.addEventListener('localai:needs-count',e=>{if(!bell)return;const s=BELL[e.detail?.state]?e.detail.state:'ok',n=Math.max(0,Number(e.detail?.n)||0);bell.dataset.state=s;bell.dataset.empty=String(s==='checking'||(s==='ok'&&n===0));q('#uxInboxCount').textContent=s==='ok'?String(n):s==='unavailable'?'?':'';bell.setAttribute('aria-label',s!=='ok'?BELL[s]:n?`Needs you, ${n} waiting`:'Needs you, nothing waiting')});
+ paintBell=d=>{if(!bell||!d)return;const s=BELL[d.state]?d.state:'ok',n=Math.max(0,Number(d.n)||0);bell.dataset.state=s;bell.dataset.empty=String(s==='checking'||(s==='ok'&&n===0));q('#uxInboxCount').textContent=s==='ok'?String(n):s==='unavailable'?'?':'';bell.setAttribute('aria-label',s!=='ok'?BELL[s]:n?`Needs you, ${n} waiting`:'Needs you, nothing waiting')}; paintBell(bellLast);
  bell?.addEventListener('click',()=>{navigate('home');requestAnimationFrame(()=>requestAnimationFrame(()=>{const sec=q('#homeNeedsYou'),h=q('#homeNeedsTitle');if(!sec||sec.hidden||!h)return;h.setAttribute('tabindex','-1');h.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});h.focus({preventScroll:true})}))});
 }
 // Agent World's ⋯ menu as an icon in the phone header (its heading is hidden behind the city). It sits beside Search and
