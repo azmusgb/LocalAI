@@ -309,7 +309,7 @@ function createStatus(ctx) {
     catch (e) { storageError(res, e, 500); }
   }
 
-  return { apiCapabilities, apiModelDelete, apiModelPull, apiModelPullCancel, apiModelPulls, apiModels, apiStatus, capabilityCache, capabilityPrompt, getCapabilitiesSnapshot, getStatusAndRecordTransition, searxSearch };
+  return { apiCapabilities, apiModelDelete, apiModelPull, apiModelPullCancel, apiModelPulls, apiModels, apiStatus, capabilityCache, capabilityPrompt, modelPulls, protectedModels: PROTECTED_MODELS, getCapabilitiesSnapshot, getStatusAndRecordTransition, searxSearch };
 }
 
 module.exports = { createStatus };
