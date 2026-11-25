@@ -197,7 +197,16 @@ const signIn = require('./signin').createSignIn({ storage, signedIn: req => !!cl
   '/api/world': req => hubKey.authorized(req),
   '/api/attention': req => hubKey.authorized(req),
   '/api/lab/projects': req => hubKey.authorized(req),
-  '/api/chat': req => hubKey.authorized(req)
+  '/api/chat': req => hubKey.authorized(req),
+  // Pi Hub's native Assistant (amendment A34, P1a): the two merged reads and the Mission task flow (start, follow, cancel).
+  // Each is listed by method as well as path, so the key opens exactly these calls: no other /api/runs write (retry,
+  // update, feedback), no /api/agents/run, no chat stream, and none of the routes that run code or write files.
+  '/api/contract/status': req => req.method === 'GET' && hubKey.authorized(req),
+  '/api/contract/models': req => req.method === 'GET' && hubKey.authorized(req),
+  '/api/agents/missions/start': req => req.method === 'POST' && hubKey.authorized(req),
+  '/api/agents/mission': req => req.method === 'GET' && hubKey.authorized(req),
+  '/api/runs': req => req.method === 'GET' && hubKey.authorized(req),
+  '/api/runs/cancel': req => req.method === 'POST' && hubKey.authorized(req)
 } });
 
 
