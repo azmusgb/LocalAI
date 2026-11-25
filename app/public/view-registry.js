@@ -2,9 +2,7 @@
 // The desktop rail, mobile sheet, breadcrumb, command palette and page headings all read from here.
 // `aka` keeps old names searchable in the command palette after a rename.
 // A view with `parent` is a tab of that page: it has no nav entry of its own. Its heading is its own name (Pi Hub A22 2.3).
-// `tab` is the label a page uses in its parent's tab strip (the parent's own tab included), or in its area's page strip when
-// the full label would repeat the area's name: Home's own strip item is Overview, so there is one Home (the area) and Decisions
-// sits beside Overview, not beside a second Home.
+// `tab` is the label a page uses in its parent's tab strip, or its area's page strip when the full label would repeat the area's name (Home's is Overview).
 // A domain's `icon` and a view's `svg` name symbols in the index.html sprite; every menu draws them from here.
 // `short` is a page's label in a page strip when its full one would push the strip past a phone's width.
 // `card` puts a card for the page on another page, in registry order (kit 2.26.0, Pi Hub A27 D1 and D3): the five admin

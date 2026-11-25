@@ -1313,7 +1313,7 @@ body.ux-v3 .ux-nav-shell{grid-template-columns:4.75rem}
   body.ux-v3 .view>.topbar>.actions{flex:1;display:flex;align-items:center;gap:8px;flex-wrap:nowrap}
   body.ux-v3 .view>.topbar>.actions>:is(button,a):not(:is(button,a)~:is(button,a)){margin-left:auto}
 
-  /* Tab bar: the open area is a tinted pill, a heavier icon, an edge bar and a bolder label (never colour alone); labels shrink with large text. */
+  /* Tab bar: the open area is marked by a pill, icon weight, edge bar and label weight, never colour alone. */
   body.ux-v3 .ux-mobile-nav{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);left:0;right:0;bottom:0;border:0;border-top:1px solid var(--ui-line);border-radius:0;padding:var(--ui-s-1) var(--ui-s-1) env(safe-area-inset-bottom);background:var(--ui-bg);box-shadow:none}
   body.ux-v3 .ux-mobile-nav button{min-width:0;min-height:52px;padding:var(--ui-s-1) 0 var(--ui-s-1);gap:var(--ui-s-1);color:var(--ui-muted);font-size:min(var(--ui-fs-2),4.6vw);font-weight:500;align-content:start;background:transparent;border-radius:0;border-top:calc(var(--ui-s-1)/2) solid transparent}
   body.ux-v3 .ux-mobile-nav button>span{max-width:100%;overflow-wrap:anywhere;text-align:center;line-height:1.15}
@@ -1352,7 +1352,7 @@ body>svg[hidden]{position:absolute;width:0;height:0;overflow:hidden}
 .whatsnew-open{border:0;background:transparent;color:var(--ui-accent);font-weight:650;cursor:pointer;padding:6px 4px;min-height:36px}
 /* Phone shell follow-ups: after the shell block so they settle ties with it. */
 @media(max-width:760px){
-  /* Home: the brand stands in for the section name and page menu. */
+  /* Home: the brand stands in for the section name. */
   body.ux-v3[data-view="home"] .ux-context-brand{display:flex;align-items:center;gap:10px}
   body.ux-v3[data-view="home"] .ux-context-left{margin-right:auto}
   body.ux-v3[data-view="home"] .ux-context-bar .ux-context-domain,body.ux-v3[data-view="home"] .ux-context-bar .ux-context-view{display:none!important}

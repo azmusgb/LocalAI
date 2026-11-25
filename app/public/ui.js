@@ -1031,7 +1031,7 @@ function buildContext(){
  const bar=document.createElement('header');bar.id='uxContextBar';bar.className='ux-context-bar';
  bar.innerHTML='<div class="ux-context-left"><span class="ux-context-brand"><span class="brandmark ux-context-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12c2.6-5.6 11.4-5.6 14 0-2.6 5.6-11.4 5.6-14 0Z" stroke="#0b0d11" stroke-width="2"/><circle cx="12" cy="12" r="2.2" fill="#0b0d11"/></svg></span><span class="ux-context-brand-names"><strong>Local AI</strong></span></span><button class="ux-breadcrumb-home" type="button" data-ux-go="home">Local AI</button><span class="ux-context-sep">/</span><span class="ux-context-domain" id="uxContextDomain">Home</span><span class="ux-context-sep">/</span><span class="ux-context-view" id="uxContextView">Overview</span></div><div class="ux-context-actions"><button class="ux-context-action icon-btn" type="button" id="uxHeaderAction" hidden></button><button class="ux-context-inbox" type="button" id="uxInboxBtn" data-empty="true" data-state="checking" aria-label="Needs you, checking">'+icon('bell','ux-ico')+'<span>Needs you</span><b id="uxInboxCount"></b></button><button class="ux-context-search" type="button" id="uxCommandBtn" aria-label="Search pages and past work">'+icon('search','ux-ico')+'<span>Search pages and past work</span><kbd>⌘K</kbd></button></div>';
  main.prepend(bar);
- // The page strip sticks right under this bar at any text size or notch: its top is the bar's own height.
+ // The strip sticks under this bar: top = its height.
  if(window.ResizeObserver)new ResizeObserver(()=>{const s=q('#uxPageStrip');if(s)s.style.top=Math.round(bar.getBoundingClientRect().height)+'px'}).observe(bar);
  // "← Pi Hub" (the kit's back bar, Pi Hub A22 6.4) is the first thing in the page, with Pi Hub's address in the markup. This keeps it
  // in step with the tool registry, and a visitor who came from a Pi Hub page goes back to that page (the kit's backbar.js).
@@ -1100,6 +1100,8 @@ function buildMobile(){
  const nav=document.createElement('div');nav.id='uxMobileNav';nav.className='ux-mobile-nav';nav.setAttribute('role','navigation');nav.setAttribute('aria-label','Primary navigation');
  DOMAINS.forEach(d=>{const b=document.createElement('button');b.type='button';b.dataset.domain=d.id;b.innerHTML='<b>'+icon(d.icon)+'</b><span>'+d.label+'</span>';b.addEventListener('click',()=>navigate(d.defaultView));nav.appendChild(b)});
  document.body.append(nav);
+ // Chat's composer sits on the bar's real height.
+ if(window.ResizeObserver)new ResizeObserver(()=>{const h=Math.round(nav.getBoundingClientRect().height);qa('.composer-wrap').forEach(w=>{w.style.bottom=h?h+'px':'';const c=w.closest('.chat-shell');if(c)c.style.minHeight=h?'calc(100svh - '+(h+147)+'px)':''})}).observe(nav);
 }
 // Page-open counter (D5): each page change is reported once, after a short pause, never the same page twice in a row.
 // Fire-and-forget: a failure is silent and never touches navigation. A tab reports as itself (its registry id).
