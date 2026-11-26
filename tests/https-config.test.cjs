@@ -88,3 +88,29 @@ test('the appliance gets the host IP and the Tailscale name from stack.env', () 
   assert.match(appliance, /LOCALAI_REMOTE_NAME: \$\{LOCALAI_REMOTE_NAME:-\}/);
   assert.match(appliance, /LOCALAI_HOST_IP: \$\{LOCALAI_HOST_IP:-\}/);
 });
+
+// 25 Nov: Caddy sent every file uncompressed, so ui.js went out at ~380 KB while tests/budgets.test.cjs budgets the
+// shell gzipped. Caddy's default encode list takes text/*, which includes text/event-stream (checked with caddy 2.11:
+// the SSE answer came back Content-Encoding: zstd), so the type list must be explicit and leave streams out.
+test('the HTTPS front end compresses the app shell and API answers but never event streams', () => {
+  const caddy = read('deploy/caddy/Caddyfile');
+  const start = caddy.indexOf('(appliance) {');
+  const appliance = caddy.slice(start, caddy.indexOf('\n}\n', start));
+  const encode = /\n\tencode \{\n([\s\S]*?)\n\t\}\n/.exec(appliance);
+  assert.ok(encode, 'the appliance snippet (both sites) has an encode block');
+  assert.match(encode[1], /^\t\tzstd$/m);
+  assert.match(encode[1], /^\t\tgzip$/m);
+  const types = [...encode[1].matchAll(/^\t\t\theader Content-Type (\S+)$/gm)].map(m => m[1]);
+  for (const t of ['text/html*', 'text/css*', 'application/javascript*', 'application/json*', 'image/svg+xml*']) {
+    assert.ok(types.includes(t), `compresses ${t}`);
+  }
+  // Every match line is one Content-Type value (a line with several values fails to adapt in caddy 2.10/2.11).
+  const matchLines = encode[1].split('\n').filter(l => /^\t\t\t\S/.test(l));
+  assert.equal(matchLines.length, types.length, 'only single-value Content-Type lines in the match block');
+  for (const t of types) {
+    assert.ok(!'text/event-stream'.startsWith(t.replace(/\*$/, '')), `${t} would match text/event-stream`);
+    assert.notEqual(t, '*');
+  }
+  // The proxy still flushes at once, so the uncompressed streams arrive event by event.
+  assert.match(appliance, /flush_interval -1/);
+});
