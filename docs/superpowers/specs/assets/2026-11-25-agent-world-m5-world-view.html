@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent World M5 mockup</title>
+<!-- Mockup of A35 M5 (pi-hub docs/superpowers/specs/2026-11-24-amendment-a35-mission-control.md, section 10.4).
+     Open from the repo: it loads the kit from app/public/ui so the chrome is the real kit. Every value is illustrative. -->
+<link rel="stylesheet" href="../../../../app/public/ui/tokens.css">
+<link rel="stylesheet" href="../../../../app/public/ui/components.css">
+<style>
+[hidden]{display:none!important}
+body{margin:0;background:var(--ui-bg);color:var(--ui-text);font:400 var(--ui-fs-3)/1.45 var(--ui-font)}
+.wrap{box-sizing:border-box;max-width:90rem;margin:0 auto;padding:var(--ui-s-5) var(--ui-s-4) var(--ui-s-8)}
+/* Mockup controls: outside the page, not part of the design. */
+.mock{display:flex;flex-wrap:wrap;gap:var(--ui-s-3) var(--ui-s-5);align-items:end;margin:0 0 var(--ui-s-6);padding:var(--ui-s-3) var(--ui-s-4);border:1px dashed var(--ui-line-2);border-radius:var(--ui-r-2);font-size:var(--ui-fs-2);color:var(--ui-muted)}
+.mock label{display:grid;gap:var(--ui-s-1)}
+.mock select{min-height:40px;padding:0 var(--ui-s-2);border-radius:var(--ui-r-3);border:1px solid var(--ui-field-line);background:var(--ui-bg);color:var(--ui-text);font:inherit;font-size:var(--ui-fs-3)}
+.mock .check{display:flex;gap:var(--ui-s-2);align-items:center;min-height:40px}
+.mock p{flex-basis:100%;margin:0}
+.ui-page__head .aw-sample{grid-column:1;justify-self:start}
+/* The world: the one bold thing on the page. */
+.aw-face{gap:var(--ui-s-4);--aw-pad:clamp(calc(var(--ui-space)*4),0.25rem + 3.33vw,calc(var(--ui-space)*5))}
+.aw-world{position:relative;margin:0 calc(-1*var(--aw-pad));border-block:1px solid var(--ui-line);overflow-x:auto;overflow-y:hidden;background:#a9cdee;overscroll-behavior-x:contain}
+.aw-world:focus-visible{outline:2px solid var(--ui-accent);outline-offset:-2px}
+.aw-stage{position:relative;margin:0 auto}
+.aw-stage svg{display:block;width:100%;height:100%}
+.aw-art{cursor:pointer}
+.aw-chip{position:absolute;box-sizing:border-box;display:grid;gap:2px;padding:var(--ui-s-1) var(--ui-s-2);border:1px solid var(--ui-line-2);border-radius:var(--ui-r-2);background:var(--ui-surface);color:var(--ui-text);text-align:left;font:600 var(--ui-fs-2)/1.25 var(--ui-font);cursor:pointer}
+.aw-chip:hover{border-color:var(--ui-field-line)}
+.aw-chip:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px;z-index:1}
+.aw-chip .ui-chip{font-size:var(--ui-fs-1);white-space:normal}
+.aw-chip small{color:var(--ui-muted);font:500 var(--ui-fs-1)/1.25 var(--ui-font);font-variant-numeric:tabular-nums}
+.aw-chip[aria-current="true"]{border-color:var(--ui-accent);box-shadow:0 0 0 1px var(--ui-accent)}
+.aw-ribbon{margin-left:auto;color:var(--ui-muted);font-variant-numeric:tabular-nums}
+.aw-ruler{position:relative;margin:0 auto;height:3.25rem}
+.aw-ruler button{position:absolute;top:0;bottom:0;box-sizing:border-box;display:grid;align-content:center;gap:1px;padding:0 var(--ui-s-2);border:0;border-left:1px solid var(--ui-line-2);background:none;color:var(--ui-text);text-align:left;font:650 var(--ui-fs-2)/1.2 var(--ui-font);cursor:pointer;overflow:hidden;white-space:nowrap}
+.aw-ruler button small{font:500 var(--ui-fs-1)/1.2 var(--ui-font);color:var(--ui-muted)}
+.aw-ruler button[data-current]{box-shadow:inset 0 2px 0 var(--ui-accent)}
+.aw-ruler button:hover{background:var(--ui-surface-2)}
+.aw-ruler button:focus-visible{outline:2px solid var(--ui-accent);outline-offset:-2px}
+.aw-over{position:absolute;inset:0;display:grid;place-items:center;padding:var(--ui-s-4)}
+.aw-over>div{max-width:34rem;padding:var(--ui-s-4) var(--ui-s-5);border-radius:var(--ui-r-2);background:var(--ui-surface);text-align:center;display:grid;gap:var(--ui-s-3);justify-items:center}
+.aw-over p{margin:0}
+.aw-replay{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:var(--ui-s-3);align-items:center;font-size:var(--ui-fs-2);color:var(--ui-muted);font-variant-numeric:tabular-nums}
+.aw-replay input{width:100%;accent-color:var(--ui-accent);min-height:44px}
+.aw-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));gap:var(--ui-s-4) var(--ui-s-6);align-items:start}
+.aw-sum .ui-faceplate__main{gap:var(--ui-s-3)}
+.aw-sum .ui-faceplate__readings{border-top:0;padding:0;display:grid;gap:var(--ui-s-2)}
+.aw-sum dl{margin:0;display:grid;gap:var(--ui-s-2)}
+.aw-sum dl>div{display:grid;grid-template-columns:7rem minmax(0,1fr);gap:var(--ui-s-3);padding-bottom:var(--ui-s-2);border-bottom:1px solid var(--ui-line)}
+.aw-sum dt{color:var(--ui-muted);font-size:var(--ui-fs-2)}
+.aw-sum dd{margin:0;font-variant-numeric:tabular-nums}
+.aw-actions{display:flex;flex-wrap:wrap;gap:var(--ui-s-2)}
+.aw-key summary{cursor:pointer;color:var(--ui-accent-text);font-weight:600;min-height:44px;display:flex;align-items:center;width:max-content}
+.aw-key summary:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
+.aw-key ul{margin:0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,17rem),1fr));gap:var(--ui-s-2) var(--ui-s-5);font-size:var(--ui-fs-2)}
+.aw-key li{display:grid;grid-template-columns:2.5rem minmax(0,1fr);gap:var(--ui-s-2);align-items:center}
+.aw-key svg{width:2.5rem;height:1.75rem}
+.aw-key b{font-weight:600}
+.aw-key span{color:var(--ui-muted)}
+.ui-row.aw-sub{padding-left:var(--ui-s-5)}
+.aw-rowbtn{all:unset;cursor:pointer;display:block;min-width:0}
+.aw-rowbtn:focus-visible{outline:2px solid var(--ui-accent);outline-offset:2px}
+.aw-mono{font-family:var(--ui-mono);font-size:var(--ui-fs-1)}
+/* Inspector: the kit sheet A35 10.2 asks for (a kit PR first); drawn here with tokens only. */
+.aw-sheet{box-sizing:border-box;width:min(100%,32rem);max-width:100%;height:100dvh;max-height:none;margin:0 0 0 auto;padding:0;border:0;border-left:1px solid var(--ui-line);background:var(--ui-surface);color:var(--ui-text);box-shadow:var(--ui-shadow-2)}
+.aw-sheet::backdrop{background:var(--ui-backdrop)}
+.aw-sheet>div{display:grid;gap:var(--ui-s-5);padding:var(--ui-s-5)}
+.aw-sheet header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--ui-s-1) var(--ui-s-3);align-items:start}
+.aw-sheet h2{margin:0;font:650 var(--ui-fs-6)/1.15 var(--ui-font);font-stretch:var(--ui-stretch-heading)}
+.aw-sheet header p{grid-column:1;margin:0;color:var(--ui-muted);font-size:var(--ui-fs-2)}
+.aw-sheet h3{margin:0 0 var(--ui-s-2);font:650 var(--ui-fs-4)/1.2 var(--ui-font)}
+.aw-sheet .ui-btn--icon{grid-column:2;grid-row:1/span 2}
+@media (prefers-reduced-motion:no-preference){.aw-sheet[open]{animation:aw-in var(--ui-dur-2) var(--ui-ease)}}
+@keyframes aw-in{from{transform:translateX(2rem);opacity:0}}
+.aw-toast{position:fixed;left:50%;bottom:var(--ui-s-5);z-index:var(--ui-z-toast);transform:translateX(-50%);max-width:min(36rem,calc(100% - 2*var(--ui-s-4)));box-sizing:border-box;padding:var(--ui-s-3) var(--ui-s-4);border-radius:var(--ui-r-2);background:var(--ui-surface);border:1px solid var(--ui-line-2);box-shadow:var(--ui-shadow-1)}
+.aw-toast:empty{display:none}
+/* Design notes, below the page. */
+.notes{margin-top:var(--ui-s-8);padding-top:var(--ui-s-6);border-top:1px dashed var(--ui-line-2);max-width:70ch;display:grid;gap:var(--ui-s-3)}
+.notes h2{margin:0;font:650 var(--ui-fs-5)/1.2 var(--ui-font)}
+.notes p,.notes li{color:var(--ui-muted)}
+.notes ul{margin:0;padding-left:1.2em;display:grid;gap:var(--ui-s-1)}
+/* The car leaving: the page's one motion, and only when a run finishes. */
+.aw-van{transition:transform 1.6s cubic-bezier(.5,0,.8,.4),opacity .4s 1.2s}
+.aw-van.go{transform:translateX(900px);opacity:0}
+.aw-scaf{transition:opacity var(--ui-dur-2) var(--ui-ease)}
+@media (prefers-reduced-motion:reduce){.aw-van,.aw-scaf{transition:none}}
+.reduce .aw-van,.reduce .aw-scaf{transition:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<form class="mock" aria-label="Mockup controls (not part of the design)" onsubmit="return false">
+  <label>State of the page
+    <select id="m-state">
+      <option value="live">Live (ledger read 09:41)</option>
+      <option value="stale">Stale (last read 09:00)</option>
+      <option value="down">Unavailable (ledger not answering)</option>
+      <option value="replay">Replay (server event log)</option>
+      <option value="sample">Sample data</option>
+      <option value="loading">Loading</option>
+      <option value="empty">No initiative</option>
+    </select>
+  </label>
+  <label>Page theme
+    <select id="m-theme"><option value="">Device</option><option value="light">Light</option><option value="dark">Dark</option></select>
+  </label>
+  <label class="check"><input type="checkbox" id="m-reduce"> Reduced motion</label>
+  <button type="button" class="ui-btn ui-btn--ghost" id="m-finish">Simulate: Claude finishes a task</button>
+  <p>Mockup of A35 M5 §10.4. Every value is illustrative; the A34 rows would be labelled Imported on the real page.</p>
+</form>
+
+<main class="ui-page" id="page" aria-labelledby="aw-title">
+  <header class="ui-page__head">
+    <h1 class="ui-page__title" id="aw-title">Agent World</h1>
+    <p class="ui-page__purpose">Give the team a goal; watch them work it.</p>
+    <span class="ui-chip ui-chip--unknown aw-sample" id="aw-sample" hidden>Sample data</span>
+  </header>
+  <nav class="ui-strip" aria-label="Work">
+    <a href="#work">Work</a><a href="#agents" aria-current="page">Agent World</a><a href="#automationStudio">Assistant automations</a>
+  </nav>
+  <div id="aw-notice" hidden></div>
+  <section class="ui-faceplate aw-face" id="aw-face" aria-labelledby="aw-name"></section>
+  <section class="ui-section" id="aw-needs" aria-labelledby="aw-needs-h" hidden>
+    <h2 id="aw-needs-h">Needs you here</h2>
+    <ul class="ui-rows" id="aw-needs-rows"></ul>
+  </section>
+  <section class="ui-section" aria-labelledby="aw-stages-h">
+    <h2 id="aw-stages-h">Stages</h2>
+    <p class="ui-section__note">The same records the street draws, as rows.</p>
+    <ul class="ui-rows" id="aw-stage-rows"></ul>
+  </section>
+  <section class="ui-section" aria-labelledby="aw-exec-h">
+    <h2 id="aw-exec-h">Running and recent work</h2>
+    <ul class="ui-rows" id="aw-exec-rows"></ul>
+  </section>
+  <p class="ui-sources" id="aw-sources"></p>
+</main>
+
+<dialog class="aw-sheet" id="aw-sheet" aria-labelledby="aw-sheet-h"><div id="aw-sheet-body"></div></dialog>
+<div class="aw-toast" id="aw-toast" role="status" aria-live="polite"></div>
+
+<section class="notes" aria-labelledby="notes-h">
+  <h2 id="notes-h">Design notes</h2>
+  <p><b>The idea.</b> The street is the plan. Left to right is the order of stages, so you read the initiative like a
+  walk down one road: built blocks behind you, scaffolding where work is happening, fenced lots ahead. Nothing on the
+  street is decoration: each piece is a ledger record, and the rows under the faceplate list the same records.</p>
+  <ul>
+    <li><b>Trust is visible as material.</b> A floor someone reported as done is built but dark. A floor only lights
+    when evidence verifies it (a trusted check or the owner). A flag goes up only on the owner's gate verdict. So
+    "Claude says done" and "proven" never look alike.</li>
+    <li><b>Time isn't drawn.</b> There are no dates in the ledger, so the street has no clock, no day cycle and no
+    traffic. Night is a theme the page names as one, and it doesn't change meaning.</li>
+    <li><b>Freshness takes things away.</b> Scaffolding and a worker show only within a session's 2-minute window.
+    After that the worker becomes an outline with "No report since", and the scaffolding comes down.</li>
+    <li><b>One motion.</b> When a run finishes, its van pulls away and that floor's scaffolding comes down. That's the
+    only animation, and reduced motion snaps it.</li>
+    <li><b>Density.</b> Planned stages are narrow lots with their full names in the ruler, the rows and the
+    inspector. Below about 1,100 px the street scrolls sideways in a focusable region that opens on the current stage,
+    rather than shrinking the labels.</li>
+    <li><b>Agent World never acts.</b> Every action links to the Pi Hub Missions page that owns the record
+    (<code>/missions/a34#…</code>). That's the A35 rule that Agent World is never a source.</li>
+  </ul>
+  <p><b>Differences from §10.4, to decide:</b></p>
+  <ul>
+    <li>A <b>blocked</b> task gets hazard tape on its floor. §10.4 only draws blocks as road barriers between
+    entities; a task blocked by something outside the plan had no mark.</li>
+    <li>A <b>reported done</b> floor is drawn as built but dark. §10.4 only says what lit means.</li>
+    <li>Gates are drawn on the street as arches, and the <b>district ruler</b> under the street names each stage and
+    its gate in HTML, so stage text is never painted into the art.</li>
+    <li>The inspector is the kit sheet that A35 §10.2 needs. It's drawn here with tokens and needs a kit PR first.</li>
+  </ul>
+</section>
+</div>
+
+<script>
+'use strict';
+/* ---------- Illustrative ledger snapshot (A35 §6 shapes, A34 as the reference mission) ---------- */
+const NOW='09:41';
+const INIT={id:'a34',title:'Pi Hub draws the Assistant',status:'active',rev:1,manifest:'pi-hub@4ef3c14'};
+const T=(id,title,state,hist,extra)=>({id:'a34:task:'+id,title,state,hist:hist||[],...extra});
+const STAGES=[
+ {id:'a34:stage:p0',n:'P0',title:'Headroom',status:'active',
+  gate:{id:'a34:gate:p0',criterion:'Three Pi Hub releases in a row with tests under 600 s, and Local AI on the current kit',verdict:'open',needs:'release records, test seconds'},
+  ws:[
+   {id:'a34:ws:release-tests',title:'Release test time',repo:'pi-hub',branch:'fix/release-test-timing',
+    tasks:[T('find-slow','Find the slow tests','verified',[['08:10','active'],['08:40','done'],['08:52','verified']],{ev:'PR #313 checks passed on 1f0c2aa · trusted'}),
+           T('cache-scrypt','Cache scrypt hashes in fixtures','done',[['08:45','active'],['09:20','done']],{ev:'Reported by Claude Code at 09:20 · not verified'}),
+           T('split-suite','Split the release suite','active',[['09:22','active']]),
+           T('three-releases','Three releases under 600 s','planned')],
+    van:true,who:{id:'p:claude-7f2',name:'Claude Code',model:'Opus 5.5 (reported)',last:'09:40',fresh:true,doing:'Running a tool for 4 min'},
+    decision:{id:'a34:decision:test-limit',q:'Raise the 900 s test limit?',blocking:true,asked:'Claude Code',at:'09:31',
+      why:'Release tests took 883 of 900 s on 25 Nov.',rec:'No, fix the tests',
+      opts:[['No, fix the tests','High confidence · reversible · keeps headroom honest; 2-3 PRs of test work'],['Raise to 1200 s','Reversible · hides the slow tests'],['Raise now, fix later','Needs a follow-up gate']]}},
+   {id:'a34:ws:kit-sync',title:'Kit sync to 2.31',repo:'LocalAI',branch:'kit-sync-2.31.1',
+    tasks:[T('kit-files','Sync the kit files','verified',[['07:30','active'],['07:55','done'],['08:05','verified']],{ev:'local-ci on #625 · trusted'}),
+           T('literals','Lower the literals baseline','verified',[['07:40','active'],['08:00','done'],['08:05','verified']],{ev:'local-ci on #625 · trusted'}),
+           T('baselines','Retake visual baselines','active',[['08:30','active']])],
+    who:{id:'p:claude-3c9',name:'Claude Code',model:'Opus 5.5 (reported)',last:'09:39',fresh:true,doing:'Working'}},
+   {id:'a34:ws:test-budget',title:'Pi test budget',repo:'pi-hub',branch:null,
+    tasks:[T('measure','Measure test seconds per suite','active',[['08:20','active']]),T('report','Write the budget into the release','planned')],
+    who:{id:'p:localai-m112',name:'Local AI mission',model:'qwen3:14b (reported)',last:'08:58',fresh:false,doing:'Last known 08:58 (PC asleep)'}}
+  ]},
+ {id:'a34:stage:p1',n:'P1',title:'Contract and auth',status:'active',
+  gate:{id:'a34:gate:p1',criterion:'Pi Hub reads Local AI only through contract routes; the hub key is refused everywhere else',verdict:'open',needs:'contract test, key: never test'},
+  ws:[
+   {id:'a34:ws:p1a',title:'P1a contract reads',repo:'LocalAI',branch:'feat-contract-p1a',
+    tasks:[T('contract-version','contract_version on status and models','verified',[['06:50','done'],['07:10','verified']],{ev:'PR #624 merged · local-ci passed · trusted'}),
+           T('atlas','Atlas contract entries','verified',[['06:55','done'],['07:10','verified']],{ev:'PR #624 · trusted'}),
+           T('atlas-shots','Atlas visual baselines','done',[['07:05','done']],{ev:'Reported · not verified'})]},
+   {id:'a34:ws:p1b',title:'P1b hub key on task routes',repo:'LocalAI',branch:null,waitsOn:'a34:gate:p0',
+    tasks:[T('allow-list','Task routes on the allow-list','planned'),T('owner-flag','Owner flag','planned'),T('key-never','key: never test','planned')]}
+  ]},
+ {id:'a34:stage:p2',n:'P2',title:'Adapter and last known',status:'planned',gate:{id:'a34:gate:p2',criterion:'Every Assistant page opens while the PC sleeps, with its age',verdict:'open',needs:'live check'},ws:[{id:'a34:ws:p2',title:'Adapter',tasks:[T('a','Adapter','planned'),T('b','Last-known store','planned'),T('c','Probe page','planned'),T('d','Breaker','planned')]}]},
+ {id:'a34:stage:p3',n:'P3',title:'One owner each',status:'planned',gate:{id:'a34:gate:p3',criterion:'Each duplicate has one owner',verdict:'open',needs:'per-row checks'},ws:[{id:'a34:ws:p3',title:'Duplicates',tasks:[T('a','Push','planned'),T('b','Sign-in','planned'),T('c','Notifications','planned'),T('d','Activity','planned'),T('e','Monitors','planned'),T('f','Releases','planned')]}]},
+ {id:'a34:stage:p4',n:'P4',title:'Tier 1 pages',status:'planned',gate:{id:'a34:gate:p4',criterion:'Tier 1 pages drawn by Pi Hub',verdict:'open',needs:'width sweep, axe'},ws:[{id:'a34:ws:p4',title:'Pages',tasks:[T('a','System','planned'),T('b','Improve','planned'),T('c','Projects','planned'),T('d','Work','planned'),T('e','Home','planned')]}]},
+ {id:'a34:stage:p5',n:'P5',title:'Tier 2',status:'planned',gate:{id:'a34:gate:p5',criterion:'A chat turn and a cancel work through Pi Hub',verdict:'open',needs:'measurement, live check'},ws:[{id:'a34:ws:p5',title:'Streaming',tasks:[T('a','Measure','planned'),T('b','Streaming adapter','planned'),T('c','Chat','planned'),T('d','Run viewer','planned')]}]},
+ {id:'a34:stage:p6',n:'P6',title:'Retire',status:'planned',gate:{id:'a34:gate:p6',criterion:'Moved views deleted from Local AI',verdict:'open',needs:'diff, release'},ws:[{id:'a34:ws:p6',title:'Retire',tasks:[T('a','Delete views','planned'),T('b','Retire routes','planned'),T('c','frame-ancestors','planned')]}]}
+];
+const EXECS=[
+ {id:'x:claude-7f2',title:'Claude Code · pi-hub fix/release-test-timing',detail:'Opus 5.5 (reported) · Release test time',tone:'ok',live:true,word:'Running a tool, 4 min',level:'Reported'},
+ {id:'x:claude-3c9',title:'Claude Code · LocalAI kit-sync-2.31.1',detail:'Opus 5.5 (reported) · Kit sync to 2.31',tone:'ok',live:true,word:'Working',level:'Reported'},
+ {id:'x:localai-m112',title:'Local AI mission · Pi test budget',detail:'qwen3:14b (reported)',tone:'unknown',word:'Last known 08:58 (PC asleep)',level:'Reported'},
+ {id:'x:gh-625',title:'GitHub #625 · kit sync',detail:'Checks passed on 9b07936',tone:'ok',word:'Done 09:30',level:'Trusted'}
+];
+
+/* ---------- Art (Main Street's palette, street/art.js P) ---------- */
+const DAY={sky0:'#5f9bd8',sky1:'#a9cdee',sky2:'#f3dcc0',far0:'#7f97b4',far1:'#93a9c2',glass:'#34465c',glassHi:'#6d86a3',lit0:'#fff2b0',lit1:'#ffc24d',glow:0},
+      NIGHT={sky0:'#0f1a2e',sky1:'#1d2c47',sky2:'#3a3f5c',far0:'#26344d',far1:'#2e3d58',glass:'#1b2433',glassHi:'#33445c',lit0:'#fff2b0',lit1:'#ffb04a',glow:1};
+const A={mortar:'#8f3a46',brick:'#b4505e',brickHi:'#d77b88',side:'#76303b',roof:'#59657a',steel:'#7d8796',steelD:'#4a5260',frame:'#2d3138',
+ walk0:'#c4c9d1',walk1:'#9aa1ac',curb:'#e3e6ea',road0:'#4a5361',road1:'#363d48',lane:'#f2d67a',plank:'#c89b4a',pole:'#a5afbd',
+ pants:'#2f3a52',vest:'#ff7e46',stripe:'#f3e45a',skin:'#e9b88f',hat:'#ffc640',dirt:'#a0825e',dirtD:'#7d6447',concrete:'#c9c3b8',
+ stone:'#c9c3b8',stoneD:'#8f8a82',warn:'#ffb000',barrierR:'#d23c32',crane:'#f2b417',van:'#e9eef4',vanD:'#9aa7b8',flag:'#3f9d5a'};
+const SY=30,SH=330,GROUND=300,FLOOR=26,BW=132,GAP=16,LOT=78,GATE=40,MARGIN=26;
+const svgEsc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const R=(x,y,w,h,f,ex='')=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${f}" ${ex}/>`;
+
+let S={view:'live',night:false,reduce:false,replayAt:NOW,finished:false,sel:null};
+const toMin=t=>{const [h,m]=t.split(':').map(Number);return h*60+m};
+function taskState(t){
+  if(S.view==='replay'){let st='planned';for(const [at,s] of t.hist)if(toMin(at)<=toMin(S.replayAt))st=s;return st}
+  if(S.view==='stale'){let st='planned';for(const [at,s] of t.hist)if(toMin(at)<=toMin('09:00'))st=s;return t.hist.length?st:t.state}
+  if(S.finished&&t.id==='a34:task:split-suite')return 'done';
+  return t.state;
+}
+function whoFresh(ws){
+  if(!ws.who)return null;
+  if(S.view==='stale')return {...ws.who,fresh:false,doing:'No report since '+(toMin(ws.who.last)>toMin('09:00')?'09:00':ws.who.last)};
+  if(S.view==='replay')return toMin(S.replayAt)>=toMin(ws.tasks.find(t=>t.hist.length)?.hist[0][0]||'99:99')&&toMin(S.replayAt)<=toMin(ws.who.last)?{...ws.who,fresh:true,doing:'Active at '+S.replayAt}:null;
+  if(S.finished&&ws.id==='a34:ws:release-tests')return {...ws.who,fresh:false,doing:'Turn finished 09:42'};
+  return ws.who;
+}
+const asOf=()=>S.view==='stale'?'09:00':S.view==='replay'?S.replayAt:'23:59';
+const decisionShown=d=>d&&toMin(d.at)<=toMin(asOf());
+const built=s=>!['planned','assigned','queued'].includes(s);
+const lit=s=>['verified','reviewed','accepted'].includes(s);
+
+/* Lay out the street: district = stage, building = workstream, a fenced lot for a workstream not started. */
+function layout(){
+  let x=MARGIN;const out={stages:[],items:[]};
+  for(const st of STAGES){
+    const x0=x;const planned=st.ws.every(w=>w.tasks.every(t=>!built(taskState(t))));
+    if(st.status==='planned'&&planned){out.items.push({kind:'lot',stage:st,ws:st.ws[0],x,w:LOT,many:true});x+=LOT}
+    else st.ws.forEach((w,i)=>{const isLot=w.tasks.every(t=>!built(taskState(t)));
+      out.items.push({kind:isLot?'lot':'bldg',stage:st,ws:w,x,w:isLot?LOT+20:BW});x+=(isLot?LOT+20:BW)+(i<st.ws.length-1?GAP:0)});
+    x+=8;out.items.push({kind:'gate',stage:st,x,w:GATE-8});x+=GATE;
+    out.stages.push({st,x0:x0-6,x1:x});
+  }
+  out.W=x+MARGIN-8;return out;
+}
+
+function defs(P){return `<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P.sky0}"/><stop offset=".65" stop-color="${P.sky1}"/><stop offset="1" stop-color="${P.sky2}"/></linearGradient>
+<pattern id="brick" width="28" height="14" patternUnits="userSpaceOnUse"><rect width="28" height="14" fill="${A.mortar}"/>
+<rect x=".6" y=".6" width="18.8" height="5.8" rx="1.2" fill="${A.brick}"/><rect x="20.6" y=".6" width="6.8" height="5.8" rx="1.2" fill="#a44654"/>
+<rect x=".6" y="7.6" width="6.8" height="5.8" rx="1.2" fill="#a94a58"/><rect x="8.6" y="7.6" width="18.8" height="5.8" rx="1.2" fill="#bb5866"/>
+<rect x="2" y="1.4" width="9" height="1.2" rx=".6" fill="${A.brickHi}" opacity=".5"/></pattern>
+<pattern id="haz" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="${A.warn}"/><rect width="5" height="10" fill="#222"/></pattern>
+<linearGradient id="lit" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${P.lit0}"/><stop offset="1" stop-color="${P.lit1}"/></linearGradient>
+<linearGradient id="wl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".55" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".22"/></linearGradient>
+<radialGradient id="glow"><stop offset="0" stop-color="${P.lit1}" stop-opacity=".55"/><stop offset="1" stop-color="${P.lit1}" stop-opacity="0"/></radialGradient>
+<radialGradient id="beacon"><stop offset="0" stop-color="${A.warn}" stop-opacity=".9"/><stop offset="1" stop-color="${A.warn}" stop-opacity="0"/></radialGradient>
+</defs>`}
+
+function farCity(W,P){let s='',x=0,i=0;const hs=[70,110,90,140,80,120,100,60,130,95];
+  while(x<W){const h=hs[i%hs.length],w=40+(i*17)%36;s+=R(x,GROUND-h-6,w,h+6,i%2?P.far0:P.far1,'opacity=".55"');x+=w+6;i++}return s}
+
+function figure(x,y,stale){ // a worker, feet at y
+  if(stale)return `<g fill="none" stroke="#5b6472" stroke-width="1.4" stroke-dasharray="3 2"><circle cx="${x}" cy="${y-25}" r="4.2"/><path d="M${x-5} ${y-19}h10v11h-10z M${x-4} ${y-8}v8 M${x+4} ${y-8}v8"/></g>`;
+  return `<g><rect x="${x-4}" y="${y-9}" width="3.4" height="9" fill="${A.pants}"/><rect x="${x+.6}" y="${y-9}" width="3.4" height="9" fill="${A.pants}"/>
+  <rect x="${x-5}" y="${y-20}" width="10" height="12" rx="2" fill="${A.vest}"/><rect x="${x-5}" y="${y-15}" width="10" height="1.6" fill="${A.stripe}"/>
+  <rect x="${x+4}" y="${y-19}" width="3" height="8" rx="1.4" fill="${A.vest}"/><circle cx="${x}" cy="${y-24}" r="3.8" fill="${A.skin}"/>
+  <path d="M${x-4.6} ${y-25}a4.6 4.6 0 0 1 9.2 0z" fill="${A.hat}"/><rect x="${x-5.8}" y="${y-25.4}" width="11.6" height="1.5" rx=".7" fill="#e3a51b"/></g>`}
+
+function building(it,P){
+  const {x,ws}=it,w=BW,n=ws.tasks.length;let s='',top=GROUND-n*FLOOR;
+  const states=ws.tasks.map(taskState),who=whoFresh(ws);
+  const activeFresh=states.some(st=>st==='active')&&who&&who.fresh;
+  // side wall and parapet only behind built floors
+  const builtN=(()=>{let k=0;for(const st of states){if(built(st))k++;else break}return k})();
+  const bTop=GROUND-builtN*FLOOR;
+  if(builtN)s+=`<path d="M${x+w} ${bTop} l10 -6 v${builtN*FLOOR} l-10 6z" fill="${A.side}"/>`;
+  states.forEach((st,i)=>{
+    const fy=GROUND-(i+1)*FLOOR;
+    if(!built(st)){ // open steel frame
+      s+=`<g fill="${A.steel}">${R(x,fy,4,FLOOR)}${R(x+w/2-2,fy,4,FLOOR)}${R(x+w-4,fy,4,FLOOR)}${R(x,fy,w,3)}</g>`;
+      s+=`<path d="M${x+4} ${fy+3}L${x+w/2-2} ${fy+FLOOR}M${x+w/2+2} ${fy+3}L${x+w-4} ${fy+FLOOR}" stroke="${A.steelD}" stroke-width="1.2"/>`;
+      return}
+    if(st==='active'||st==='blocked'){
+      s+=`<g fill="${A.steel}">${R(x,fy,4,FLOOR)}${R(x+w/2-2,fy,4,FLOOR)}${R(x+w-4,fy,4,FLOOR)}${R(x,fy,w,3)}</g>`;
+      s+=R(x+4,fy+FLOOR-9,w-8,9,'url(#brick)');
+      if(st==='blocked')s+=R(x+2,fy+9,w-4,5,'url(#haz)');
+      if(activeFresh&&st==='active'){
+        s+=`<g class="aw-scaf" data-scaf="${ws.id}"><g fill="${A.pole}">${R(x-8,fy-4,2.4,FLOOR+4)}${R(x+w/2,fy-4,2.4,FLOOR+4)}${R(x+w+12,fy-4,2.4,FLOOR+4)}</g>
+        ${R(x-10,fy+FLOOR-2,w+26,3.4,A.plank)}${R(x-10,fy+6,w+26,2.4,A.plank)}
+        <path d="M${x-7} ${fy+FLOOR-2}L${x+w/2} ${fy+6}M${x+w/2+2} ${fy+FLOOR-2}L${x+w+13} ${fy+6}" stroke="${A.pole}" stroke-width="1.2"/>
+        ${figure(x+w*0.3,fy+FLOOR-2,false)}</g>`}
+      return}
+    // built: brick with windows; dark glass if only reported, lit if verified
+    s+=R(x,fy,w,FLOOR,'url(#brick)')+R(x,fy,w,FLOOR,'url(#wl)');
+    const L=lit(st);
+    for(let k=0;k<4;k++){const wx=x+10+k*30,wy=fy+5;
+      if(i===0&&k===1){s+=R(wx,fy+5,18,FLOOR-5,A.frame)+R(wx+2,fy+7,14,FLOOR-7,L?'url(#lit)':P.glass);continue}
+      s+=R(wx-1,wy-1,22,15,A.frame)+R(wx,wy,20,13,L?'url(#lit)':P.glass);
+      if(!L)s+=`<path d="M${wx+3} ${wy+11}l7 -9" stroke="${P.glassHi}" stroke-width="1.4" opacity=".6"/>`;
+      if(L&&P.glow)s+=`<circle cx="${wx+10}" cy="${wy+8}" r="20" fill="url(#glow)"/>`}
+    s+=R(x-2,fy-1,w+4,2,'#6c2b35');
+  });
+  // roof slab on the top built floor if every floor is built
+  if(builtN===n)s+=R(x-3,top-6,w+16,6,A.roof);
+  // crane over an active, fresh building
+  if(activeFresh){const cx=x+w-18,ct=top-58;
+    s+=`<g class="aw-scaf" data-scaf="${ws.id}" stroke="${A.crane}" fill="none" stroke-width="2"><path d="M${cx} ${GROUND}V${ct}M${cx+5} ${GROUND}V${ct}"/>
+    <path d="M${cx} ${ct+10}h5M${cx} ${ct+30}h5M${cx} ${ct+50}h5M${cx} ${ct+70}h5" stroke-width="1"/>
+    <path d="M${cx-24} ${ct}H${cx+56}M${cx+2} ${ct-12}L${cx-24} ${ct}M${cx+2} ${ct-12}L${cx+56} ${ct}" stroke-width="1.6"/>
+    ${R(cx-30,ct-2,10,7,A.steelD,'stroke="none"')}<path d="M${cx+44} ${ct}v34" stroke="#333" stroke-width="1"/>${R(cx+40,ct+34,8,6,A.steelD,'stroke="none"')}</g>`}
+  // beacon: a decision waiting
+  if(decisionShown(ws.decision)){const bx=x+16,by=(builtN===n?top-6:bTop)-4;
+    s+=`<circle cx="${bx}" cy="${by-6}" r="16" fill="url(#beacon)"/>${R(bx-3,by-3,6,4,A.steelD)}<path d="M${bx-4} ${by-3}a4 5 0 0 1 8 0z" fill="${A.warn}"/>`}
+  // flag only when the owner accepted every task (gate met)
+  if(states.every(st=>st==='accepted'))s+=`<path d="M${x+w-10} ${top-6}v-26" stroke="${A.steelD}" stroke-width="1.6"/><path d="M${x+w-10} ${top-32}h16l-4 5 4 5h-16z" fill="${A.flag}"/>`;
+  // a stale participant: an outline on the sidewalk
+  if(who&&!who.fresh)s+=figure(x+w-30,GROUND+16,true);
+  // the van at the curb for a run that will finish (the simulate button)
+  if(ws.van&&S.view==='live'&&!S.finished)s+=`<g class="aw-van" id="van-${ws.id}">${R(x+18,GROUND+18,48,18,A.van,'rx="3"')}${R(x+52,GROUND+21,12,8,'#34465c','rx="1.5"')}${R(x+18,GROUND+30,48,2,A.vanD)}
+    <circle cx="${x+28}" cy="${GROUND+37}" r="4.5" fill="#222"/><circle cx="${x+56}" cy="${GROUND+37}" r="4.5" fill="#222"/></g>`;
+  return {svg:s,top:Math.min(top-6,activeFresh?top-70:top-6)};
+}
+
+function lot(it){
+  const {x,w}=it;let s=R(x,GROUND-4,w,4,A.dirt)+R(x,GROUND-1,w,2,A.dirtD);
+  const pads=it.many?Math.min(it.stage.ws.reduce((a,b)=>a+b.tasks.length,0),6):it.ws.tasks.length;
+  for(let i=0;i<pads;i++){const px=x+6+i*((w-12)/pads);s+=R(px+1,GROUND-7,(w-12)/pads-3,4,A.concrete,'opacity=".9"')}
+  for(let fx=x;fx<=x+w;fx+=13)s+=R(fx,GROUND-22,1.6,22,A.steelD);
+  s+=`<path d="M${x} ${GROUND-19}H${x+w}M${x} ${GROUND-10}H${x+w}" stroke="${A.steel}" stroke-width="1"/>`;
+  s+=`<path d="M${x+w-10} ${GROUND-4}v-16" stroke="${A.dirtD}" stroke-width="1.4"/><path d="M${x+w-10} ${GROUND-20}l7 2 -7 2z" fill="${A.vest}"/>`;
+  return {svg:s,top:GROUND-26};
+}
+
+function gate(it,P){const {x,stage}=it,met=stage.gate.verdict==='met',c=x+(it.w)/2;
+  return `<g>${R(c-16,GROUND-92,7,92,A.stone)}${R(c+9,GROUND-92,7,92,A.stone)}${R(c-16,GROUND-92,2,92,A.stoneD)}
+  <path d="M${c-18} ${GROUND-88}Q${c} ${GROUND-112} ${c+18} ${GROUND-88}v-6Q${c} ${GROUND-118} ${c-18} ${GROUND-94}z" fill="${A.stone}"/>
+  ${R(c-9,GROUND-86,18,10,met?'url(#lit)':A.stoneD,'rx="1.5"')}${met&&P.glow?`<circle cx="${c}" cy="${GROUND-81}" r="18" fill="url(#glow)"/>`:''}</g>`}
+
+function barrier(x){return `<g>${R(x,GROUND+8,4,14,'#333')}${R(x+30,GROUND+8,4,14,'#333')}
+  <rect x="${x-2}" y="${GROUND+4}" width="38" height="7" fill="#fff"/><path d="M${x+4} ${GROUND+4}l-5 7M${x+14} ${GROUND+4}l-5 7M${x+24} ${GROUND+4}l-5 7M${x+34} ${GROUND+4}l-5 7" stroke="${A.barrierR}" stroke-width="4"/></g>`}
+
+function street(L,P){
+  const W=L.W;let s=R(0,SY,W,GROUND-SY,'url(#sky)')+farCity(W,P);
+  s+=R(0,GROUND,W,22,A.walk0)+R(0,GROUND+20,W,2,A.walk1)+R(0,GROUND+22,W,5,A.curb)+R(0,GROUND+27,W,33,A.road0)+R(0,GROUND+48,W,12,A.road1);
+  for(let lx=10;lx<W;lx+=60)s+=R(lx,GROUND+42,28,3,A.lane,'rx="1.5"');
+  for(let jx=0;jx<W;jx+=36)s+=R(jx,GROUND,1,20,A.walk1);
+  return s}
+
+/* ---------- Render ---------- */
+const $=id=>document.getElementById(id);
+function chipFor(it){
+  const ws=it.ws;
+  if(it.kind==='lot'){
+    const st=it.stage;
+    if(it.many)return {title:`${st.n} ${st.title}`,lamp:['unknown','Planned'],meta:`${st.ws.reduce((a,b)=>a+b.tasks.length,0)} tasks planned`,id:st.id};
+    return {title:ws.title,lamp:ws.waitsOn?['unknown','Waits on P0 gate']:['unknown','Planned'],meta:`${ws.tasks.length} tasks planned`,id:ws.id};
+  }
+  const states=ws.tasks.map(taskState),who=whoFresh(ws);
+  const c=k=>states.filter(s=>s===k).length,v=states.filter(lit).length,d=c('done'),a=c('active');
+  let lamp;
+  if(decisionShown(ws.decision))lamp=['warn','1 decision waiting'];
+  else if(who&&!who.fresh)lamp=['unknown',who.doing];
+  else if(a&&who)lamp=S.view==='replay'?['ok','Active then']:['ok live',`Working · ${who.last}`];
+  else if(a)lamp=['unknown','No session'];
+  else lamp=['unknown','Nothing running'];
+  const parts=[];if(v)parts.push(`${v} verified`);if(d)parts.push(`${d} done`);
+  return {title:ws.title,lamp,meta:`${parts.join(' · ')||'none done'} of ${states.length}`,id:ws.id};
+}
+
+let L;
+function drawWorld(){
+  const P=S.night?NIGHT:DAY,face=$('aw-face');
+  const box=face.querySelector('.aw-world');if(!box)return;
+  L=layout();
+  let art='',chips=[];
+  for(const it of L.items){
+    if(it.kind==='gate'){art+=gate(it,P);continue}
+    const r=it.kind==='lot'?lot(it):building(it,P);art+=`<g class="aw-art" data-id="${it.kind==='lot'&&it.many?it.stage.id:it.ws.id}">${r.svg}</g>`;
+    if(it.ws&&it.ws.waitsOn)art+=barrier(it.x-36);
+    if(!(it.kind==='lot'&&it.many))chips.push({it,top:r.top,...chipFor(it)});
+  }
+  const down=S.view==='down',empty=S.view==='empty';
+  const cw=box.clientWidth,scale=down||empty?cw/L.W:Math.min(Math.max(cw/L.W,.82),1.2),pw=Math.round(L.W*scale),ph=Math.round(SH*scale);
+  const svg=`<svg viewBox="0 ${SY} ${L.W} ${SH}" aria-hidden="true" focusable="false">${defs(P)}${street(L,P)}${down||empty?'':art}
+    ${S.night?R(0,SY,L.W,SH,'#0a1020','opacity=".18"'):''}</svg>`;
+  const chipHtml=down||empty?'':chips.map(c=>`<button type="button" class="aw-chip" data-id="${c.id}" ${S.sel===c.id?'aria-current="true"':''}
+     style="left:${Math.round(c.it.x*scale)}px;top:var(--ui-s-2);width:${Math.round(Math.max(c.it.w,c.it.kind==='lot'?LOT+20:c.it.w)*scale)}px">
+     <span>${svgEsc(c.title)}</span><span class="ui-chip ui-chip--${c.lamp[0].split(' ').join(' ui-chip--')}">${svgEsc(c.lamp[1])}</span><small>${svgEsc(c.meta)}</small></button>`).join('');
+  const over=down?`<div class="aw-over"><div><p><b>Couldn't read the mission ledger.</b> Pi Hub didn't answer at ${NOW}, so the street isn't drawn. Nothing here is from memory.</p><button type="button" class="ui-btn" id="aw-retry">Try again</button></div></div>`
+    :empty?`<div class="aw-over"><div><p><b>No initiative is active.</b> Start one with <code>/mission</code> in Claude Code, or import a plan in Missions.</p><a class="ui-btn ui-btn--primary" href="#missions">Open Missions</a></div></div>`:'';
+  box.innerHTML=`<div class="aw-stage" style="width:${pw}px;height:${ph}px">${svg}${chipHtml}${over}</div>`;
+  const scrolls=pw>cw;
+  if(scrolls){box.tabIndex=0;box.setAttribute('role','region');box.setAttribute('aria-label','Street, scrolls sideways')}else{box.removeAttribute('tabindex');box.removeAttribute('role');box.removeAttribute('aria-label')}
+  // ruler: one button per district
+  const ruler=face.querySelector('.aw-ruler');
+  ruler.style.width=pw+'px';
+  ruler.innerHTML=down?'':L.stages.map(d=>{const w=(d.x1-d.x0)*scale,full=w>150,cur=d.st.id==='a34:stage:p0';
+    return `<button type="button" data-id="${d.st.id}" ${cur?'data-current':''} style="left:${Math.round(d.x0*scale)}px;width:${Math.round(w)}px" aria-label="${d.st.n} ${svgEsc(d.st.title)}: gate ${d.st.gate.verdict}${cur?', current stage':''}">
+      <span>${d.st.n}${full?' '+svgEsc(d.st.title):''}</span><small>${d.st.status==='planned'?'Planned':'Gate '+d.st.gate.verdict}</small></button>`}).join('');
+  if(scrolls&&!box.dataset.scrolled){box.scrollLeft=0;box.dataset.scrolled='1'}
+  box.querySelectorAll('.aw-chip').forEach(b=>b.onclick=()=>inspect(b.dataset.id,b));
+  box.querySelectorAll('.aw-art').forEach(g=>g.onclick=()=>inspect(g.dataset.id,box.querySelector(`.aw-chip[data-id="${g.dataset.id}"]`)));
+  ruler.querySelectorAll('button').forEach(b=>b.onclick=()=>inspect(b.dataset.id,b));
+  const rt=$('aw-retry');if(rt)rt.onclick=()=>{rt.disabled=true;rt.textContent='Reading the ledger…';setTimeout(()=>{rt.disabled=false;rt.textContent='Try again'},1500)};
+  // keep the ruler's scroll with the street
+  box.onscroll=()=>{ruler.style.transform=`translateX(${-box.scrollLeft}px)`};box.onscroll();
+}
+
+function counts(){
+  let planned=0,done=0,ver=0,active=0;for(const st of STAGES)for(const w of st.ws)for(const t of w.tasks){planned++;const s=taskState(t);if(s==='done')done++;if(lit(s))ver++;if(s==='active')active++}
+  return {planned,done,ver,active,gates:STAGES.filter(s=>s.gate.verdict==='met').length,ngates:STAGES.length};
+}
+
+const RIBBON={live:()=>`Ledger as of ${NOW}`,stale:()=>'Ledger as of 09:00 · 41 min old',down:()=>`Not answering · checked ${NOW}`,replay:()=>`Replay ${S.replayAt}`,sample:()=>'Sample data',empty:()=>`Ledger as of ${NOW}`,loading:()=>''};
+function renderFace(){
+  const face=$('aw-face'),v=S.view;
+  if(v==='loading'){face.innerHTML=`<div class="ui-faceplate__nameplate"><span id="aw-name">Reading the mission ledger…</span></div>
+    <span class="ui-skeleton" style="height:min(20rem,60vw);margin:0 calc(-1*var(--aw-pad));border-radius:0"></span>
+    <div class="aw-sum"><div class="ui-faceplate__main"><span class="ui-skeleton" style="width:9rem;height:3rem"></span><span class="ui-skeleton" style="width:70%"></span></div>
+    <div><span class="ui-skeleton" style="width:90%"></span><br><span class="ui-skeleton" style="width:75%"></span></div></div>`;face.setAttribute('aria-busy','true');return}
+  face.removeAttribute('aria-busy');
+  const c=counts(),stale=v==='stale',down=v==='down',empty=v==='empty';
+  const lamp=down?['unknown','Unavailable']:stale?['unknown','Stale']:empty?['unknown','No initiative']:v==='replay'?['unknown','Replay']:['warn','Needs you'];
+  const name=empty||down?'No initiative shown':`A34 · ${INIT.title}`;
+  face.innerHTML=`<div class="ui-faceplate__nameplate"><span id="aw-name">${svgEsc(name)}</span><span class="ui-chip ui-chip--${lamp[0]}">${lamp[1]}</span><span class="aw-ribbon">${RIBBON[v]()}</span></div>
+   <div class="aw-world"></div><div style="margin:calc(-1*var(--ui-s-4)) calc(-1*var(--aw-pad)) 0;overflow:hidden"><div class="aw-ruler"></div></div>
+   ${v==='replay'?`<div class="aw-replay"><label for="aw-scrub">Replay</label><input id="aw-scrub" type="range" min="${toMin('06:45')}" max="${toMin(NOW)}" step="1" value="${toMin(S.replayAt)}" aria-valuetext="${S.replayAt}"><output for="aw-scrub">${S.replayAt} · from the server's event log</output></div>`:''}
+   ${down||empty?'':`<div class="aw-sum">
+     <div class="ui-faceplate__main">
+       <p class="ui-readout ui-readout--md">${c.gates} of ${c.ngates}<span class="ui-readout__unit">gates met</span></p>
+       <p class="ui-faceplate__caption">Stage P0 Headroom. ${v==='replay'?'Showing the ledger as it stood at '+S.replayAt+'.':stale?'These are the ledger\'s 09:00 values; the sessions may have moved on since.':'Claude Code is waiting on one decision from you before it can finish the test work.'}</p>
+       <div class="aw-actions">${v==='live'||v==='sample'?`<a class="ui-btn ui-btn--primary" href="#missions/a34#a34:decision:test-limit">Answer the decision</a>`:''}
+         <button type="button" class="ui-btn ui-btn--ghost" id="aw-night" aria-pressed="${S.night}">Night theme</button>
+         ${v==='replay'?`<button type="button" class="ui-btn ui-btn--ghost" id="aw-live">Back to now</button>`:`<button type="button" class="ui-btn ui-btn--ghost" id="aw-replay">Replay</button>`}</div>
+     </div>
+     <dl aria-label="Progress">
+       <div><dt>Tasks</dt><dd>${c.done} done · ${c.ver} verified of ${c.planned} planned</dd></div>
+       <div><dt>Decisions</dt><dd>${decisionShown(STAGES[0].ws[0].decision)?'1 open (1 blocking) · 14 answered':'0 open · 14 answered'}</dd></div>
+       <div><dt>Evidence</dt><dd>6 trusted · 4 reported · 9 imported</dd></div>
+       <div><dt>Plan</dt><dd>Revision 1, imported from <span class="aw-mono">${INIT.manifest}</span></dd></div>
+     </dl></div>
+     <details class="aw-key"><summary>What the street shows</summary><ul>${KEY.map(([svg,b,t])=>`<li><svg viewBox="0 0 40 28" aria-hidden="true">${defs(DAY)}${svg}</svg><p><b>${b}</b><br><span>${t}</span></p></li>`).join('')}</ul></details>`}`;
+  drawWorld();
+  const n=$('aw-night');if(n)n.onclick=()=>{S.night=!S.night;render()};
+  const rp=$('aw-replay');if(rp)rp.onclick=()=>{$('m-state').value='replay';S.view='replay';S.replayAt='08:30';render();$('aw-scrub').focus()};
+  const lv=$('aw-live');if(lv)lv.onclick=()=>{$('m-state').value='live';S.view='live';render()};
+  const sc=$('aw-scrub');if(sc)sc.oninput=()=>{const m=+sc.value;S.replayAt=String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');drawWorld();
+    sc.setAttribute('aria-valuetext',S.replayAt);face.querySelector('output').textContent=S.replayAt+' · from the server\'s event log';face.querySelector('.aw-ribbon').textContent='Replay '+S.replayAt};
+}
+const KEY=[
+ [`${R(4,4,32,22,'url(#brick)')}${R(8,8,10,8,'url(#lit)')}${R(22,8,10,8,'url(#lit)')}`,'Lit floor','A task verified by a trusted check or by you'],
+ [`${R(4,4,32,22,'url(#brick)')}${R(8,8,10,8,'#34465c')}${R(22,8,10,8,'#34465c')}`,'Dark floor','Reported done, not verified yet'],
+ [`<g fill="#7d8796">${R(4,4,3,22)}${R(18,4,3,22)}${R(33,4,3,22)}${R(4,4,32,3)}</g>`,'Open frame','A task planned, not started'],
+ [`<g fill="#a5afbd">${R(6,2,2,24)}${R(32,2,2,24)}</g>${R(2,22,36,3,'#c89b4a')}${R(2,10,36,2,'#c89b4a')}`,'Scaffolding','A task active, with a session reporting in the last 2 minutes'],
+ [`${R(2,10,36,8,'url(#haz)')}`,'Hazard tape','A task blocked'],
+ [`<circle cx="20" cy="14" r="12" fill="url(#beacon)"/><path d="M16 17a4 5 0 0 1 8 0z" fill="#ffb000"/>`,'Beacon','A decision waiting for you'],
+ [`<path d="M8 26V6M8 6h18l-4 5 4 5H8" stroke="#4a5260" fill="#3f9d5a" stroke-width="1.6"/>`,'Flag','Accepted: you met the gate that covers it'],
+ [`${R(6,6,6,22,'#c9c3b8')}${R(28,6,6,22,'#c9c3b8')}<path d="M4 8Q20 -4 36 8" stroke="#c9c3b8" stroke-width="4" fill="none"/>`,'Gate arch','A stage\'s acceptance gate; its sign lights when met'],
+ [`${R(2,10,36,7,'#fff')}<path d="M8 10l-5 7M18 10l-5 7M28 10l-5 7M38 10l-5 7" stroke="#d23c32" stroke-width="4"/>`,'Road barrier','Waits on something not done yet'],
+ [`<g fill="none" stroke="#5b6472" stroke-width="1.4" stroke-dasharray="3 2"><circle cx="20" cy="6" r="4"/><path d="M15 11h10v9H15z"/></g>`,'Outline figure','A session with no report in its window'],
+];
+
+function renderRows(){
+  const v=S.view,needs=$('aw-needs'),down=v==='down',empty=v==='empty',loading=v==='loading';
+  needs.hidden=!((v==='live'||v==='sample'||v==='stale'||v==='replay')&&decisionShown(STAGES[0].ws[0].decision));
+  const d=STAGES[0].ws[0].decision;
+  $('aw-needs-rows').innerHTML=`<li class="ui-row ui-row--lamp"><button type="button" class="aw-rowbtn" data-id="${d.id}"><span class="ui-row__title">${d.q}</span>
+    <span class="ui-row__detail">Blocking · asked by ${d.asked} at ${d.at} · Recommended: ${d.rec}</span></button>
+    <span class="ui-chip ui-chip--warn">Waiting for you</span><a class="ui-btn" href="#missions/a34#${d.id}">Answer in Missions</a></li>`;
+  const rows=$('aw-stage-rows');
+  if(loading){rows.innerHTML=[1,2,3].map(()=>`<li class="ui-row"><span class="ui-skeleton" style="width:60%"></span></li>`).join('')}
+  else if(down)rows.innerHTML=`<li class="ui-row ui-row--lamp"><span><span class="ui-row__title">Couldn't read the stages</span><span class="ui-row__detail">Pi Hub's mission ledger didn't answer at ${NOW}.</span></span><span class="ui-chip ui-chip--unknown">Unavailable</span></li>`;
+  else if(empty)rows.innerHTML=`<li class="ui-empty">No stages: there's no active initiative.</li>`;
+  else rows.innerHTML=STAGES.map(st=>{
+    const ts=st.ws.flatMap(w=>w.tasks.map(taskState)),dn=ts.filter(s=>s==='done'||lit(s)).length;
+    const head=`<li class="ui-row ui-row--lamp"><button type="button" class="aw-rowbtn" data-id="${st.id}"><span class="ui-row__title">${st.n} ${svgEsc(st.title)}</span>
+      <span class="ui-row__detail">Gate ${st.gate.verdict}: ${svgEsc(st.gate.criterion)}</span></button>
+      <span class="ui-row__value">${dn} of ${ts.length} tasks done</span><span class="ui-chip ui-chip--${st.status==='active'?'ok':'unknown'}">${st.status==='active'?'Active':'Planned'}</span></li>`;
+    if(st.status!=='active')return head;
+    return head+st.ws.map(w=>{const c=chipFor({kind:w.tasks.every(t=>!built(taskState(t)))?'lot':'bldg',ws:w,stage:st});
+      return `<li class="ui-row ui-row--lamp aw-sub"><button type="button" class="aw-rowbtn" data-id="${w.id}"><span class="ui-row__title">${svgEsc(w.title)}</span>
+      <span class="ui-row__detail">${w.repo||''}${w.branch?` · <span class="aw-mono">${w.branch}</span>`:''} · ${c.meta}</span></button>
+      <span class="ui-chip ui-chip--${c.lamp[0].split(' ').join(' ui-chip--')}">${svgEsc(c.lamp[1])}</span></li>`}).join('')}).join('');
+  const ex=$('aw-exec-rows');
+  if(loading)ex.innerHTML=`<li class="ui-row"><span class="ui-skeleton" style="width:50%"></span></li>`;
+  else if(down)ex.innerHTML=`<li class="ui-row ui-row--lamp"><span><span class="ui-row__title">Couldn't read running work</span><span class="ui-row__detail">It comes from the same ledger.</span></span><span class="ui-chip ui-chip--unknown">Unavailable</span></li>`;
+  else if(empty)ex.innerHTML=`<li class="ui-empty">Nothing running for an initiative.</li>`;
+  else ex.innerHTML=EXECS.map(e=>{let tone=e.tone,word=e.word,live=e.live;
+    if(v==='stale'&&e.live){tone='unknown';word='No report since 09:00';live=false}
+    if(S.finished&&e.id==='x:claude-7f2'){tone='unknown';word='Turn finished 09:42';live=false}
+    return `<li class="ui-row ui-row--lamp"><span><span class="ui-row__title">${svgEsc(e.title)}</span><span class="ui-row__detail">${svgEsc(e.detail)} · ${e.level}</span></span>
+    <span class="ui-chip ui-chip--${tone}${live?' ui-chip--live':''}">${svgEsc(word)}</span></li>`}).join('');
+  document.querySelectorAll('.aw-rowbtn').forEach(b=>b.onclick=()=>inspect(b.dataset.id,b));
+  const src={live:`Ledger: as of ${NOW}`,sample:'Sample data: not from the ledger',stale:'Ledger: last read 09:00, 41 min ago',down:`Ledger: not answering (checked ${NOW})`,replay:`Ledger event log: replaying ${S.replayAt}`,loading:'Ledger: reading…',empty:`Ledger: as of ${NOW}`}[v];
+  $('aw-sources').innerHTML=`<span>Sources:</span><span>${src}</span>${down||empty||loading?'':`<span>Plan: imported from <span class="aw-mono">${INIT.manifest}</span>, revision 1</span><span>Claude Code: reported ${v==='stale'?'09:00':'09:40'}</span><span>Local AI: last known 08:58 (PC asleep)</span><span>GitHub: checked 09:40</span>`}`;
+}
+
+function renderNotice(){
+  const n=$('aw-notice'),v=S.view;
+  const t={stale:['warn','The street shows the ledger as of 09:00, 41 minutes ago. Pi Hub hasn\'t answered Local AI since; sessions may have moved on.'],
+    down:['bad',`Pi Hub's mission ledger isn't answering (checked ${NOW}). Agent World draws only from the ledger, so it shows nothing until it answers.`]}[v];
+  n.hidden=!t;n.className=t?'ui-notice ui-notice--'+t[0]:'';n.textContent=t?t[1]:'';n.setAttribute('role',t&&t[0]==='bad'?'alert':'status');
+  $('aw-sample').hidden=v!=='sample';
+}
+
+/* ---------- Inspector ---------- */
+let opener=null;
+function find(id){
+  for(const st of STAGES){if(st.id===id)return {kind:'stage',st};if(st.gate.id===id)return {kind:'gate',st};
+    for(const w of st.ws){if(w.id===id)return {kind:'ws',st,w};if(w.decision&&w.decision.id===id)return {kind:'decision',st,w,d:w.decision}}}
+  return null}
+function inspect(id,from){
+  const f=find(id);if(!f)return;opener=from||document.activeElement;S.sel=id;
+  const link=`<a class="ui-btn ui-btn--primary" href="#missions/a34#${id}">Open in Missions</a>`;
+  let h='',sub='',body='';
+  if(f.kind==='ws'){const w=f.w,who=whoFresh(w);h=w.title;sub=`Workstream · ${f.st.n} ${f.st.title} · ${w.repo||''}${w.branch?' · '+w.branch:''}`;
+    body=`<section><h3>Tasks</h3><ul class="ui-rows">${w.tasks.map(t=>{const s=taskState(t);const tone=lit(s)?'ok':s==='active'?'ok':s==='blocked'?'warn':'unknown';
+      const word={verified:'Verified',done:'Done (reported)',active:'Active',planned:'Planned',blocked:'Blocked',accepted:'Accepted'}[s]||s;
+      return `<li class="ui-row ui-row--lamp"><span><span class="ui-row__title">${svgEsc(t.title)}</span>${t.ev?`<span class="ui-row__detail">${svgEsc(t.ev)}</span>`:''}</span><span class="ui-chip ui-chip--${tone}">${word}</span></li>`}).join('')}</ul></section>
+     ${who?`<section><h3>Who's on it</h3><ul class="ui-rows"><li class="ui-row ui-row--lamp"><span><span class="ui-row__title">${who.name}</span><span class="ui-row__detail">${who.model} · Reported</span></span><span class="ui-chip ui-chip--${who.fresh?'ok ui-chip--live':'unknown'}">${svgEsc(who.doing)}</span></li></ul></section>`:''}
+     <section><h3>Waits on / unblocks</h3><ul class="ui-rows">${w.waitsOn?`<li class="ui-row ui-row--lamp"><span>Waits on the P0 gate</span><span class="ui-chip ui-chip--unknown">Open</span></li>`:`<li class="ui-row">Waits on nothing</li>`}
+       ${f.st.n==='P0'?`<li class="ui-row ui-row--lamp"><span>Unblocks P1b hub key on task routes, through the P0 gate</span></li>`:''}</ul></section>
+     ${w.decision?`<section><h3>Decision waiting</h3><p>${w.decision.q} <button type="button" class="ui-btn ui-btn--ghost" data-go="${w.decision.id}">See it</button></p></section>`:''}`}
+  else if(f.kind==='decision'){const d=f.d;h=d.q;sub=`Decision · ${d.blocking?'Blocking':'Not blocking'} · asked by ${d.asked} at ${d.at}`;
+    body=`<p>${d.why}</p><section><h3>Options</h3><ul class="ui-rows">${d.opts.map(([o,why])=>`<li class="ui-row ui-row--lamp"><span><span class="ui-row__title">${o}${o===d.rec?' (recommended)':''}</span><span class="ui-row__detail">${why}</span></span></li>`).join('')}</ul></section>
+     <p class="ui-row__detail">You answer in Missions. Agent World only shows the question.</p>`}
+  else{const st=f.st;h=`${st.n} ${st.title}`;sub=`Stage · ${st.status==='active'?'Active':'Planned'} · ${st.ws.length} workstream${st.ws.length>1?'s':''}`;
+    body=`<section><h3>Gate</h3><ul class="ui-rows"><li class="ui-row ui-row--lamp"><span><span class="ui-row__title">${svgEsc(st.gate.criterion)}</span><span class="ui-row__detail">Evidence needed: ${st.gate.needs} · only you can mark it met</span></span><span class="ui-chip ui-chip--${st.gate.verdict==='met'?'ok':'unknown'}">${st.gate.verdict==='met'?'Met':'Open'}</span></li></ul></section>
+     <section><h3>Workstreams</h3><ul class="ui-rows">${st.ws.map(w=>`<li class="ui-row"><button type="button" class="aw-rowbtn" data-go="${w.id}"><span class="ui-row__title">${svgEsc(w.title)}</span><span class="ui-row__detail">${w.tasks.length} tasks</span></button></li>`).join('')}</ul></section>`}
+  $('aw-sheet-body').innerHTML=`<header><h2 id="aw-sheet-h">${svgEsc(h)}</h2><p>${svgEsc(sub)}</p>
+    <button type="button" class="ui-btn ui-btn--icon" aria-label="Close" id="aw-close"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="1.8"/></svg></button></header>
+    ${body}<p class="ui-row__detail">Provenance: ${S.view==='sample'?'sample data':'imported from '+INIT.manifest+', revision 1; states as reported unless marked verified'} · <span class="aw-mono">${id}</span></p><div class="aw-actions">${link}</div>`;
+  const dlg=$('aw-sheet');if(!dlg.open)dlg.showModal();$('aw-close').onclick=()=>dlg.close();
+  dlg.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>inspect(b.dataset.go,opener));
+  history.replaceState(null,'','#'+id);
+  drawWorld();
+}
+$('aw-sheet').addEventListener('close',()=>{S.sel=null;history.replaceState(null,'',location.pathname);drawWorld();
+  const id=opener&&opener.dataset&&opener.dataset.id;const again=id&&document.querySelector(`[data-id="${CSS.escape(id)}"]`);(again||opener)?.focus?.()});
+
+/* ---------- Mockup controls ---------- */
+function render(){renderNotice();renderFace();renderRows()}
+$('m-state').onchange=e=>{S.view=e.target.value;S.finished=false;if(S.view==='replay')S.replayAt='08:30';render()};
+$('m-theme').onchange=e=>{if(e.target.value)document.documentElement.dataset.theme=e.target.value;else delete document.documentElement.dataset.theme};
+$('m-reduce').onchange=e=>{S.reduce=e.target.checked;document.body.classList.toggle('reduce',S.reduce)};
+$('m-finish').onclick=()=>{
+  if(S.view!=='live'){$('m-state').value='live';S.view='live';render()}
+  if(S.finished)return;
+  const van=document.getElementById('van-a34:ws:release-tests'),scaf=document.querySelectorAll('[data-scaf="a34:ws:release-tests"]');
+  const reduce=S.reduce||matchMedia('(prefers-reduced-motion: reduce)').matches;
+  scaf.forEach(g=>g.style.opacity='0');if(van)van.classList.add('go');
+  setTimeout(()=>{S.finished=true;render();$('aw-toast').textContent='Claude Code reported "Split the release suite" done at 09:42. It lights when a check verifies it.';
+    setTimeout(()=>$('aw-toast').textContent='',6000)},reduce?0:1700);
+};
+let rz;addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(drawWorld,80)});
+render();
+if(location.hash.length>1)inspect(decodeURIComponent(location.hash.slice(1)));
+</script>
+</body>
+</html>
