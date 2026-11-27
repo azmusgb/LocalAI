@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('fs'),path=require('path'),{EventEmitter}=require('events');
-const {runAgentLoop,createModelQueue}=require('./agent-runtime');
+const {runAgentLoop,createModelQueue,sumUsage}=require('./agent-runtime');
 const createMissionEvidence=require('./mission-evidence'),{fitEvidence,evidenceTokenBudget,CHARS_PER_TOKEN,checkAbsenceClaims}=require('./mission-evidence');
 const {missionNote}=require('./public/agent-world-words');
 const {ANSWER_FORMAT,polishAnswer}=require('./mission-answer');
@@ -118,6 +118,9 @@ module.exports=function createAgentOrchestrator(deps={}){
   persistRecord(runsFile,run,300);
   const publish=event=>{
    const entry={...event,at:iso(),runId:run.id,workerId:options.workerId||agentId,agentId};
+   // What the run cost (agent-runtime.js) arrives as its last event, whether it finished or stopped. It carries the
+   // summary to the record and is not a step: it is not stored with the events or passed on.
+   if(event.type==='run_usage'){run.usage=event.usage;return}
    pushCapped(run.toolEvents,entry);
    run.updatedAt=iso();persistRecord(runsFile,run,300);options.onEvent?.(entry);
   };
@@ -148,6 +151,8 @@ module.exports=function createAgentOrchestrator(deps={}){
     usedTools=false;run.toolFallback=e.message+'; ran one grounded prompt instead';run.plan[2].name='Execute specialist';
    }
    if(!usedTools){
+    // One prompt through runLocalModel reports no counts: usage is unknown (null), never zeros.
+    run.usage=null;
     const evidence=fitEvidence(packet.sources.map((x,i)=>'['+(i+1)+'] SOURCE: '+x.source+'\n'+x.text),evidenceRoom).blocks.join('\n\n');
     run.answer=await runModelReliable(grounding+'Goal:\n'+goal+'\n\nAuthoritative project evidence:\n'+(evidence||'(none)')+upstreamText+'\n\nReturn a concrete, structured, evidence-grounded result. Before finalizing, verify that each observation is supported by its cited source and that the report contains no contradictory claims.',agent.system,groundedTimeoutMs,rt.model);
    }
@@ -161,7 +166,8 @@ module.exports=function createAgentOrchestrator(deps={}){
   return run;
  }
  // Tool-mode synthesis: the coordinator may ask a specialist for up to two focused follow-up investigations.
- async function coordinate(m,goal,projectId,model,joined,options){
+ // cloudTried: a cloud summary was sent first and didn't answer; its tokens were never counted, so neither is this run's total.
+ async function coordinate(m,goal,projectId,model,joined,options,cloudTried=false){
   const evidence=[...new Map(m.results.flatMap(r=>r.evidenceRecords||[]).map(record=>[record.id,record])).values()];
   // The coordinator sees each record briefly; full excerpts are already in the specialist outputs. Outputs take two
   // thirds of the evidence budget and the index a quarter, leaving room in the mission context for a follow-up's answer.
@@ -176,16 +182,16 @@ module.exports=function createAgentOrchestrator(deps={}){
    m.followups.push({workerId,agentId,question,status:'running'});
    m.workers.push(worker);missionSnapshot(m,'followup',question,workerId);
    // A timeout or cancellation settles the worker now; the late specialist result is then ignored.
-   signal.addEventListener('abort',()=>{worker.state='error';worker.error='Follow-up stopped: '+String(signal.reason?.message||signal.reason||'aborted');m.followups.find(f=>f.workerId===workerId).status='error';missionSnapshot(m,'worker-result',worker.error,workerId)},{once:true});
+   signal.addEventListener('abort',()=>{worker.usage=null;worker.state='error';worker.error='Follow-up stopped: '+String(signal.reason?.message||signal.reason||'aborted');m.followups.find(f=>f.workerId===workerId).status='error';missionSnapshot(m,'worker-result',worker.error,workerId)},{once:true});
    const result=await specialist(agentId,question,projectId,m.routing?.workerModel||'',joined.slice(0,10000),{...options,signal,workerId,onEvent:event=>recordMissionTool(m,event)});
    signal.throwIfAborted();
-   worker.state=result.status;worker.model=result.model;worker.error=result.error||'';
+   worker.state=result.status;worker.model=result.model;worker.error=result.error||'';worker.usage=result.usage??null;
    Object.assign(m.followups.find(f=>f.workerId===workerId),{status:result.status,runId:result.id,error:result.error||''});
    missionSnapshot(m,'worker-result','Follow-up investigation finished',workerId);
    if(result.status!=='complete')throw new Error('Follow-up failed: '+result.error);
    const keep=Math.floor(evidenceChars/4);return {data:{workerId,answer:result.answer.slice(0,keep),truncated:result.answer.length>keep},evidence:result.evidenceRecords.slice(-12)};
   });
-  const result=await runAgentLoop({model,system:'You are the mission coordinator for the Local AI Appliance. Check specialist evidence before accepting conclusions. Request a focused investigation if a material fact is missing. Synthesize only claims grounded in the specialist evidence. Preserve source labels and evidence IDs. State uncertainty once, briefly. '+COORDINATOR_ABSENCE_RULE+' '+ANSWER_FORMAT,prompt:'Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nAvailable evidence:\n'+JSON.stringify(evidenceIndex),turn:deps.runAgentTurn,tools:[followup],evidence,maxTurns:4,maxToolCalls:2,...(deps.agentLimits?.maxContextChars?{maxContextChars:deps.agentLimits.maxContextChars}:{}),timeoutMs:coordinatorTimeoutMs,toolTimeoutMs:followupTimeoutMs,signal:options.signal,modelQueue,onEvent:event=>recordMissionTool(m,{...event,at:iso(),workerId:'synthesis',runId:m.id})});
+  const result=await runAgentLoop({model,system:'You are the mission coordinator for the Local AI Appliance. Check specialist evidence before accepting conclusions. Request a focused investigation if a material fact is missing. Synthesize only claims grounded in the specialist evidence. Preserve source labels and evidence IDs. State uncertainty once, briefly. '+COORDINATOR_ABSENCE_RULE+' '+ANSWER_FORMAT,prompt:'Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nAvailable evidence:\n'+JSON.stringify(evidenceIndex),turn:deps.runAgentTurn,tools:[followup],evidence,maxTurns:4,maxToolCalls:2,...(deps.agentLimits?.maxContextChars?{maxContextChars:deps.agentLimits.maxContextChars}:{}),timeoutMs:coordinatorTimeoutMs,toolTimeoutMs:followupTimeoutMs,signal:options.signal,modelQueue,onEvent:event=>{if(event.type==='run_usage'){m.workers.find(x=>x.id==='synthesis').usage=cloudTried?null:event.usage;return}recordMissionTool(m,{...event,at:iso(),workerId:'synthesis',runId:m.id})}});
   m.evidenceRecords=result.evidenceRecords;m.citations=result.citations;if(result.citationWarning)m.citationWarning=result.citationWarning;return result.answer;
  }
  // Tool steps update the mission record and live stream without adding timeline entries.
@@ -208,6 +214,9 @@ module.exports=function createAgentOrchestrator(deps={}){
   const workers=(m.workers||[]).map(w=>({id:w.id,name:w.name,state:w.state,model:w.model,dependsOn:w.dependsOn||[],reason:w.reason,routingMeta:w.routingMeta||null,error:w.error||'',...(w.partial?{partial:true}:{})}));
   const sig=workers.map(w=>w.id+':'+w.state).join('|')+'|'+m.status+'|'+type;
   if(m.timeline.at(-1)?.sig!==sig)m.timeline.push({at:iso(),type,detail,workerId,status:m.status,sig,workers});
+  // The mission's total, once it has ended, over the workers that ran (each has `usage`; null is a worker whose cost
+  // is unknown, which makes the total unknown). A follow-up's time is also inside the Coordinator's toolMs.
+  if(m.status!=='running')m.usage=sumUsage((m.workers||[]).filter(w=>'usage' in w).map(w=>w.usage));
   m.updatedAt=iso();
   persistRecord(missionsFile,m,200);
   events.emit('mission',m);return m
@@ -228,18 +237,21 @@ module.exports=function createAgentOrchestrator(deps={}){
      const fallbackId=w.routingMeta?.retryPolicy?.fallbackAgentId;
      if(r.status!=='complete'&&fallbackId){
       const fbAgent=specialists.find(a=>a.id===fallbackId);
-      if(fbAgent){missionSnapshot(m,'fallback','Primary worker failed; attempting fallback '+fbAgent.name,w.agentId);try{const fbRoute=routing.workerModel?{model:routing.workerModel}:await routeModel(goal+' '+fbAgent.capabilities.join(' '));const fb=await specialist(fallbackId,goal,projectId,fbRoute.model,dependencyContext(results,w.dependsOn),workerOpts);if(fb.status==='complete')r={...fb,agentId:w.agentId,agentName:fb.agentName+' (fallback for '+w.name+')',executedBy:fallbackId,fallbackFor:w.agentId}}catch(fe){missionSnapshot(m,'fallback','Fallback '+fbAgent.name+' failed: '+String(fe.message||fe),w.agentId)}}
+      // Whichever attempt's result is kept, the worker's usage is both attempts together.
+      if(fbAgent){missionSnapshot(m,'fallback','Primary worker failed; attempting fallback '+fbAgent.name,w.agentId);try{const fbRoute=routing.workerModel?{model:routing.workerModel}:await routeModel(goal+' '+fbAgent.capabilities.join(' '));const fb=await specialist(fallbackId,goal,projectId,fbRoute.model,dependencyContext(results,w.dependsOn),workerOpts);const usage=r.usage&&fb.usage?sumUsage([r.usage,fb.usage]):null;r=fb.status==='complete'?{...fb,agentId:w.agentId,agentName:fb.agentName+' (fallback for '+w.name+')',executedBy:fallbackId,fallbackFor:w.agentId,usage}:{...r,usage}}catch(fe){missionSnapshot(m,'fallback','Fallback '+fbAgent.name+' failed: '+String(fe.message||fe),w.agentId)}}
      }
      return r
     }));results.push(...batch);
-    ready.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const r=results.find(x=>x.agentId===w.agentId),mw=m.workers.find(x=>x.id===w.agentId);mw.state=usable(r)?'complete':r.status;if(r.partial){mw.partial=true;if(r.error){mw.error=r.error;mw.errorCode=r.errorCode}}if(r.fallbackFor){mw.fallbackUsed=r.executedBy;mw.reason=(mw.reason||'')+' · fallback executed by '+r.executedBy}});
+    ready.forEach(w=>{pending.delete(w.agentId);done.add(w.agentId);const r=results.find(x=>x.agentId===w.agentId),mw=m.workers.find(x=>x.id===w.agentId);mw.state=usable(r)?'complete':r.status;mw.usage=r.usage??null;if(r.partial){mw.partial=true;if(r.error){mw.error=r.error;mw.errorCode=r.errorCode}}if(r.fallbackFor){mw.fallbackUsed=r.executedBy;mw.reason=(mw.reason||'')+' · fallback executed by '+r.executedBy}});
     m.results=results;m.updatedAt=iso();missionSnapshot(m,'worker-result','Specialist results published',ready.map(w=>w.agentId).join(','));
    }
    opts.signal?.throwIfAborted();
    // Partial or missing parts don't stop the team: the Coordinator writes from what exists and says what is missing.
    // Only with nothing at all to work from does the mission need you.
    if(!results.some(usable)){const sw=m.workers.find(x=>x.id==='synthesis');sw.state='blocked';sw.error='Synthesis skipped because prerequisite specialists did not complete';m.status='needs_attention';m.error='Mission stopped after specialist failure';m.updatedAt=iso();missionSnapshot(m,'mission-attention','Mission stopped after specialist failure');return m}
-   const sw=m.workers.find(x=>x.id==='synthesis');sw.state='running';missionSnapshot(m,'synthesis','Coordinator started synthesis','synthesis');
+   // The Coordinator's usage is unknown (null) until its tool run on this PC reports it. It stays unknown for the single
+   // prompt and whenever a cloud summary was sent, answered or not: those tokens were spent and nobody counted them.
+   const sw=m.workers.find(x=>x.id==='synthesis');sw.state='running';sw.usage=null;missionSnapshot(m,'synthesis','Coordinator started synthesis','synthesis');
    try{
     // Specialist outputs share two thirds of the evidence budget evenly (12000 characters each at most).
     const perResult=Math.min(12000,Math.floor(evidenceChars*2/3/Math.max(1,results.length)));
@@ -257,8 +269,8 @@ module.exports=function createAgentOrchestrator(deps={}){
     opts.signal?.throwIfAborted();
     if(cloud){m.answer=cloud.content;m.coordinatorModel=cloud.used.model;m.route=cloud.used}
     else{
-    m.answer=typeof deps.runAgentTurn==='function'?await coordinate(m,goal,projectId,coordinatorModel,joined,opts).catch(e=>{if(e.code!=='MODEL_NO_TOOLS')throw e;m.toolFallback=e.message;return null}):null;
-    if(m.answer===null)m.answer=await runModelReliable(synthPrompt,synthSystem,coordinatorTimeoutMs,coordinatorModel);m.coordinatorModel=coordinatorModel;if(route)m.route=co.local(route,coordinatorModel,tried);
+    m.answer=typeof deps.runAgentTurn==='function'?await coordinate(m,goal,projectId,coordinatorModel,joined,opts,tried.length>0).catch(e=>{if(e.code!=='MODEL_NO_TOOLS')throw e;m.toolFallback=e.message;return null}):null;
+    if(m.answer===null){sw.usage=null;m.answer=await runModelReliable(synthPrompt,synthSystem,coordinatorTimeoutMs,coordinatorModel)}m.coordinatorModel=coordinatorModel;if(route)m.route=co.local(route,coordinatorModel,tried);
     }
     // The answer tidied (mission-answer.js: no process talk, Markdown or emoji, "missing" things the evidence names
     // rewritten as present, repeated gaps once, a length cap), then absence the workers never searched for is marked

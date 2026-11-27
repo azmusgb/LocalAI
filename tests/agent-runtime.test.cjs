@@ -192,3 +192,215 @@ test('a model without tool support falls back to one grounded prompt', async t =
   assert.match(mission.results[0].toolFallback, /does not support tool calling/);
   assert.match(mission.toolFallback, /does not support tool calling/);
 });
+
+// Run telemetry: what each model turn and tool call cost, and what the run cost in all. A token count the model
+// did not report is unknown (null), never 0.
+const { createOllamaTurn, createModelQueue, withTurnUsage } = require('../app/agent-runtime');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const USAGE_KEYS = ['turns', 'toolCalls', 'toolErrors', 'toolRefusals', 'compactions', 'compactedResults', 'toolResultChars', 'peakContextChars', 'modelMs', 'toolMs', 'promptTokens', 'outputTokens'];
+const ollamaBody = (message, counters = {}) => ({ ok: true, body: [Buffer.from(JSON.stringify({ model: 'm', message, done: true, ...counters }))] });
+
+test('ollama counters reach the run without entering the conversation', async () => {
+  const record = evidenceRecord('fixture', 'fixture text');
+  const lookup = tool('lookup', 'Lookup', {}, [], async () => ({ data: {}, evidence: [record] }));
+  const sent = [], events = [];
+  const counters = { prompt_eval_count: 120, eval_count: 30, total_duration: 2000000000, load_duration: 500000000, prompt_eval_duration: 1000000000, eval_duration: 400000000 };
+  const turn = createOllamaTurn({ ollamaUrl: 'http://x', fetchImpl: async (url, init) => {
+    const body = JSON.parse(init.body);
+    sent.push(body.messages);
+    return body.messages.at(-1).role === 'user'
+      ? ollamaBody({ role: 'assistant', content: '', tool_calls: [{ function: { name: 'lookup', arguments: {} } }] }, counters)
+      : ollamaBody({ role: 'assistant', content: `Done [${record.id}]` }, counters);
+  } });
+  const bare = await turn({ model: 'm', messages: [{ role: 'user', content: 'p' }], tools: [] });
+  assert.deepEqual(Object.keys(bare), ['role', 'content', 'tool_calls'], 'the message itself gains no field');
+  sent.length = 0;
+  const result = await runAgentLoop({ model: 'm', system: 's', prompt: 'p', tools: [lookup], turn, onEvent: e => events.push(e) });
+  assert.deepEqual(Object.keys(sent[1][2]).sort(), ['content', 'role', 'tool_calls'], 'the assistant message sent back carries no usage');
+  assert.doesNotMatch(JSON.stringify(sent), /usage|promptTokens|prompt_eval_count|eval_duration/);
+  assert.deepEqual(events.filter(e => e.type === 'model_turn'), [{ type: 'model_turn', turn: 1 }, { type: 'model_turn', turn: 2 }], 'the start event keeps its shape');
+  const done = events.filter(e => e.type === 'model_turn_done');
+  assert.equal(done.length, 2);
+  assert.deepEqual(done.map(e => e.turn), [1, 2]);
+  for (const [i, e] of done.entries()) {
+    assert.equal(e.promptTokens, 120);
+    assert.equal(e.outputTokens, 30);
+    assert.equal(e.contextChars, JSON.stringify(sent[i]).length, 'the size of the messages sent');
+    assert.ok(Number.isSafeInteger(e.durationMs) && e.durationMs >= 0);
+    assert.deepEqual([e.modelTotalMs, e.modelLoadMs, e.promptEvalMs, e.evalMs], [2000, 500, 1000, 400]);
+  }
+  assert.equal(result.usage.promptTokens, 240);
+  assert.equal(result.usage.outputTokens, 60);
+  assert.equal(result.usage.turns, 2);
+});
+
+test('tool results carry their duration and size, and refused calls are marked', async () => {
+  const record = evidenceRecord('fixture', 'fixture text');
+  const slow = tool('slow', 'Slow', {}, [], async () => { await sleep(40); return { data: { text: 'x'.repeat(500) }, evidence: [record] }; });
+  const broken = tool('broken', 'Broken', {}, [], async () => { throw new Error('boom'); });
+  const call = name => ({ function: { name, arguments: {} } });
+  const events = [];
+  let toolMessages;
+  const result = await runAgentLoop({
+    model: 'm', system: 's', prompt: 'p', tools: [slow, broken], maxToolCalls: 2, onEvent: e => events.push(e),
+    turn: async ({ messages }) => {
+      if (messages.at(-1).role === 'user') return { role: 'assistant', content: '', tool_calls: [call('slow'), call('broken'), call('slow')] };
+      toolMessages = messages.filter(m => m.role === 'tool');
+      return { role: 'assistant', content: `Done [${record.id}]` };
+    },
+  });
+  const results = events.filter(e => e.type === 'tool_result');
+  assert.equal(results.length, 3);
+  assert.deepEqual(results.map(e => e.resultChars), toolMessages.map(m => m.content.length), 'the size of the JSON put into the context');
+  assert.ok(results[0].durationMs >= 35, `slow tool took ${results[0].durationMs} ms`);
+  assert.ok(results.every(e => Number.isSafeInteger(e.durationMs) && e.durationMs >= 0));
+  assert.deepEqual(results.map(e => e.refused === true), [false, false, true]);
+  assert.deepEqual(results.map(e => e.ok), [true, false, false]);
+  assert.equal(results[2].durationMs, 0, 'a refused call never ran');
+  const u = result.usage;
+  assert.deepEqual([u.toolCalls, u.toolErrors, u.toolRefusals], [2, 1, 1]);
+  assert.equal(u.toolResultChars, toolMessages.reduce((n, m) => n + m.content.length, 0));
+  assert.ok(u.toolMs >= 35 && u.toolMs === results.reduce((n, e) => n + e.durationMs, 0));
+});
+
+test('compacting older tool results is reported with how many were replaced', async () => {
+  const record = evidenceRecord('fixture', 'fixture text');
+  const big = tool('big', 'Big', {}, [], async () => ({ data: { text: 'x'.repeat(3000) }, evidence: [record] }));
+  const events = [];
+  let n = 0;
+  const result = await runAgentLoop({
+    model: 'm', system: 's', prompt: 'p', tools: [big], maxContextChars: 6000, onEvent: e => events.push(e),
+    turn: async () => (++n <= 2 ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'big', arguments: {} } }] } : { role: 'assistant', content: `Done [${record.id}]` }),
+  });
+  const compacted = events.filter(e => e.type === 'context_compacted');
+  assert.equal(compacted.length, 1);
+  assert.equal(compacted[0].replaced, 1);
+  assert.equal(compacted[0].turn, 2);
+  assert.ok(Number.isSafeInteger(compacted[0].contextChars) && compacted[0].contextChars < 6000);
+  assert.ok(events.findIndex(e => e.type === 'context_compacted') < events.findLastIndex(e => e.type === 'tool_result'), 'reported before the result that needed the room');
+  assert.equal(result.usage.compactions, 1);
+  assert.equal(result.usage.compactedResults, 1);
+  const sentSizes = events.filter(e => e.type === 'model_turn_done').map(e => e.contextChars);
+  assert.equal(result.usage.peakContextChars, Math.max(...sentSizes));
+  assert.ok(result.usage.peakContextChars <= 6000);
+});
+
+test('a model turn\'s duration leaves out the wait for another worker\'s turn', async () => {
+  const modelQueue = createModelQueue();
+  const held = await modelQueue.acquire();
+  setTimeout(held, 120);
+  const events = [];
+  const started = Date.now();
+  const result = await runAgentLoop({ model: 'm', system: 's', prompt: 'p', modelQueue, onEvent: e => events.push(e), turn: async () => { await sleep(30); return { role: 'assistant', content: 'Answer' }; } });
+  assert.ok(Date.now() - started >= 140, 'the run did wait');
+  const done = events.find(e => e.type === 'model_turn_done');
+  assert.ok(done.durationMs >= 25 && done.durationMs < 100, `turn took ${done.durationMs} ms`);
+  assert.equal(result.usage.modelMs, done.durationMs);
+});
+
+test('the turn durations reported add up to the run\'s model time exactly', async t => {
+  // A clock that moves on every reading: a duration read twice would give two different numbers.
+  const realNow = Date.now;
+  let ticks = 0;
+  Date.now = () => realNow() + (ticks += 7);
+  t.after(() => { Date.now = realNow; });
+  const lookup = tool('lookup', 'Lookup', {}, [], async () => ({ data: {} }));
+  const events = [];
+  let n = 0;
+  const result = await runAgentLoop({ model: 'm', system: 's', prompt: 'p', tools: [lookup], onEvent: e => events.push(e),
+    turn: async () => (++n < 4 ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'lookup', arguments: {} } }] } : { role: 'assistant', content: 'Answer' }) });
+  Date.now = realNow;
+  const done = events.filter(e => e.type === 'model_turn_done');
+  assert.equal(done.length, 4);
+  assert.equal(result.usage.modelMs, done.reduce((sum, e) => sum + e.durationMs, 0));
+  assert.equal(result.usage.toolMs, events.filter(e => e.type === 'tool_result').reduce((sum, e) => sum + e.durationMs, 0));
+});
+
+test('a turn that reports no token count is unknown, and one unknown turn makes the run total unknown', async () => {
+  const run = async usages => {
+    const events = [];
+    let n = 0;
+    const lookup = tool('lookup', 'Lookup', {}, [], async () => ({ data: {} }));
+    const result = await runAgentLoop({
+      model: 'm', system: 's', prompt: 'p', tools: [lookup], onEvent: e => events.push(e),
+      turn: async () => {
+        const usage = usages[n++];
+        const message = n < usages.length ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'lookup', arguments: {} } }] } : { role: 'assistant', content: 'Answer' };
+        return usage ? withTurnUsage(message, usage) : message;
+      },
+    });
+    return { result, done: events.filter(e => e.type === 'model_turn_done') };
+  };
+  // No count at all: a custom turn that returns a bare message.
+  const none = await run([null, null]);
+  assert.deepEqual(none.done.map(e => [e.promptTokens, e.outputTokens]), [[null, null], [null, null]]);
+  assert.equal(none.result.usage.promptTokens, null);
+  assert.equal(none.result.usage.outputTokens, null);
+  assert.equal(none.result.usage.turns, 2, 'what was counted is still counted');
+  assert.deepEqual(Object.keys(none.result.usage), USAGE_KEYS);
+  // Mixed: one turn counted, one not. The total is unknown, not the part that was counted.
+  const mixed = await run([{ promptTokens: 100, outputTokens: 20 }, null]);
+  assert.deepEqual(mixed.done.map(e => [e.promptTokens, e.outputTokens]), [[100, 20], [null, null]]);
+  assert.equal(mixed.result.usage.promptTokens, null);
+  assert.equal(mixed.result.usage.outputTokens, null);
+  // Each count stands alone: the prompt count missing on one turn leaves the output total known.
+  const half = await run([{ promptTokens: 100, outputTokens: 20 }, { outputTokens: 5 }]);
+  assert.equal(half.result.usage.promptTokens, null);
+  assert.equal(half.result.usage.outputTokens, 25);
+  // Not a non-negative integer: unknown.
+  for (const bad of [-1, 1.5, '12', NaN, null]) {
+    const r = await run([{ promptTokens: bad, outputTokens: bad }]);
+    assert.deepEqual([r.done[0].promptTokens, r.done[0].outputTokens], [null, null], String(bad));
+    assert.equal(r.result.usage.promptTokens, null, String(bad));
+  }
+  // Every turn counted: a real total, and zero is a count.
+  const all = await run([{ promptTokens: 100, outputTokens: 0 }, { promptTokens: 150, outputTokens: 7 }]);
+  assert.equal(all.result.usage.promptTokens, 250);
+  assert.equal(all.result.usage.outputTokens, 7);
+});
+
+test('an older Ollama that sends no counters leaves the token counts unknown', async () => {
+  const events = [];
+  const turn = createOllamaTurn({ ollamaUrl: 'http://x', fetchImpl: async () => ollamaBody({ role: 'assistant', content: 'Answer' }) });
+  const result = await runAgentLoop({ model: 'm', system: 's', prompt: 'p', turn, onEvent: e => events.push(e) });
+  const done = events.find(e => e.type === 'model_turn_done');
+  assert.deepEqual([done.promptTokens, done.outputTokens, done.modelTotalMs, done.evalMs], [null, null, null, null]);
+  assert.deepEqual([result.usage.promptTokens, result.usage.outputTokens], [null, null]);
+});
+
+test('a run that stops keeps its usage on error.partial and reports it as an event', async () => {
+  const record = evidenceRecord('fixture', 'fixture text');
+  const lookup = tool('lookup', 'Lookup', {}, [], async () => ({ data: {}, evidence: [record] }));
+  const events = [];
+  let n = 0;
+  const error = await runAgentLoop({
+    model: 'm', system: 's', prompt: 'p', tools: [lookup], onEvent: e => events.push(e),
+    turn: async () => {
+      if (++n === 1) return withTurnUsage({ role: 'assistant', content: 'Looking', tool_calls: [{ function: { name: 'lookup', arguments: {} } }] }, { promptTokens: 50, outputTokens: 5 });
+      throw new Error('model went away');
+    },
+  }).then(() => null, e => e);
+  assert.match(error.message, /model went away/);
+  const u = error.partial.usage;
+  assert.deepEqual(Object.keys(u), USAGE_KEYS);
+  assert.deepEqual([u.turns, u.toolCalls, u.toolErrors, u.toolRefusals], [2, 1, 0, 0]);
+  assert.equal(u.promptTokens, null, 'the turn that failed spent tokens nobody counted');
+  assert.equal(u.outputTokens, null);
+  assert.equal(events.at(-1).type, 'run_usage');
+  assert.deepEqual(events.at(-1).usage, u);
+  // A finished run reports the same summary it returns.
+  const ok = [];
+  const result = await runAgentLoop({ model: 'm', system: 's', prompt: 'p', onEvent: e => ok.push(e), turn: async () => ({ role: 'assistant', content: 'Answer' }) });
+  assert.equal(ok.at(-1).type, 'run_usage');
+  assert.deepEqual(ok.at(-1).usage, result.usage);
+  assert.equal(ok.filter(e => e.type === 'run_usage').length, 1);
+});
+
+test('usage totals: nothing ran is zeros, an unknown run is unknown', () => {
+  const { sumUsage } = require('../app/agent-runtime');
+  const zeros = Object.fromEntries(USAGE_KEYS.map(key => [key, 0])), unknown = Object.fromEntries(USAGE_KEYS.map(key => [key, null]));
+  assert.deepEqual(sumUsage([]), zeros, 'no run happened');
+  assert.deepEqual(sumUsage([null]), unknown);
+  assert.deepEqual(sumUsage([zeros, null]), unknown);
+  assert.deepEqual(sumUsage([{ ...zeros, turns: 2, peakContextChars: 50 }, { ...zeros, turns: 1, peakContextChars: 90, promptTokens: null }]), { ...zeros, turns: 3, peakContextChars: 90, promptTokens: null });
+});
