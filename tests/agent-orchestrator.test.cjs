@@ -214,6 +214,7 @@ test('a mission keeps each worker\'s usage, the coordinator\'s, and their total'
   assert.deepEqual([synthesis.usage.turns, synthesis.usage.promptTokens, synthesis.usage.outputTokens], [1, 300, 40]);
   assert.deepEqual([mission.usage.turns, mission.usage.toolCalls, mission.usage.promptTokens, mission.usage.outputTokens], [2, 0, 400, 60]);
   assert.equal(mission.usage.peakContextChars, Math.max(worker.usage.peakContextChars, synthesis.usage.peakContextChars), 'a peak is the largest, not a sum');
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [['code_analyst', 'synthesis'], []], 'every worker that ran is in the total');
   assert.equal('usage' in mission.workers.find(w => w.id === 'router'), false, 'the router runs no model');
   assert.deepEqual(orchestrator.getMission(mission.id).usage, mission.usage, 'reading the mission back shows it');
   assert.deepEqual(orchestrator.getMission(mission.id).workers.find(w => w.id === 'synthesis').usage, synthesis.usage);
@@ -240,6 +241,7 @@ test('one worker without token counts makes the mission\'s token total unknown',
   assert.equal(mission.usage.promptTokens, null, 'not the 100 that was counted');
   assert.equal(mission.usage.outputTokens, null);
   assert.equal(mission.usage.turns, 2, 'what every worker counted is still a total');
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [['code_analyst', 'synthesis'], []], 'a worker with one unread count is still a counted worker');
 });
 
 test('the single-prompt path records usage as unknown, not zero', async t => {
@@ -251,6 +253,7 @@ test('the single-prompt path records usage as unknown, not zero', async t => {
   assert.equal(mission.workers.find(w => w.id === 'code_analyst').usage, null);
   assert.equal(mission.workers.find(w => w.id === 'synthesis').usage, null);
   for (const key of ['turns', 'toolCalls', 'modelMs', 'promptTokens', 'outputTokens', 'peakContextChars']) assert.equal(mission.usage[key], null, key);
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [[], ['code_analyst', 'synthesis']], 'workers ran and none was counted');
 });
 
 test('a specialist that stops keeps the usage of the turns it ran', async t => {
@@ -276,6 +279,7 @@ test('a worker whose fallback ran carries the usage of both attempts', async t =
   assert.equal(worker.usage.promptTokens, null, 'the failed attempt counted nothing, so the worker total is unknown');
   assert.equal(mission.usage.turns, 3);
   assert.equal(mission.usage.promptTokens, null);
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [['code_analyst', 'synthesis'], []]);
 });
 
 // Every turn in these reports its tokens, so a total can only be unknown because of the path under test.
@@ -287,7 +291,7 @@ function cloudCoordinator(chat) {
   return createCoordinator({ modelRouter: require('../app/model-router'), cloudModels, routingSetting: () => ({ cloud: true }), recordActivity: () => {}, env: {}, localModel: 'test-model' });
 }
 
-test('a cloud summary leaves the Coordinator\'s usage, and so the mission total, unknown', async t => {
+test('a cloud summary leaves the Coordinator\'s usage unknown, and the mission total says it left it out', async t => {
   const orchestrator = tooledFixture(t, async ({ messages }) => counted({ role: 'assistant', content: `Finding [${evidenceId(messages)}]` }),
     { coordinator: cloudCoordinator(async () => ({ content: 'Summary from Groq [app/server.js]' })) });
   const mission = await orchestrator.mission('Review the models page code', '', ['code_analyst']);
@@ -297,8 +301,12 @@ test('a cloud summary leaves the Coordinator\'s usage, and so the mission total,
   assert.equal('usage' in synthesis, true);
   assert.equal(synthesis.usage, null);
   assert.equal(mission.workers.find(w => w.id === 'code_analyst').usage.promptTokens, 100);
-  assert.equal(mission.usage.promptTokens, null, 'not the worker\'s 100: the cloud\'s tokens were not counted');
-  assert.equal(mission.usage.turns, null);
+  const worker = mission.workers.find(w => w.id === 'code_analyst');
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [['code_analyst'], ['synthesis']], 'the cloud\'s tokens were not counted, and the total says so');
+  const { counted: _counted, uncounted: _uncounted, ...sums } = mission.usage;
+  assert.deepEqual(sums, worker.usage, 'the total is the counted worker\'s usage, key for key');
+  assert.deepEqual([mission.usage.turns, mission.usage.promptTokens, mission.usage.outputTokens], [1, 100, 10]);
+  assert.deepEqual(orchestrator.getMission(mission.id).usage, mission.usage, 'reading the mission back shows it');
 });
 
 test('a cloud summary that was tried and failed still leaves the Coordinator\'s usage unknown', async t => {
@@ -309,8 +317,8 @@ test('a cloud summary that was tried and failed still leaves the Coordinator\'s 
   assert.match(mission.answer, /Summary on this PC/);
   assert.deepEqual(mission.route.attempts.map(a => [a.provider, a.outcome]), [['groq', 'error']]);
   assert.equal(mission.workers.find(w => w.id === 'synthesis').usage, null, 'the failed cloud call spent tokens nobody counted');
-  assert.equal(mission.usage.promptTokens, null);
-  assert.equal(mission.usage.outputTokens, null);
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [['code_analyst'], ['synthesis']]);
+  assert.deepEqual([mission.usage.promptTokens, mission.usage.outputTokens], [100, 10], 'the specialist alone: the Coordinator\'s local turn is not added to a total that leaves the Coordinator out');
   assert.ok(mission.toolEvents.some(e => e.type === 'model_turn_done' && e.workerId === 'synthesis' && e.promptTokens === 100), 'the local turn itself was counted');
 });
 
@@ -323,8 +331,8 @@ test('a Coordinator that falls back to one prompt has unknown usage', async t =>
   assert.equal(mission.status, 'complete', mission.error);
   assert.match(mission.toolFallback, /does not support tool calling/);
   assert.equal(mission.workers.find(w => w.id === 'synthesis').usage, null);
-  assert.equal(mission.usage.turns, null);
-  assert.equal(mission.usage.promptTokens, null);
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [['code_analyst'], ['synthesis']]);
+  assert.deepEqual([mission.usage.turns, mission.usage.promptTokens], [1, 100], 'the specialist\'s, with the Coordinator named as left out');
 });
 
 test('a specialist that falls back to one prompt ends with usage unknown and no usage event stored', async t => {
@@ -341,7 +349,7 @@ test('a specialist that falls back to one prompt ends with usage unknown and no 
 
 const askFollowup = { role: 'assistant', content: '', tool_calls: [{ function: { name: 'request_investigation', arguments: { agent_id: 'code_analyst', question: 'FOLLOWUP-Q' } } }] };
 
-test('a follow-up that was cut off has unknown usage, and so has the mission', async t => {
+test('a follow-up that was cut off has unknown usage, and the mission total says it left it out', async t => {
   const orchestrator = tooledFixture(t, async ({ messages, signal }) => {
     if (JSON.stringify(messages).includes('FOLLOWUP-Q')) {
       if (!isCoordinator(messages)) return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
@@ -356,8 +364,9 @@ test('a follow-up that was cut off has unknown usage, and so has the mission', a
   assert.equal('usage' in followup, true);
   assert.equal(followup.usage, null);
   assert.equal(mission.workers.find(w => w.id === 'synthesis').usage.promptTokens, 200, 'the Coordinator\'s own turns were counted');
-  assert.equal(mission.usage.promptTokens, null, 'not the 300 the other workers counted');
-  assert.equal(mission.usage.turns, null);
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [['code_analyst', 'synthesis'], ['code_analyst-followup-1']]);
+  assert.equal(mission.usage.promptTokens, 300, 'worker 100, Coordinator 2 x 100; the cut-off follow-up is named, not added as 0');
+  assert.equal(mission.usage.turns, 3);
 });
 
 test('a follow-up that finished adds its usage to the mission', async t => {
@@ -373,5 +382,29 @@ test('a follow-up that finished adds its usage to the mission', async t => {
   assert.deepEqual([followup.usage.turns, followup.usage.promptTokens], [2, 14]);
   assert.equal(mission.usage.promptTokens, 314, 'worker 100, follow-up 2 x 7, Coordinator 2 x 100');
   assert.equal(mission.usage.turns, 5);
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [['code_analyst', 'synthesis', 'code_analyst-followup-1'], []], 'everything that ran is in the total');
   assert.deepEqual(orchestrator.getMission(mission.id).workers.find(w => w.id === 'code_analyst-followup-1').usage, followup.usage);
+});
+
+test('a mission cancelled before any worker ran totals zeros and covers nothing', async t => {
+  let turns = 0;
+  const orchestrator = tooledFixture(t, async () => { turns += 1; return { role: 'assistant', content: 'unused' }; });
+  const ended = await orchestrator.mission('Review implementation', '', ['code_analyst'], { signal: AbortSignal.abort(new Error('Cancelled by owner')) });
+  assert.equal(turns, 0, 'no model was asked');
+  assert.equal(ended.status, 'error');
+  assert.match(ended.error, /Cancelled by owner/);
+  const mission = orchestrator.getMission(ended.id);
+  assert.ok(mission.workers.every(w => !('usage' in w)), 'no worker ran');
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [[], []]);
+  for (const key of ['turns', 'toolCalls', 'modelMs', 'promptTokens', 'outputTokens', 'peakContextChars']) assert.equal(mission.usage[key], 0, key);
+});
+
+test('a mission that stops after its only specialist failed lists the Coordinator in neither list', async t => {
+  const orchestrator = tooledFixture(t, async () => { throw new Error('Model rejected request'); });
+  const mission = await orchestrator.mission('Review implementation', '', ['code_analyst']);
+  assert.equal(mission.status, 'needs_attention');
+  assert.equal(mission.workers.find(w => w.id === 'synthesis').state, 'blocked');
+  assert.ok(!mission.usage.counted.includes('synthesis') && !mission.usage.uncounted.includes('synthesis'), 'the Coordinator never started');
+  assert.ok(!mission.usage.counted.includes('router') && !mission.usage.uncounted.includes('router'), 'the router runs no model');
+  assert.deepEqual([...mission.usage.counted, ...mission.usage.uncounted], ['code_analyst']);
 });

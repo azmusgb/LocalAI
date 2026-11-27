@@ -404,3 +404,17 @@ test('usage totals: nothing ran is zeros, an unknown run is unknown', () => {
   assert.deepEqual(sumUsage([zeros, null]), unknown);
   assert.deepEqual(sumUsage([{ ...zeros, turns: 2, peakContextChars: 50 }, { ...zeros, turns: 1, peakContextChars: 90, promptTokens: null }]), { ...zeros, turns: 3, peakContextChars: 90, promptTokens: null });
 });
+
+test('a covered total sums the runs whose usage is known and names the ones it leaves out', () => {
+  const { sumCountedUsage } = require('../app/agent-runtime');
+  const zeros = Object.fromEntries(USAGE_KEYS.map(key => [key, 0])), unknown = Object.fromEntries(USAGE_KEYS.map(key => [key, null]));
+  const a = { ...zeros, turns: 2, promptTokens: 100, peakContextChars: 50 }, b = { ...zeros, turns: 1, promptTokens: 7, peakContextChars: 90 };
+  assert.deepEqual(sumCountedUsage([]), { ...zeros, counted: [], uncounted: [] }, 'no run happened');
+  assert.deepEqual(sumCountedUsage([{ id: 'a', usage: a }, { id: 'b', usage: b }]), { ...zeros, turns: 3, promptTokens: 107, peakContextChars: 90, counted: ['a', 'b'], uncounted: [] });
+  assert.deepEqual(sumCountedUsage([{ id: 'a', usage: a }, { id: 'cloud', usage: null }, { id: 'b', usage: b }]),
+    { ...zeros, turns: 3, promptTokens: 107, peakContextChars: 90, counted: ['a', 'b'], uncounted: ['cloud'] }, 'the unknown run is named, not added as 0 and not hiding the rest');
+  assert.deepEqual(sumCountedUsage([{ id: 'a', usage: a }, { id: 'b', usage: { ...b, promptTokens: null } }]),
+    { ...zeros, turns: 3, promptTokens: null, peakContextChars: 90, counted: ['a', 'b'], uncounted: [] }, 'a count a counted run could not read stays unknown');
+  assert.deepEqual(sumCountedUsage([{ id: 'x', usage: null }, { id: 'y', usage: undefined }, { id: 'z', usage: 'bad' }]),
+    { ...unknown, counted: [], uncounted: ['x', 'y', 'z'] }, 'runs happened and none was counted: unknown, never zeros');
+});

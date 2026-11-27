@@ -14,9 +14,10 @@ function withTurnUsage(message, usage) {
 const knownCount = value => (Number.isSafeInteger(value) && value >= 0 ? value : null);
 const knownMs = value => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.round(value) : null);
 const nsToMs = value => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value / 1e6 : null);
-// Totals across runs (a mission's workers). A run with no usage (the single-prompt path, a cloud summary) or a
-// count it could not read makes that total null: unknown, never the sum of the part that was counted.
-// An empty list gives zeros, which is true only because no run happened; a run of unknown cost must be in the list as null.
+// Totals across runs. A run with no usage (null) or a count it could not read makes that key null: unknown, never the
+// sum of the part that was counted. An empty list gives zeros, which is true only because no run happened; a run of
+// unknown cost must be in the list as null. A mission's total goes through sumCountedUsage below, which leaves the
+// runs with no usage out of the sum and names them instead.
 const USAGE_KEYS = ['turns', 'toolCalls', 'toolErrors', 'toolRefusals', 'compactions', 'compactedResults', 'toolResultChars', 'peakContextChars', 'modelMs', 'toolMs', 'promptTokens', 'outputTokens'];
 function sumUsage(list) {
   const total = {};
@@ -25,6 +26,17 @@ function sumUsage(list) {
     total[key] = values.includes(null) ? null : key === 'peakContextChars' ? Math.max(0, ...values) : values.reduce((sum, value) => sum + value, 0);
   }
   return total;
+}
+// A total that says what it covers, over runs given as {id, usage}. The sum is over the runs whose usage is known
+// (`counted`, their ids); a run that happened with usage null (the single-prompt path, a cloud summary, a follow-up
+// that was cut off) is left out and named in `uncounted`, so a non-empty `uncounted` means the numbers are a part,
+// not the whole. Inside a counted run sumUsage's rule holds: a count that run could not read makes that key null.
+// Runs happened and none was counted: every key is null, never 0. No runs at all: zeros and two empty lists.
+function sumCountedUsage(runs) {
+  const known = usage => Boolean(usage) && typeof usage === 'object';
+  const counted = runs.filter(run => known(run.usage)), uncounted = runs.filter(run => !known(run.usage));
+  const total = sumUsage(counted.length || !uncounted.length ? counted.map(run => run.usage) : [null]);
+  return { ...total, counted: counted.map(run => run.id), uncounted: uncounted.map(run => run.id) };
 }
 
 // The deadline covers response bodies as well as headers, and it is the only one: modelFetch (model-http.js) has no
@@ -302,4 +314,4 @@ async function runAgentLoop({ model, system, prompt, turn, tools = [], evidence 
   }
 }
 
-module.exports = { createOllamaTurn, createModelQueue, runAgentLoop, withTurnUsage, sumUsage, FINAL_TURN_PROMPT, ABSENCE_RULE };
+module.exports = { createOllamaTurn, createModelQueue, runAgentLoop, withTurnUsage, sumUsage, sumCountedUsage, FINAL_TURN_PROMPT, ABSENCE_RULE };

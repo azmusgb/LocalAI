@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('fs'),path=require('path'),{EventEmitter}=require('events');
-const {runAgentLoop,createModelQueue,sumUsage}=require('./agent-runtime');
+const {runAgentLoop,createModelQueue,sumUsage,sumCountedUsage}=require('./agent-runtime');
 const createMissionEvidence=require('./mission-evidence'),{fitEvidence,evidenceTokenBudget,CHARS_PER_TOKEN,checkAbsenceClaims}=require('./mission-evidence');
 const {missionNote}=require('./public/agent-world-words');
 const {ANSWER_FORMAT,polishAnswer}=require('./mission-answer');
@@ -214,9 +214,12 @@ module.exports=function createAgentOrchestrator(deps={}){
   const workers=(m.workers||[]).map(w=>({id:w.id,name:w.name,state:w.state,model:w.model,dependsOn:w.dependsOn||[],reason:w.reason,routingMeta:w.routingMeta||null,error:w.error||'',...(w.partial?{partial:true}:{})}));
   const sig=workers.map(w=>w.id+':'+w.state).join('|')+'|'+m.status+'|'+type;
   if(m.timeline.at(-1)?.sig!==sig)m.timeline.push({at:iso(),type,detail,workerId,status:m.status,sig,workers});
-  // The mission's total, once it has ended, over the workers that ran (each has `usage`; null is a worker whose cost
-  // is unknown, which makes the total unknown). A follow-up's time is also inside the Coordinator's toolMs.
-  if(m.status!=='running')m.usage=sumUsage((m.workers||[]).filter(w=>'usage' in w).map(w=>w.usage));
+  // The mission's total, once it has ended: the sum over the workers whose usage is known, with the ids it covers in
+  // `counted` and the ids of workers that ran at unknown cost (usage null: a cloud summary, the single prompt, a
+  // follow-up that was cut off) in `uncounted`. A non-empty `uncounted` means the total is partial. A worker that never
+  // ran (the router, a blocked or never-started one) has no `usage` key and is in neither list. Workers ran and none
+  // was counted: the numbers are null, not 0. A follow-up's time is also inside the Coordinator's toolMs.
+  if(m.status!=='running')m.usage=sumCountedUsage((m.workers||[]).filter(w=>'usage' in w));
   m.updatedAt=iso();
   persistRecord(missionsFile,m,200);
   events.emit('mission',m);return m
