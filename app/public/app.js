@@ -12,6 +12,13 @@ const ACTIVITY_ICON = {chat:'compose',conversation:'compose',research:'globe',im
 const phaseLabels = {idle:'Idle',routing:'Routing',sending:'Preparing',streaming:'Responding',searching:'Researching',generating:'Generating',done:'Complete',error:'Needs attention'};
 
 function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// Platform phrases come from the kit (/ui/needs.js, loaded before this module) and are never typed here (appliance-ui
+// DESIGN.md, Words). The kit's nothing-waiting line has no key: renderList([]) draws it. A kit that didn't load gives
+// no words, and the console says so once.
+let kitWordsMissing=false;
+function kitWords(text){if(typeof text==='string'&&text)return text;if(!kitWordsMissing){kitWordsMissing=true;console.warn('Kit phrases: /ui/needs.js did not load; its lines are left out')}return ''}
+const assistantDownWords=()=>kitWords(window.ApplianceNeeds?.PHRASES?.assistant_down);
+const nothingNeedsYouWords=()=>kitWords(window.ApplianceNeeds?.renderList?.([])?.textContent);
 // Status codes (patch_failed, needs_context) as the words the rest of the app uses.
 function human(v){return window.LocalAIKit?.statusBadge(v).label||String(v??'')}
 function safeUrl(value,{image=false}={}){
@@ -654,7 +661,7 @@ async function refreshStatus(force=false){
     const updating=!!(e&&e.updating);
     const why=updating?'Local AI is updating. This checks again in a moment.':e&&e.unreachable?"Can't reach Local AI from this device.":"Local AI answered, but its status couldn't be read.";
     $('homeDot').className=`dot ${updating?'DEGRADED':'DOWN'}`;$('homeState').textContent=updating?'Updating…':'Unavailable';
-    $('statusSummary').textContent=updating?'Local AI is updating…':e&&e.unreachable?"The Assistant isn't answering. Couldn't check the services. Try again":"Couldn't check the services. Try again";
+    $('statusSummary').textContent=updating?'Local AI is updating…':(e&&e.unreachable&&assistantDownWords()?assistantDownWords()+'. ':'')+"Couldn't check the services. Try again";
     // The readout never shows the last count as current (A7 P8): the list below keeps the last known rows, marked by the error.
     statusPlate(updating?['warn','Updating']:['unknown',e&&e.unreachable?'Not answering':'Unknown'],'—','');
     statusSources(updating?'warn':'bad',statusLastOk?`last good check ${statusLastOk}`:'never read');LocalAIUI.sources('homeSrcAI','Local AI',updating?'warn':'bad');
@@ -777,7 +784,7 @@ async function loadInbox(){if(featureLevel()<7)return;return LocalAIUI.loadInto(
   const open=evo.notifications.filter(n=>!n.resolved&&n.level!=='info'),done=evo.notifications.filter(n=>n.resolved||n.level==='info');
   const history=[...done.map(n=>({t:Date.parse(n.updatedAt||n.createdAt)||0,html:inboxCard(n)})),...decided.map(a=>({t:Date.parse(a.updatedAt||a.createdAt)||0,html:decidedCard(a)}))].sort((x,y)=>y.t-x.t);
   const waitingHtml=waiting.length?`<section class="inbox-waiting" aria-labelledby="inboxWaitingTitle"><h2 id="inboxWaitingTitle" class="inbox-waiting__title" tabindex="-1">${pending} approval${pending===1?'':'s'} waiting</h2><ul class="approval-list">${waiting.map(waitingRow).join('')}</ul></section>`:'';
-  $('inboxList').innerHTML=waitingHtml+(open.length?open.map(inboxCard).join(''):waiting.length?'':'<div class="empty-state" tabindex="-1">Nothing needs you right now.</div>')+(history.length?`<details class="inbox-resolved"><summary>History (${history.length})</summary>${history.slice(0,40).map(x=>x.html).join('')}</details>`:'');inboxMore();qsa('#inboxList [data-approval-open]').forEach(b=>b.onclick=()=>reviewApproval(b.dataset.approvalOpen));qsa('[data-note-read]').forEach(b=>b.onclick=async()=>{await evoPost('/api/notifications/update',{id:b.dataset.noteRead,read:true});loadInbox()});qsa('[data-note-resolve]').forEach(b=>b.onclick=async()=>{await evoPost('/api/notifications/update',{id:b.dataset.noteResolve,resolved:true,read:true});loadInbox()});return true}})}
+  $('inboxList').innerHTML=waitingHtml+(open.length?open.map(inboxCard).join(''):waiting.length?'':`<div class="empty-state" tabindex="-1">${esc(nothingNeedsYouWords())}</div>`)+(history.length?`<details class="inbox-resolved"><summary>History (${history.length})</summary>${history.slice(0,40).map(x=>x.html).join('')}</details>`:'');inboxMore();qsa('#inboxList [data-approval-open]').forEach(b=>b.onclick=()=>reviewApproval(b.dataset.approvalOpen));qsa('[data-note-read]').forEach(b=>b.onclick=async()=>{await evoPost('/api/notifications/update',{id:b.dataset.noteRead,read:true});loadInbox()});qsa('[data-note-resolve]').forEach(b=>b.onclick=async()=>{await evoPost('/api/notifications/update',{id:b.dataset.noteResolve,resolved:true,read:true});loadInbox()});return true}})}
 // Review in the Inbox opens the same sheet as Needs you; after a decision focus goes to the next waiting one (or the one
 // before, or the "Nothing needs you" line), and the sheet has already said what happened.
 async function reviewApproval(id){
