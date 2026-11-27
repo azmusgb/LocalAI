@@ -207,7 +207,7 @@ const KB = 1024;
 // gzipped (main failed this test with only the kit sync added); nothing else changed.
 // 2026-11-25: within 380 KB: the phone shell fixes (measured tab bar, strip and composer heights, the bell count beside
 // its icon) measure 379.7 KB gzipped on top of the kit at 2.31.1, so the budget does not move.
-const TOTAL = 380 * KB;
+const TOTAL = 384 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -247,6 +247,8 @@ const TOTAL = 380 * KB;
 // 2026-11-19: ui.js 117 → 118 KB for the Claude Code page's sign-in state (its board api() marks .signIn; Activity says
 // to pair, the live chip says "not read") and the pairing card's words: +134 bytes over main's 119,797 (11 under 117 KB);
 // 119,931 measured. The shell total stays within 370 KB (378,849 bytes).
+// 2026-11-26: 380 → 384 KB for the appliance-ui kit sync 2.31.3 → 2.35.1 (ui/components.css +1.6 KB and ui/needs.css +0.4 KB
+// gzipped: the page, tabs, table, decision and provenance parts); 382.7 KB measured, so 1.3 KB is left.
 const PER_FILE = { 'ui.js': 118.5 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40.5 * KB, 'index.html': 17.2 * KB, 'home.js': 14.8 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 14 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
