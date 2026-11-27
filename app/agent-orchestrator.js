@@ -118,8 +118,9 @@ module.exports=function createAgentOrchestrator(deps={}){
   persistRecord(runsFile,run,300);
   const publish=event=>{
    const entry={...event,at:iso(),runId:run.id,workerId:options.workerId||agentId,agentId};
-   // What the run cost (agent-runtime.js) arrives as its last event, whether it finished or stopped.
-   if(event.type==='run_usage')run.usage=event.usage;
+   // What the run cost (agent-runtime.js) arrives as its last event, whether it finished or stopped. It carries the
+   // summary to the record and is not a step: it is not stored with the events or passed on.
+   if(event.type==='run_usage'){run.usage=event.usage;return}
    pushCapped(run.toolEvents,entry);
    run.updatedAt=iso();persistRecord(runsFile,run,300);options.onEvent?.(entry);
   };
@@ -165,7 +166,8 @@ module.exports=function createAgentOrchestrator(deps={}){
   return run;
  }
  // Tool-mode synthesis: the coordinator may ask a specialist for up to two focused follow-up investigations.
- async function coordinate(m,goal,projectId,model,joined,options){
+ // cloudTried: a cloud summary was sent first and didn't answer; its tokens were never counted, so neither is this run's total.
+ async function coordinate(m,goal,projectId,model,joined,options,cloudTried=false){
   const evidence=[...new Map(m.results.flatMap(r=>r.evidenceRecords||[]).map(record=>[record.id,record])).values()];
   // The coordinator sees each record briefly; full excerpts are already in the specialist outputs. Outputs take two
   // thirds of the evidence budget and the index a quarter, leaving room in the mission context for a follow-up's answer.
@@ -189,7 +191,7 @@ module.exports=function createAgentOrchestrator(deps={}){
    if(result.status!=='complete')throw new Error('Follow-up failed: '+result.error);
    const keep=Math.floor(evidenceChars/4);return {data:{workerId,answer:result.answer.slice(0,keep),truncated:result.answer.length>keep},evidence:result.evidenceRecords.slice(-12)};
   });
-  const result=await runAgentLoop({model,system:'You are the mission coordinator for the Local AI Appliance. Check specialist evidence before accepting conclusions. Request a focused investigation if a material fact is missing. Synthesize only claims grounded in the specialist evidence. Preserve source labels and evidence IDs. State uncertainty once, briefly. '+COORDINATOR_ABSENCE_RULE+' '+ANSWER_FORMAT,prompt:'Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nAvailable evidence:\n'+JSON.stringify(evidenceIndex),turn:deps.runAgentTurn,tools:[followup],evidence,maxTurns:4,maxToolCalls:2,...(deps.agentLimits?.maxContextChars?{maxContextChars:deps.agentLimits.maxContextChars}:{}),timeoutMs:coordinatorTimeoutMs,toolTimeoutMs:followupTimeoutMs,signal:options.signal,modelQueue,onEvent:event=>{if(event.type==='run_usage')m.workers.find(x=>x.id==='synthesis').usage=event.usage;recordMissionTool(m,{...event,at:iso(),workerId:'synthesis',runId:m.id})}});
+  const result=await runAgentLoop({model,system:'You are the mission coordinator for the Local AI Appliance. Check specialist evidence before accepting conclusions. Request a focused investigation if a material fact is missing. Synthesize only claims grounded in the specialist evidence. Preserve source labels and evidence IDs. State uncertainty once, briefly. '+COORDINATOR_ABSENCE_RULE+' '+ANSWER_FORMAT,prompt:'Mission: '+goal+'\n\nSpecialist outputs:\n'+joined+'\n\nAvailable evidence:\n'+JSON.stringify(evidenceIndex),turn:deps.runAgentTurn,tools:[followup],evidence,maxTurns:4,maxToolCalls:2,...(deps.agentLimits?.maxContextChars?{maxContextChars:deps.agentLimits.maxContextChars}:{}),timeoutMs:coordinatorTimeoutMs,toolTimeoutMs:followupTimeoutMs,signal:options.signal,modelQueue,onEvent:event=>{if(event.type==='run_usage'){m.workers.find(x=>x.id==='synthesis').usage=cloudTried?null:event.usage;return}recordMissionTool(m,{...event,at:iso(),workerId:'synthesis',runId:m.id})}});
   m.evidenceRecords=result.evidenceRecords;m.citations=result.citations;if(result.citationWarning)m.citationWarning=result.citationWarning;return result.answer;
  }
  // Tool steps update the mission record and live stream without adding timeline entries.
@@ -247,7 +249,8 @@ module.exports=function createAgentOrchestrator(deps={}){
    // Partial or missing parts don't stop the team: the Coordinator writes from what exists and says what is missing.
    // Only with nothing at all to work from does the mission need you.
    if(!results.some(usable)){const sw=m.workers.find(x=>x.id==='synthesis');sw.state='blocked';sw.error='Synthesis skipped because prerequisite specialists did not complete';m.status='needs_attention';m.error='Mission stopped after specialist failure';m.updatedAt=iso();missionSnapshot(m,'mission-attention','Mission stopped after specialist failure');return m}
-   // The Coordinator's usage is unknown (null) until its tool run reports it; a cloud summary and the single prompt never do.
+   // The Coordinator's usage is unknown (null) until its tool run on this PC reports it. It stays unknown for the single
+   // prompt and whenever a cloud summary was sent, answered or not: those tokens were spent and nobody counted them.
    const sw=m.workers.find(x=>x.id==='synthesis');sw.state='running';sw.usage=null;missionSnapshot(m,'synthesis','Coordinator started synthesis','synthesis');
    try{
     // Specialist outputs share two thirds of the evidence budget evenly (12000 characters each at most).
@@ -266,7 +269,7 @@ module.exports=function createAgentOrchestrator(deps={}){
     opts.signal?.throwIfAborted();
     if(cloud){m.answer=cloud.content;m.coordinatorModel=cloud.used.model;m.route=cloud.used}
     else{
-    m.answer=typeof deps.runAgentTurn==='function'?await coordinate(m,goal,projectId,coordinatorModel,joined,opts).catch(e=>{if(e.code!=='MODEL_NO_TOOLS')throw e;m.toolFallback=e.message;return null}):null;
+    m.answer=typeof deps.runAgentTurn==='function'?await coordinate(m,goal,projectId,coordinatorModel,joined,opts,tried.length>0).catch(e=>{if(e.code!=='MODEL_NO_TOOLS')throw e;m.toolFallback=e.message;return null}):null;
     if(m.answer===null){sw.usage=null;m.answer=await runModelReliable(synthPrompt,synthSystem,coordinatorTimeoutMs,coordinatorModel)}m.coordinatorModel=coordinatorModel;if(route)m.route=co.local(route,coordinatorModel,tried);
     }
     // The answer tidied (mission-answer.js: no process talk, Markdown or emoji, "missing" things the evidence names

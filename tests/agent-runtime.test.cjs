@@ -298,6 +298,24 @@ test('a model turn\'s duration leaves out the wait for another worker\'s turn', 
   assert.equal(result.usage.modelMs, done.durationMs);
 });
 
+test('the turn durations reported add up to the run\'s model time exactly', async t => {
+  // A clock that moves on every reading: a duration read twice would give two different numbers.
+  const realNow = Date.now;
+  let ticks = 0;
+  Date.now = () => realNow() + (ticks += 7);
+  t.after(() => { Date.now = realNow; });
+  const lookup = tool('lookup', 'Lookup', {}, [], async () => ({ data: {} }));
+  const events = [];
+  let n = 0;
+  const result = await runAgentLoop({ model: 'm', system: 's', prompt: 'p', tools: [lookup], onEvent: e => events.push(e),
+    turn: async () => (++n < 4 ? { role: 'assistant', content: '', tool_calls: [{ function: { name: 'lookup', arguments: {} } }] } : { role: 'assistant', content: 'Answer' }) });
+  Date.now = realNow;
+  const done = events.filter(e => e.type === 'model_turn_done');
+  assert.equal(done.length, 4);
+  assert.equal(result.usage.modelMs, done.reduce((sum, e) => sum + e.durationMs, 0));
+  assert.equal(result.usage.toolMs, events.filter(e => e.type === 'tool_result').reduce((sum, e) => sum + e.durationMs, 0));
+});
+
 test('a turn that reports no token count is unknown, and one unknown turn makes the run total unknown', async () => {
   const run = async usages => {
     const events = [];
@@ -376,4 +394,13 @@ test('a run that stops keeps its usage on error.partial and reports it as an eve
   assert.equal(ok.at(-1).type, 'run_usage');
   assert.deepEqual(ok.at(-1).usage, result.usage);
   assert.equal(ok.filter(e => e.type === 'run_usage').length, 1);
+});
+
+test('usage totals: nothing ran is zeros, an unknown run is unknown', () => {
+  const { sumUsage } = require('../app/agent-runtime');
+  const zeros = Object.fromEntries(USAGE_KEYS.map(key => [key, 0])), unknown = Object.fromEntries(USAGE_KEYS.map(key => [key, null]));
+  assert.deepEqual(sumUsage([]), zeros, 'no run happened');
+  assert.deepEqual(sumUsage([null]), unknown);
+  assert.deepEqual(sumUsage([zeros, null]), unknown);
+  assert.deepEqual(sumUsage([{ ...zeros, turns: 2, peakContextChars: 50 }, { ...zeros, turns: 1, peakContextChars: 90, promptTokens: null }]), { ...zeros, turns: 3, peakContextChars: 90, promptTokens: null });
 });

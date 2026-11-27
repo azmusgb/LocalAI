@@ -16,6 +16,7 @@ const knownMs = value => (typeof value === 'number' && Number.isFinite(value) &&
 const nsToMs = value => (typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value / 1e6 : null);
 // Totals across runs (a mission's workers). A run with no usage (the single-prompt path, a cloud summary) or a
 // count it could not read makes that total null: unknown, never the sum of the part that was counted.
+// An empty list gives zeros, which is true only because no run happened; a run of unknown cost must be in the list as null.
 const USAGE_KEYS = ['turns', 'toolCalls', 'toolErrors', 'toolRefusals', 'compactions', 'compactedResults', 'toolResultChars', 'peakContextChars', 'modelMs', 'toolMs', 'promptTokens', 'outputTokens'];
 function sumUsage(list) {
   const total = {};
@@ -202,6 +203,7 @@ async function runAgentLoop({ model, system, prompt, turn, tools = [], evidence 
         onEvent({ type: 'model_turn', turn: iteration, ...(final ? { final: true } : {}) });
         // Timed from here, with the model queue's turn in hand: the wait for another worker is not this turn's time.
         const turnStarted = Date.now();
+        let durationMs = 0;
         stats.modelTurns++; stats.peakContextChars = Math.max(stats.peakContextChars, contextChars);
         try {
           message = await boundedCall(childSignal => turn({ model, messages: structuredClone(messages), tools: final ? [] : tools.map(tool => tool.definition), signal: childSignal }), remaining(), signal);
@@ -209,11 +211,11 @@ async function runAgentLoop({ model, system, prompt, turn, tools = [], evidence 
           // A turn that failed or was cut off may have spent tokens nobody counted.
           addTokens('promptTokens', null); addTokens('outputTokens', null);
           throw error;
-        } finally { stats.modelMs += Date.now() - turnStarted; }
+        } finally { durationMs = Date.now() - turnStarted; stats.modelMs += durationMs; } // read once: the events add up to modelMs
         const reported = (message && typeof message === 'object' && turnUsage.get(message)) || {};
         const promptTokens = knownCount(reported.promptTokens), outputTokens = knownCount(reported.outputTokens);
         addTokens('promptTokens', promptTokens); addTokens('outputTokens', outputTokens);
-        onEvent({ type: 'model_turn_done', turn: iteration, ...(final ? { final: true } : {}), durationMs: Date.now() - turnStarted, promptTokens, outputTokens, contextChars, modelTotalMs: knownMs(reported.modelTotalMs), modelLoadMs: knownMs(reported.modelLoadMs), promptEvalMs: knownMs(reported.promptEvalMs), evalMs: knownMs(reported.evalMs) });
+        onEvent({ type: 'model_turn_done', turn: iteration, ...(final ? { final: true } : {}), durationMs, promptTokens, outputTokens, contextChars, modelTotalMs: knownMs(reported.modelTotalMs), modelLoadMs: knownMs(reported.modelLoadMs), promptEvalMs: knownMs(reported.promptEvalMs), evalMs: knownMs(reported.evalMs) });
       } finally { release?.(); }
       if (!message || typeof message !== 'object' || (message.content != null && typeof message.content !== 'string') || (message.tool_calls != null && !Array.isArray(message.tool_calls))) throw new Error('Invalid model message');
       const calls = message.tool_calls || [];
