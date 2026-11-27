@@ -40,6 +40,11 @@ await check('Inbox: with nothing waiting it says so, above the history', async (
   await page.evaluate(() => window.showView('home'));
   await open();
   await page.waitForFunction(() => /Nothing needs you right now/.test(document.getElementById('inboxList').textContent));
+  // The line is the kit's own (ApplianceNeeds.renderList([])), not typed in app.js; the words and the focus target stay.
+  const line = page.locator('#inboxList > .empty-state');
+  assert.equal(await line.innerText(), 'Nothing needs you right now.');
+  assert.equal(await line.getAttribute('tabindex'), '-1');
+  assert.equal(await line.innerText(), await page.evaluate(() => window.ApplianceNeeds.renderList([]).textContent));
   assert.match(await page.locator('#inboxList details.inbox-resolved summary').innerText(), /History \(1\)/);
 });
 
@@ -122,6 +127,17 @@ await check('Health: an answer without a service list is a failed check, not "re
   assert.doesNotMatch(summary, /ready/i);
   assert.equal(await page.locator('#serviceList .service-card').count(), 2);
   assert.doesNotMatch(await page.locator('#home').innerText(), /Healthy/);
+});
+
+// No answer at all is not an answer that couldn't be read. The first sentence is the kit's assistant_down phrase.
+await check('Health: no answer at all says the Assistant isn\'t answering, in the kit\'s words', async () => {
+  await page.route('**/api/status', r => r.abort('connectionrefused'));
+  await checkAgain();
+  const summary = await page.locator('#statusSummary').innerText();
+  assert.equal(summary, "The Assistant isn't answering. Couldn't check the services. Try again");
+  assert.equal(summary, `${await page.evaluate(() => window.ApplianceNeeds.PHRASES.assistant_down)}. Couldn't check the services. Try again`);
+  assert.match(await page.locator('#serviceList .status-error').innerText(), /Can't reach Local AI from this device\./);
+  assert.equal(await page.locator('#serviceList .service-card').count(), 2, 'the last known list stays');
 });
 
 // During a deploy the HTTPS front end answers 503 {error:"Local AI is updating"} with Retry-After (deploy/caddy/Caddyfile).
