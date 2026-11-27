@@ -185,3 +185,89 @@ test('fetchWithTimeout timeouts are reported as model timeouts', async t => {
   const run = await orchestrator.specialist('research_agent', 'Research sources');
   assert.equal(run.errorCode, 'MODEL_TIMEOUT');
 });
+
+// Run telemetry on the records: each worker's usage, the coordinator's, and the mission total.
+const { withTurnUsage } = require('../app/agent-runtime');
+const evidenceId = messages => JSON.stringify(messages).match(/E-[a-f0-9]{16}/)[0];
+const isCoordinator = messages => messages[0].content.startsWith('You are the mission coordinator');
+function tooledFixture(t, runAgentTurn) {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'localai-mission-'));
+  const orchestrator = createOrchestrator({
+    dataDir, ollamaUrl: 'http://unused.invalid', defaultModel: 'test-model',
+    fetchWithTimeout: async () => ({ ok: true, json: async () => ({ models: [{ name: 'test-model' }] }) }),
+    runLocalModel: async () => { throw new Error('Legacy model path must not run when runAgentTurn is configured'); },
+    runAgentTurn,
+  });
+  t.after(() => { orchestrator.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  return orchestrator;
+}
+
+test('a mission keeps each worker\'s usage, the coordinator\'s, and their total', async t => {
+  const orchestrator = tooledFixture(t, async ({ messages }) => withTurnUsage(
+    { role: 'assistant', content: `${isCoordinator(messages) ? 'Synthesis' : 'Finding'} [${evidenceId(messages)}]` },
+    isCoordinator(messages) ? { promptTokens: 300, outputTokens: 40 } : { promptTokens: 100, outputTokens: 20 }));
+  const mission = await orchestrator.mission('Review implementation', '', ['code_analyst']);
+  assert.equal(mission.status, 'complete', mission.error);
+  const worker = mission.workers.find(w => w.id === 'code_analyst'), synthesis = mission.workers.find(w => w.id === 'synthesis');
+  assert.deepEqual([worker.usage.turns, worker.usage.promptTokens, worker.usage.outputTokens], [1, 100, 20]);
+  assert.deepEqual(mission.results[0].usage, worker.usage, 'the specialist run record holds the same summary');
+  assert.deepEqual([synthesis.usage.turns, synthesis.usage.promptTokens, synthesis.usage.outputTokens], [1, 300, 40]);
+  assert.deepEqual([mission.usage.turns, mission.usage.toolCalls, mission.usage.promptTokens, mission.usage.outputTokens], [2, 0, 400, 60]);
+  assert.equal(mission.usage.peakContextChars, Math.max(worker.usage.peakContextChars, synthesis.usage.peakContextChars), 'a peak is the largest, not a sum');
+  assert.equal('usage' in mission.workers.find(w => w.id === 'router'), false, 'the router runs no model');
+  assert.deepEqual(orchestrator.getMission(mission.id).usage, mission.usage, 'reading the mission back shows it');
+  assert.deepEqual(orchestrator.getMission(mission.id).workers.find(w => w.id === 'synthesis').usage, synthesis.usage);
+  assert.deepEqual(orchestrator.runs()[0].usage, worker.usage);
+  assert.ok(mission.toolEvents.some(e => e.type === 'model_turn_done' && e.workerId === 'code_analyst' && e.promptTokens === 100), 'the stream carries the per-turn numbers');
+  assert.ok(mission.timeline.every(entry => entry.workers.every(w => !('usage' in w))), 'timeline entries stay small');
+});
+
+test('one worker without token counts makes the mission\'s token total unknown', async t => {
+  const orchestrator = tooledFixture(t, async ({ messages }) => {
+    const message = { role: 'assistant', content: `Finding [${evidenceId(messages)}]` };
+    return isCoordinator(messages) ? message : withTurnUsage(message, { promptTokens: 100, outputTokens: 20 });
+  });
+  const mission = await orchestrator.mission('Review implementation', '', ['code_analyst']);
+  assert.equal(mission.status, 'complete', mission.error);
+  assert.equal(mission.workers.find(w => w.id === 'code_analyst').usage.promptTokens, 100);
+  assert.equal(mission.workers.find(w => w.id === 'synthesis').usage.promptTokens, null);
+  assert.equal(mission.usage.promptTokens, null, 'not the 100 that was counted');
+  assert.equal(mission.usage.outputTokens, null);
+  assert.equal(mission.usage.turns, 2, 'what every worker counted is still a total');
+});
+
+test('the single-prompt path records usage as unknown, not zero', async t => {
+  const { orchestrator } = fixture(t);
+  const mission = await orchestrator.mission('Review implementation', '', ['code_analyst']);
+  assert.equal(mission.status, 'complete', mission.error);
+  assert.equal(mission.results[0].usage, null);
+  assert.equal(orchestrator.runs()[0].usage, null);
+  assert.equal(mission.workers.find(w => w.id === 'code_analyst').usage, null);
+  assert.equal(mission.workers.find(w => w.id === 'synthesis').usage, null);
+  for (const key of ['turns', 'toolCalls', 'modelMs', 'promptTokens', 'outputTokens', 'peakContextChars']) assert.equal(mission.usage[key], null, key);
+});
+
+test('a specialist that stops keeps the usage of the turns it ran', async t => {
+  const orchestrator = tooledFixture(t, async () => { throw new Error('model went away'); });
+  const run = await orchestrator.specialist('code_analyst', 'Review implementation');
+  assert.equal(run.status, 'error');
+  assert.equal(run.usage.turns, 1);
+  assert.equal(run.usage.promptTokens, null);
+  assert.ok(Number.isSafeInteger(run.usage.modelMs));
+  assert.deepEqual(orchestrator.runs()[0].usage, run.usage);
+});
+
+test('a worker whose fallback ran carries the usage of both attempts', async t => {
+  const orchestrator = tooledFixture(t, async ({ messages }) => {
+    if (messages[0].content.startsWith('Analyze supplied source precisely.')) throw new Error('Model rejected request');
+    return withTurnUsage({ role: 'assistant', content: `Finding [${evidenceId(messages)}]` }, { promptTokens: 100, outputTokens: 20 });
+  });
+  const mission = await orchestrator.mission('Review implementation', '', ['code_analyst']);
+  assert.equal(mission.status, 'complete', mission.error);
+  const worker = mission.workers.find(w => w.id === 'code_analyst');
+  assert.equal(worker.fallbackUsed, 'documentation');
+  assert.equal(worker.usage.turns, 2, 'the failed attempt and the fallback');
+  assert.equal(worker.usage.promptTokens, null, 'the failed attempt counted nothing, so the worker total is unknown');
+  assert.equal(mission.usage.turns, 3);
+  assert.equal(mission.usage.promptTokens, null);
+});
