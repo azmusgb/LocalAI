@@ -399,6 +399,91 @@ test('a mission cancelled before any worker ran totals zeros and covers nothing'
   for (const key of ['turns', 'toolCalls', 'modelMs', 'promptTokens', 'outputTokens', 'peakContextChars']) assert.equal(mission.usage[key], 0, key);
 });
 
+// specialist() can reject after its model ran (storing the run or the activity note throws): the worker ran at unknown cost.
+const activityFailsFor = agentId => (kind, title, name, meta) => { if (meta && meta.agentId === agentId) throw new Error('activity log unavailable'); };
+
+test('a worker whose run could not be recorded after its model ran is uncounted, not left out as never run', async t => {
+  let turns = 0;
+  const orchestrator = tooledFixture(t, async ({ messages }) => { turns += 1; return counted({ role: 'assistant', content: `Finding [${evidenceId(messages)}]` }); },
+    { recordActivity: activityFailsFor('code_analyst') });
+  const mission = await orchestrator.mission('Review implementation', '', ['code_analyst']);
+  assert.equal(mission.status, 'error');
+  assert.match(mission.error, /activity log unavailable/);
+  assert.ok(turns >= 1, 'a model turn was spent');
+  const worker = mission.workers.find(w => w.id === 'code_analyst');
+  assert.equal(worker.state, 'error');
+  assert.equal(worker.usage, null);
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [[], ['code_analyst']]);
+  for (const key of ['turns', 'toolCalls', 'modelMs', 'promptTokens', 'outputTokens', 'peakContextChars']) assert.equal(mission.usage[key], null, key);
+  const synthesis = mission.workers.find(w => w.id === 'synthesis');
+  assert.equal(synthesis.state, 'blocked');
+  assert.equal('usage' in synthesis, false, 'a worker that was only pending never ran: it is in neither list');
+  assert.deepEqual(orchestrator.getMission(mission.id).usage, mission.usage);
+});
+
+test('in a chain, the worker whose run could not be recorded is named beside the sum of the one that was counted', async t => {
+  const orchestrator = tooledFixture(t, async ({ messages }) => counted({ role: 'assistant', content: `Finding [${evidenceId(messages)}]` }),
+    { recordActivity: activityFailsFor('documentation') });
+  const mission = await orchestrator.mission('Research sources and document them', '', ['research_agent', 'documentation']);
+  assert.equal(mission.status, 'error');
+  assert.deepEqual(mission.workers.find(w => w.id === 'documentation').dependsOn, ['router', 'research_agent'], 'a chain');
+  const first = mission.workers.find(w => w.id === 'research_agent');
+  assert.equal(first.state, 'complete', first.error);
+  assert.equal(mission.workers.find(w => w.id === 'documentation').usage, null);
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [['research_agent'], ['documentation']]);
+  const { counted: _counted, uncounted: _uncounted, ...sums } = mission.usage;
+  assert.deepEqual(sums, first.usage, 'the counted worker\'s usage, key for key');
+  assert.equal(mission.usage.promptTokens, first.usage.promptTokens);
+  assert.ok(mission.usage.promptTokens > 0);
+  assert.equal('usage' in mission.workers.find(w => w.id === 'synthesis'), false);
+});
+
+test('a fallback whose run could not be recorded leaves the worker\'s usage unknown, not the first attempt\'s alone', async t => {
+  let fallbackTurns = 0;
+  const orchestrator = tooledFixture(t, async ({ messages }) => {
+    if (messages[0].content.startsWith('Analyze supplied source precisely.')) throw new Error('Model rejected request');
+    fallbackTurns += 1;
+    return counted({ role: 'assistant', content: `Finding [${evidenceId(messages)}]` });
+  }, { recordActivity: activityFailsFor('documentation') });
+  const mission = await orchestrator.mission('Review implementation', '', ['code_analyst']);
+  assert.ok(fallbackTurns >= 1, 'the fallback spent a model turn');
+  const worker = mission.workers.find(w => w.id === 'code_analyst');
+  assert.equal(worker.state, 'error');
+  assert.equal(worker.usage, null, 'the fallback\'s tokens were spent and not counted');
+  assert.equal(mission.results[0].usage, null);
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [[], ['code_analyst']]);
+  assert.equal(mission.usage.turns, null);
+  assert.equal(mission.usage.promptTokens, null);
+});
+
+test('a mission cancelled during a specialist\'s turn counts that worker with its tokens unknown, never 0', async t => {
+  const controller = new AbortController();
+  let turns = 0;
+  const orchestrator = tooledFixture(t, async ({ messages, signal }) => {
+    turns += 1;
+    if (turns === 1) return counted({ role: 'assistant', content: '', tool_calls: [{ function: { name: 'find_in_project', arguments: { query: 'missionSnapshot' } } }] });
+    if (turns === 2) {
+      assert.equal(messages.at(-1).role, 'tool', 'the tool ran; this is the turn that reads its result');
+      controller.abort(new Error('Cancelled by owner'));
+    }
+    throw signal?.reason || controller.signal.reason;
+  });
+  const mission = await orchestrator.mission('Review implementation', '', ['code_analyst'], { signal: controller.signal });
+  assert.equal(mission.status, 'error');
+  assert.match(mission.error, /Cancelled by owner/);
+  const worker = mission.workers.find(w => w.id === 'code_analyst');
+  assert.equal(worker.partial, true, 'it stopped after reading and keeps what it gathered');
+  assert.ok(worker.usage && worker.usage.turns >= 2, 'the turns that ran are kept');
+  assert.equal(worker.usage.toolCalls, 1);
+  assert.equal(worker.usage.promptTokens, null);
+  assert.equal(worker.usage.outputTokens, null);
+  assert.deepEqual([mission.usage.counted, mission.usage.uncounted], [['code_analyst'], []]);
+  assert.equal(mission.usage.promptTokens, null, 'not the 100 the first turn counted, and not 0');
+  assert.equal(mission.usage.outputTokens, null);
+  assert.equal(mission.usage.turns, worker.usage.turns);
+  assert.equal('usage' in mission.workers.find(w => w.id === 'synthesis'), false, 'the Coordinator never started');
+});
+
 test('a mission that stops after its only specialist failed lists the Coordinator in neither list', async t => {
   const orchestrator = tooledFixture(t, async () => { throw new Error('Model rejected request'); });
   const mission = await orchestrator.mission('Review implementation', '', ['code_analyst']);

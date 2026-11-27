@@ -207,7 +207,9 @@ module.exports=function createAgentOrchestrator(deps={}){
  function persistRecord(collection, record, limit){
   storage.transaction(()=>{storage.put(collection, record);if(limit)storage.prune(collection, limit)});
  }
- function settleWorkers(m,reason){for(const w of m.workers||[]){if(w.state==='running'){w.state='error';w.error=reason}else if(w.state==='pending'){w.state='blocked';w.error=reason}}}
+ // A worker stopped while running ran at a cost nobody read (its specialist call threw after the model answered, or the
+ // process restarted): usage null puts it in the mission total's `uncounted`. A pending worker never ran and gets no usage.
+ function settleWorkers(m,reason){for(const w of m.workers||[]){if(w.state==='running'){w.state='error';w.error=reason;if(!('usage' in w))w.usage=null}else if(w.state==='pending'){w.state='blocked';w.error=reason}}}
  function reconcileInterrupted(){const reason='Local AI restarted for an update while this was running';for(const m of storage.list(missionsFile,{status:'running'})){m.status='error';m.error=reason;settleWorkers(m,reason);m.updatedAt=iso();storage.upsert(missionsFile,m)}for(const r of storage.list(runsFile,{status:'running'})){r.status='error';r.error=reason;r.errorCode='INTERRUPTED';for(const p of r.plan||[])if(p.state==='running')p.state='error';r.updatedAt=iso();storage.upsert(runsFile,r)}}
  function missionSnapshot(m,type='state',detail='',workerId=''){
   m.timeline=m.timeline||[];
@@ -240,8 +242,10 @@ module.exports=function createAgentOrchestrator(deps={}){
      const fallbackId=w.routingMeta?.retryPolicy?.fallbackAgentId;
      if(r.status!=='complete'&&fallbackId){
       const fbAgent=specialists.find(a=>a.id===fallbackId);
-      // Whichever attempt's result is kept, the worker's usage is both attempts together.
-      if(fbAgent){missionSnapshot(m,'fallback','Primary worker failed; attempting fallback '+fbAgent.name,w.agentId);try{const fbRoute=routing.workerModel?{model:routing.workerModel}:await routeModel(goal+' '+fbAgent.capabilities.join(' '));const fb=await specialist(fallbackId,goal,projectId,fbRoute.model,dependencyContext(results,w.dependsOn),workerOpts);const usage=r.usage&&fb.usage?sumUsage([r.usage,fb.usage]):null;r=fb.status==='complete'?{...fb,agentId:w.agentId,agentName:fb.agentName+' (fallback for '+w.name+')',executedBy:fallbackId,fallbackFor:w.agentId,usage}:{...r,usage}}catch(fe){missionSnapshot(m,'fallback','Fallback '+fbAgent.name+' failed: '+String(fe.message||fe),w.agentId)}}
+      // Whichever attempt's result is kept, the worker's usage is both attempts together. A fallback that was started and
+      // threw may have spent tokens nobody read, so the worker's usage is then unknown, not the first attempt's alone.
+      let fbStarted=false;
+      if(fbAgent){missionSnapshot(m,'fallback','Primary worker failed; attempting fallback '+fbAgent.name,w.agentId);try{const fbRoute=routing.workerModel?{model:routing.workerModel}:await routeModel(goal+' '+fbAgent.capabilities.join(' '));fbStarted=true;const fb=await specialist(fallbackId,goal,projectId,fbRoute.model,dependencyContext(results,w.dependsOn),workerOpts);const usage=r.usage&&fb.usage?sumUsage([r.usage,fb.usage]):null;r=fb.status==='complete'?{...fb,agentId:w.agentId,agentName:fb.agentName+' (fallback for '+w.name+')',executedBy:fallbackId,fallbackFor:w.agentId,usage}:{...r,usage}}catch(fe){if(fbStarted)r={...r,usage:null};missionSnapshot(m,'fallback','Fallback '+fbAgent.name+' failed: '+String(fe.message||fe),w.agentId)}}
      }
      return r
     }));results.push(...batch);
