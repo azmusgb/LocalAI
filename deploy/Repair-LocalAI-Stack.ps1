@@ -8,6 +8,8 @@ param(
     # The scheduled task that opens Docker Desktop in the owner's session. It is started when the Docker engine does
     # not answer. No script here registers it; without it the engine being down is only logged.
     [string]$DockerDesktopTask = 'LocalAI-DockerDesktop',
+    # Docker Desktop's own process. While it runs the task is not started, whatever docker compose printed.
+    [string]$DockerDesktopProcess = 'com.docker.backend',
     # How long to wait for the Docker engine after starting that task.
     [ValidateRange(0, 600)]
     [int]$EngineWaitSeconds = 120,
@@ -31,7 +33,9 @@ param(
 #     remove it, so then it starts only the stopped service containers by name (`docker start`) instead;
 #   - afterwards waits up to HealthWaitSeconds for the appliance's /healthz.
 # When Docker Desktop itself has quit (27 Nov: the engine's pipe was gone for 70 minutes and every run only logged
-# it), docker compose fails with the CLI's cannot-connect message. Then, and only then, it:
+# it), docker compose fails with the CLI's cannot-connect message for a pipe that is not there. Then, and only then, it:
+#   - checks that Docker Desktop's process (DockerDesktopProcess) is not running. If it is, or the process list
+#     cannot be read, it starts nothing and logs that;
 #   - starts the DockerDesktopTask scheduled task, waits up to EngineWaitSeconds for `docker version` to answer, and
 #     runs the check above in the same run. No task, a task that cannot be started, or an engine that still does not
 #     answer is a log line saying which, followed by the same "stack check skipped" line as before;
@@ -51,9 +55,12 @@ $log = [System.Collections.Generic.List[string]]::new()
 $healthy = $null
 $engine = $null
 
-# The docker CLI's words for "no engine to talk to": Docker Desktop has quit or is still starting.
+# The docker CLI's words for "the engine's pipe is not there": Docker Desktop has quit or is still starting. An engine
+# that answers with an error, times out or refuses the caller (500, deadline exceeded, access denied, elevated
+# privileges) names the same pipe while Docker Desktop runs, so those are left out.
 function Test-EngineUnreachable([string]$text) {
-    return $text -match 'failed to connect to the docker API|dockerDesktopLinuxEngine|error during connect|Docker Desktop is not running|cannot connect to the Docker daemon|is the docker daemon running'
+    if ($text -match 'Access is denied|elevated privileges') { return $false }
+    return $text -match 'failed to connect to the docker API|open //\./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified|Docker Desktop is not running|cannot connect to the Docker daemon|is the docker daemon running'
 }
 # Parses `docker compose ... --format json` output: one JSON array, or one object per line (Compose 2.21+).
 function ConvertFrom-ComposeJson($lines) {
@@ -191,6 +198,16 @@ function Start-DockerDesktop {
             $log.Add("$down Docker Desktop was started $([int][Math]::Floor($ago)) min ago and is not started again until $EngineStartGapMinutes min have passed")
             return $false
         }
+    }
+    # A second sign, apart from docker's message: Docker Desktop's process must be gone. A list that cannot be read is
+    # not "gone".
+    try { $running = @(Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -eq $DockerDesktopProcess }).Count -gt 0 } catch {
+        $log.Add("$down could not check whether Docker Desktop is running ($($_.Exception.Message)), so it was not started")
+        return $false
+    }
+    if ($running) {
+        $log.Add("Docker engine is not reachable although Docker Desktop is running (process $DockerDesktopProcess), so it was not started")
+        return $false
     }
     if (-not $DockerDesktopTask -or -not (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)) {
         $log.Add("$down there is no scheduled task to start Docker Desktop with here")

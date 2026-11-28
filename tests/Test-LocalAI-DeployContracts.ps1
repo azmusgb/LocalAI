@@ -49,6 +49,9 @@ function New-Fixture {
         # Docker Desktop has quit: the engine does not answer (`compose config` still works, it needs no engine) until
         # the LocalAI-DockerDesktop task in Tasks is started; EngineStaysDown and TaskStartFails keep it down.
         EngineDown = $false; EngineStaysDown = $false; TaskStartFails = $false
+        # What docker prints while EngineDown ($null = the 27 Nov text), whether Docker Desktop's own process
+        # (com.docker.backend) is running, and a process list that cannot be read.
+        EngineText = $null; DesktopRunning = $false; ProcessListFails = $false
         # Auto-deploy's release gate: commits on origin/main not yet on origin/release, and whether the checkout is dirty.
         Ahead = 0; Dirty = ''
         # History prune: the files in the appliance's /data/backups, newest first, and a simulated docker exec failure.
@@ -142,7 +145,7 @@ function docker {
                 foreach ($k in $stackServices.Keys) { $svc = [ordered]@{ container_name = "local-ai-$k"; image = 'img' }; if ($stackServices[$k]) { $svc.restart = $stackServices[$k] }; $services[$k] = $svc }
                 return (ConvertTo-Json -Depth 6 -InputObject ([ordered]@{ name = 'local-ai'; services = $services }))
             }
-            if ($fixture.EngineDown -and $sub -in @('ps', 'up')) { $global:LASTEXITCODE = 1; return $engineDownText }
+            if ($fixture.EngineDown -and $sub -in @('ps', 'up')) { $global:LASTEXITCODE = 1; return $(if ($fixture.EngineText) { $fixture.EngineText } else { $engineDownText }) }
             if ($sub -eq 'ps') {
                 # Other projects' containers too: a real `compose ps` leaves them out, but the script must not rely on it.
                 $rows = @($fixture.Stack | ForEach-Object { [ordered]@{ Name = $_.Name; Service = $_.Service; Project = $_.Project; State = $_.State; ExitCode = $_.ExitCode; Status = "$($_.State)"; Labels = "com.docker.compose.project=$($_.Project)" } })
@@ -242,6 +245,15 @@ function robocopy {
     $global:LASTEXITCODE=1
 }
 function Start-Sleep { param([int]$Seconds) }
+# The process list the repair reads to see whether Docker Desktop is running; a lookup by id is the real one.
+function Get-Process {
+    param($Id, $ErrorAction)
+    if ($PSBoundParameters.ContainsKey('Id')) { return Microsoft.PowerShell.Management\Get-Process @PSBoundParameters }
+    $fixture.Calls.Add(@('get-process'))
+    if ($fixture.ProcessListFails) { throw 'Access is denied' }
+    [pscustomobject]@{ ProcessName = 'explorer' }
+    if ($fixture.DesktopRunning) { [pscustomobject]@{ ProcessName = 'com.docker.backend' } }
+}
 function Get-ScheduledTask { param($TaskName, $ErrorAction) if ($fixture -and $fixture.Tasks -and $TaskName) { $fixture.Calls.Add(@('get-task', "$TaskName")); return $fixture.Tasks[$TaskName] }; return $null }
 # Host tasks: what listens on Atlas's port is its process; stopping it ends the task, Start-ScheduledTask runs it again.
 function Get-NetTCPConnection { param($LocalPort, $State, $ErrorAction) foreach ($t in $fixture.Tasks.Values) { if ($t.State -eq 'Running') { [pscustomobject]@{ OwningProcess = 4242 } } } }
@@ -888,6 +900,51 @@ try {
             Assert-True (-not @($f.Notices | Where-Object { $_.meta.action -eq 'start-docker-desktop' }).Count) 'Told the Inbox about Docker Desktop while the engine answered'
         }
         Assert-True (-not ((Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Raw) -match 'Docker')) 'Logged about Docker while the engine answered'
+    }
+    Test-Case 'stack repair starts Docker Desktop only when its engine is gone and its process is not running' {
+        # Failures that name the engine while Docker Desktop runs are not a Docker Desktop that quit: logged as before.
+        foreach ($text in @(
+            'request returned 500 Internal Server Error for API route and version http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.51/containers/json, check if the server supports the requested API version',
+            'error during connect: Get "http://%2F%2F.%2Fpipe%2FdockerDesktopLinuxEngine/v1.51/containers/json": context deadline exceeded',
+            'error during connect: in the default daemon configuration on Windows, the docker client must be run with elevated privileges to connect: open //./pipe/docker_engine: The system cannot find the file specified.',
+            'failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine; check if the path is correct and if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: Access is denied.'
+        )) {
+            foreach ($running in @($true, $false)) {
+                $f = New-Fixture; New-FixtureStack @{ 'local-ai-n8n' = 'exited 143' }; $f.EngineDown = $true; $f.EngineStaysDown = $true; $f.EngineText = $text; $f.DesktopRunning = $running; $f.NoChange = $true
+                $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+                $result = Invoke-FixtureRepair
+                Assert-True (@($result.Log).Count -eq 1 -and $result.Log[0] -eq "stack check skipped: docker compose ps -a --format json failed (1): $text") "Unexpected log: $($result.Log -join '; ')"
+                Assert-True (-not @($f.Calls | Where-Object { $_[0] -in @('get-task', 'start-task', 'get-process', 'version') }).Count -and $null -eq $result.Engine -and -not (Test-Path -LiteralPath (Get-FixtureEngineState))) "Looked for or started Docker Desktop after: $text"
+                Invoke-FixtureAutoDeploy | Out-Null
+                Assert-True ($LASTEXITCODE -eq 0 -and (Get-AutoDeployCount) -eq 1 -and $f.Notices.Count -eq 0 -and (Get-FixtureDesktopStarts) -eq 0) "A notice or a start after: $text"
+                Assert-True (-not ((Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Raw) -match 'had quit')) "Said Docker Desktop had quit after: $text"
+            }
+        }
+        # The pipe is gone but Docker Desktop's process runs (starting, or stuck): nothing is started.
+        $f = New-Fixture; New-FixtureStack; $f.EngineDown = $true; $f.DesktopRunning = $true; $f.NoChange = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+        $result = Invoke-FixtureRepair
+        Assert-True (@($result.Log).Count -eq 2 -and $result.Log[0] -eq 'Docker engine is not reachable although Docker Desktop is running (process com.docker.backend), so it was not started' -and $result.Log[1] -eq "stack check skipped: docker compose ps -a --format json failed (1): $engineDownText") "Unexpected log: $($result.Log -join '; ')"
+        Assert-True ((Get-FixtureDesktopStarts) -eq 0 -and $null -eq $result.Engine -and -not (Test-Path -LiteralPath (Get-FixtureEngineState)) -and -not @($f.Calls | Where-Object { $_[0] -in @('get-task', 'version') }).Count) 'Started or looked up the task while Docker Desktop runs'
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($LASTEXITCODE -eq 0 -and (Get-AutoDeployCount) -eq 1 -and $f.Notices.Count -eq 0 -and (Get-FixtureDesktopStarts) -eq 0) 'A notice or a start while Docker Desktop runs'
+        # A process list that cannot be read is not "not running": logged, nothing started.
+        $f = New-Fixture; New-FixtureStack; $f.EngineDown = $true; $f.ProcessListFails = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+        $result = Invoke-FixtureRepair
+        Assert-True ($result.Log[0] -eq 'Docker engine is not reachable; could not check whether Docker Desktop is running (Access is denied), so it was not started' -and $result.Log[1] -like 'stack check skipped:*') "Unexpected log: $($result.Log -join '; ')"
+        Assert-True ((Get-FixtureDesktopStarts) -eq 0 -and $null -eq $result.Engine -and -not (Test-Path -LiteralPath (Get-FixtureEngineState))) 'Started Docker Desktop without knowing whether it runs'
+        # Pipe gone and no process: started, after the process list was read once.
+        $f = New-Fixture; New-FixtureStack; $f.EngineDown = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+        $result = Invoke-FixtureRepair
+        Assert-True ((Get-FixtureDesktopStarts) -eq 1 -and @($f.Calls | Where-Object { $_[0] -eq 'get-process' }).Count -eq 1 -and $result.Engine.Notify -eq $true) "Not started: $($result.Log -join '; ')"
+    }
+    Test-Case 'stack repair measures the gap between Docker Desktop starts either way when the clock was set back' {
+        foreach ($case in @(@{ Ahead = 60; Starts = 1 }, @{ Ahead = 10; Starts = 0 })) {
+            $f = New-Fixture; New-FixtureStack; $f.EngineDown = $true; $f.EngineStaysDown = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+            Set-Content -LiteralPath (Get-FixtureEngineState) -Value (ConvertTo-Json @{ lastAttempt = (Get-Date).ToUniversalTime().AddMinutes($case.Ahead).ToString('o'); attempts = 1 })
+            $result = Invoke-FixtureRepair
+            Assert-True ((Get-FixtureDesktopStarts) -eq $case.Starts) "A record $($case.Ahead) min in the future: $(Get-FixtureDesktopStarts) starts; $($result.Log -join '; ')"
+            if (-not $case.Starts) { Assert-True ($result.Log[0] -match 'is not started again until 15 min have passed$') "Unexpected log: $($result.Log -join '; ')" }
+        }
     }
     Test-Case 'nightly backups keep 7 daily and 4 older weekly copies' {
         $source = Get-Content (Join-Path $repository 'deploy/Backup-LocalAI-Data.ps1') -Raw
