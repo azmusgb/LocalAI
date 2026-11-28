@@ -8,6 +8,7 @@
 // the server prints it ("listening on 0.0.0.0:<port>"). A server that exits before listening fails at once with its
 // last output instead of after a polling timeout.
 const path = require('node:path');
+const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 
 const APP = path.resolve(__dirname, '../app');
@@ -40,4 +41,48 @@ function spawnAppServer({ appDir = APP, env = {}, timeoutMs = 15000 } = {}) {
   return { child, ready };
 }
 
-module.exports = { spawnAppServer, SAFE_WORKSHOP_URL };
+// Shared test teardown: kill a spawned child and wait for it to exit; remove a temp dir (win32 retries file locks).
+async function stopChild(child) {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+
+  await new Promise((resolve, reject) => {
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.removeListener('exit', finish);
+      reject(new Error(`child ${child.pid || 'unknown'} did not exit after kill()`));
+    }, 5000);
+    timer.unref?.();
+
+    child.once('exit', finish);
+
+    try {
+      if (!child.kill()) finish();
+    } catch (error) {
+      child.removeListener('exit', finish);
+      clearTimeout(timer);
+      reject(error);
+    }
+  });
+}
+
+function removeTree(dir) {
+  fs.rmSync(dir, {
+    recursive: true,
+    force: true,
+    ...(process.platform === 'win32'
+      ? { maxRetries: 5, retryDelay: 50 }
+      : {}),
+  });
+}
+
+module.exports = { spawnAppServer, stopChild, removeTree, SAFE_WORKSHOP_URL };

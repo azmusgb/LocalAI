@@ -11,51 +11,7 @@ const { once } = require('node:events');
 const { Storage } = require('../app/storage');
 const { RunLedger } = require('../app/run-ledger');
 const { continueThread, mergeThreads } = require('../app/library-threads');
-const { spawnAppServer } = require('./spawn-server.cjs');
-
-async function stopChild(child) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return;
-
-  await new Promise((resolve, reject) => {
-    let settled = false;
-
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve();
-    };
-
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      child.removeListener('exit', finish);
-      reject(new Error(`child ${child.pid || 'unknown'} did not exit after kill()`));
-    }, 5000);
-    timer.unref?.();
-
-    child.once('exit', finish);
-
-    try {
-      if (!child.kill()) finish();
-    } catch (error) {
-      child.removeListener('exit', finish);
-      clearTimeout(timer);
-      reject(error);
-    }
-  });
-}
-
-function removeTree(dir) {
-  fs.rmSync(dir, {
-    recursive: true,
-    force: true,
-    ...(process.platform === 'win32'
-      ? { maxRetries: 5, retryDelay: 50 }
-      : {}),
-  });
-}
-
+const { spawnAppServer, stopChild, removeTree } = require('./spawn-server.cjs');
 
 // A stand-in Ollama: /api/chat answers "answer N" for the Nth request.
 async function fakeOllama(t, reply = n => `answer ${n}`) {
