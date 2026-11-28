@@ -34,11 +34,11 @@ test('every disclosure that drops the browser triangle draws its own open and cl
     const chevron = css.match(/:is\(([^)]*)\)::after\{content:"";[^}]*border-right:2px solid currentColor/);
     assert.ok(chevron && chevron[1].split(',').includes(sel), `${sel} has a chevron`);
   }
-  assert.match(rule('.img-advanced summary'), /min-height:44px/);
+  assert.match(rule('.img-advanced summary'), /min-height:var\(--ui-target\)/);  // the kit's 44 px touch target
 });
 
 test("Home's context clear button is a 44 px target", () => {
-  assert.match(rule('.home-context__clear'), /min-width:44px;min-height:44px/);
+  assert.match(rule('.home-context__clear'), /min-width:var\(--ui-target\);min-height:var\(--ui-target\)/);
 });
 
 test('smooth scrolling asks prefers-reduced-motion first', () => {
