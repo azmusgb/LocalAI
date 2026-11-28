@@ -1,5 +1,5 @@
 {
-  "kit": "2.27.1",
+  "kit": "2.38.0",
   "files": {
     "app/public/agent-world-watch.js": {
       "colour": 8
@@ -12,7 +12,8 @@
       "shadow": 44,
       "motion": 32,
       "layer": 32,
-      "name": 40
+      "name": 40,
+      "target": 137
     },
     "app/public/app.js": {
       "colour": 1,
