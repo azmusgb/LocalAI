@@ -207,7 +207,7 @@ const KB = 1024;
 // gzipped (main failed this test with only the kit sync added); nothing else changed.
 // 2026-11-25: within 380 KB: the phone shell fixes (measured tab bar, strip and composer heights, the bell count beside
 // its icon) measure 379.7 KB gzipped on top of the kit at 2.31.1, so the budget does not move.
-const TOTAL = 384 * KB;
+const TOTAL = 385 * KB;
 // +2 KB on 2026-10-17 for System › Spreadsheets (spreadsheets.js and its markup), which replaced the separate GridCraft page;
 // +1 KB on 2026-10-26 when the print lab page (#403) and the cloud model controls (#402) met: each fit alone, together
 // 290.4 KB (the composer's two toggles, "Answered by" and the lab page's styles; the Cloud models card loads on demand)
@@ -249,6 +249,8 @@ const TOTAL = 384 * KB;
 // 119,931 measured. The shell total stays within 370 KB (378,849 bytes).
 // 2026-11-26: 380 → 384 KB for the appliance-ui kit sync 2.31.3 → 2.35.1 (ui/components.css +1.6 KB and ui/needs.css +0.4 KB
 // gzipped: the page, tabs, table, decision and provenance parts); 382.7 KB measured, so 1.3 KB is left.
+// 2026-11-27: 384 → 385 KB for the appliance-ui kit sync 2.37.0 → 2.38.0 (ui/components.css +0.4 KB gzipped: the
+// forced-colours rules); main with only the sync added failed this test at 384.1 KB measured, so 0.9 KB is left.
 const PER_FILE = { 'ui.js': 118.5 * KB, 'components.js': 11.5 * KB, 'app.css': 51 * KB, 'app.js': 40.5 * KB, 'index.html': 17.2 * KB, 'home.js': 14.8 * KB, 'spreadsheets.js': 11 * KB, 'architecture.js': 17 * KB, 'run-bodies.js': 14 * KB };
 const OTHER = 10 * KB; // any other module the shell loads
 
