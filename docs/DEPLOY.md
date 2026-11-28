@@ -108,6 +108,32 @@ gets one notice, e.g. "Restarted 6 Local AI services that were stopped (probably
 nothing on a host without `stack.env`, is silent when everything runs, and a failure is logged and never stops the
 deploy.
 
+**When Docker Desktop has quit.** Docker Desktop runs in the owner's Windows session, not as a service, so when it
+quits (27 Nov: for 70 minutes, probably its own updater) every container is gone and `docker compose` answers
+`failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`. On that failure, and no other,
+the update check starts the scheduled task `LocalAI-DockerDesktop`, waits up to 2 minutes for the Docker engine to
+answer and then runs the check above in the same run. This only works while the owner is signed in on the PC: the
+task opens Docker Desktop in that session. The task is expected to exist already (action
+`C:\Program Files\Docker\Docker\Docker Desktop.exe`, run as the owner, only when signed in, trigger at sign-in);
+no script in this repository creates it, and without it the check only logs that it is missing. While the engine
+stays down the task is started at most once every 15 minutes
+(`C:\LocalAI\.deploy\docker-desktop-start.json` holds the last start; a file that can't be read is logged and
+counts as a start made now). `auto-deploy.log` says what happened on each run:
+
+- `repair: Docker Desktop had quit; started scheduled task 'LocalAI-DockerDesktop' and the Docker engine answered
+  after 10 s`
+- `repair: Docker engine is not reachable; scheduled task 'LocalAI-DockerDesktop' does not exist, so Docker Desktop
+  was not started` (or `could not start scheduled task ...`, or `... but the engine did not answer within 120 s`, or
+  `Docker Desktop was started 5 min ago and is not started again until 15 min have passed`), each followed by the
+  `repair: stack check skipped: ...` line with docker's own words
+- `repair: Docker engine answers again` when it came back later, whoever started it
+
+The Inbox gets one notice per outage, "Docker Desktop had quit and is running again", once the engine answers; it
+says whether the appliance answers `/healthz` and waits one check for an appliance that doesn't yet. Nothing can be
+sent while the engine is down, because the appliance that holds the Inbox is one of the containers. Any other
+`docker compose` failure (a port already in use, say) is logged as before and starts nothing. To start it by hand:
+`Start-ScheduledTask -TaskName 'LocalAI-DockerDesktop'`.
+
 ### Updates wait for running work
 
 A deploy restarts the appliance, and a restart stops whatever is running. Before deploying a new commit the task

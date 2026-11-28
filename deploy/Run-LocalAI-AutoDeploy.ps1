@@ -124,16 +124,26 @@ function Invoke-HistoryPrune {
 }
 # Starts compose services that should be running but are stopped (a Windows restart leaves them Exited: Docker
 # Desktop counts that as a user stop, so `restart: unless-stopped` doesn't bring them back). Logs each start, sends
-# one Inbox line, and never fails the deploy. Silent when everything is running.
+# one Inbox line, and never fails the deploy. Silent when everything is running. When Docker Desktop itself has quit
+# the repair starts it through its scheduled task (at most every 15 minutes) and the Inbox gets one line once the
+# Docker engine answers again.
 function Invoke-StackRepair {
     try {
-        $repair = & (Join-Path $PSScriptRoot 'Repair-LocalAI-Stack.ps1') -EnvFile $StackEnvFile -Compose $StackCompose -HealthUrl $HealthUrl
+        $repair = & (Join-Path $PSScriptRoot 'Repair-LocalAI-Stack.ps1') -EnvFile $StackEnvFile -Compose $StackCompose -HealthUrl $HealthUrl -EngineStartState (Join-Path $StateDir 'docker-desktop-start.json')
         $lines = @($repair.Log | Where-Object { $_ } | ForEach-Object { (Get-Date).ToString('s') + ' repair: ' + $_ })
         if ($lines.Count) { Write-AutoDeployLog $lines $null }
         $count = @($repair.Started).Count
-        if ($count -gt 0) {
+        $health = if ($repair.Healthy) { 'The appliance answers /healthz.' } else { 'The appliance did not answer /healthz within a minute; see Health.' }
+        if ($repair.Engine) {
+            # Docker Desktop had quit and its engine answers again: one line for the outage, in place of the one below.
+            if ($repair.Engine.Notify) {
+                $tries = $repair.Engine.Attempts
+                $by = if ($repair.Engine.StartedNow) { 'Local AI started it again.' } elseif ($tries -eq 1) { 'Local AI tried to start it once before it answered.' } elseif ($tries -gt 1) { "Local AI tried to start it $tries times before it answered." } else { '' }
+                $services = if ($count -gt 0) { 'Started: ' + (@($repair.Started) -join ', ') + '.' } else { '' }
+                Notify 'Docker Desktop had quit and is running again' ((@($by, $services, $health) | Where-Object { $_ }) -join ' ') @{ outcome = 'done'; action = 'start-docker-desktop'; started = (@($repair.Started) -join ', ') }
+            }
+        } elseif ($count -gt 0) {
             $title = if ($count -eq 1) { 'Restarted 1 Local AI service that was stopped (probably by a Windows restart)' } else { "Restarted $count Local AI services that were stopped (probably by a Windows restart)" }
-            $health = if ($repair.Healthy) { 'The appliance answers /healthz.' } else { 'The appliance did not answer /healthz within a minute; see Health.' }
             Notify $title ('Started: ' + (@($repair.Started) -join ', ') + '. ' + $health) @{ outcome = 'done'; action = 'repair-stack'; started = (@($repair.Started) -join ', ') }
         }
     } catch {

@@ -46,6 +46,9 @@ function New-Fixture {
         # line, and simulated compose failures.
         Stack = [System.Collections.Generic.List[object]]::new(); StackAsArray = $false; ComposeFails = $false; ComposeUpFails = $false
         StackEnv = (Join-Path $root 'stack.env'); StackCompose = (Join-Path $root 'compose.yml')
+        # Docker Desktop has quit: the engine does not answer (`compose config` still works, it needs no engine) until
+        # the LocalAI-DockerDesktop task in Tasks is started; EngineStaysDown and TaskStartFails keep it down.
+        EngineDown = $false; EngineStaysDown = $false; TaskStartFails = $false
         # Auto-deploy's release gate: commits on origin/main not yet on origin/release, and whether the checkout is dirty.
         Ahead = 0; Dirty = ''
         # History prune: the files in the appliance's /data/backups, newest first, and a simulated docker exec failure.
@@ -86,7 +89,12 @@ function Add-FixtureStackEntry([string]$Name, [string]$Service, [string]$State, 
     $fixture.Stack.Add([pscustomobject]@{ Name = $Name; Service = $Service; Project = $Project; State = $parts[0]; ExitCode = $(if ($parts.Count -gt 1) { [int]$parts[1] } else { 0 }) })
 }
 function Get-FixtureStackEntry([string]$Name) { @($fixture.Stack | Where-Object { $_.Name -eq $Name })[0] }
-function Invoke-FixtureRepair { & (Join-Path $repository 'deploy/Repair-LocalAI-Stack.ps1') -EnvFile $fixture.StackEnv -Compose $fixture.StackCompose -HealthUrl 'http://fixture/healthz' }
+function Invoke-FixtureRepair { & (Join-Path $repository 'deploy/Repair-LocalAI-Stack.ps1') -EnvFile $fixture.StackEnv -Compose $fixture.StackCompose -HealthUrl 'http://fixture/healthz' -EngineStartState (Get-FixtureEngineState) }
+# The record of when Docker Desktop was last started (Repair-LocalAI-Stack.ps1 keeps it while the engine is down).
+function Get-FixtureEngineState { Join-Path $fixture.StateDir 'docker-desktop-start.json' }
+function Get-FixtureDesktopStarts { @($fixture.Calls | Where-Object { $_[0] -eq 'start-task' -and $_[1] -eq 'LocalAI-DockerDesktop' }).Count }
+# What the docker CLI printed on 27 Nov, when Docker Desktop had quit.
+$script:engineDownText = 'failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine; check if the path is correct and if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.'
 # Atlas moved onto its own copy (C:\LocalAI\atlas beside the checkout), running $Commit, with the repo's parts list.
 function New-FixtureAtlas([string]$Commit = $oldSha, [switch]$FromCheckout) {
     Copy-Item -LiteralPath (Join-Path $repository 'deploy/host-parts.json') -Destination (Join-Path $fixture.Repo 'deploy/host-parts.json')
@@ -134,6 +142,7 @@ function docker {
                 foreach ($k in $stackServices.Keys) { $svc = [ordered]@{ container_name = "local-ai-$k"; image = 'img' }; if ($stackServices[$k]) { $svc.restart = $stackServices[$k] }; $services[$k] = $svc }
                 return (ConvertTo-Json -Depth 6 -InputObject ([ordered]@{ name = 'local-ai'; services = $services }))
             }
+            if ($fixture.EngineDown -and $sub -in @('ps', 'up')) { $global:LASTEXITCODE = 1; return $engineDownText }
             if ($sub -eq 'ps') {
                 # Other projects' containers too: a real `compose ps` leaves them out, but the script must not rely on it.
                 $rows = @($fixture.Stack | ForEach-Object { [ordered]@{ Name = $_.Name; Service = $_.Service; Project = $_.Project; State = $_.State; ExitCode = $_.ExitCode; Status = "$($_.State)"; Labels = "com.docker.compose.project=$($_.Project)" } })
@@ -147,6 +156,10 @@ function docker {
                 return 'Container local-ai-n8n  Started'
             }
             throw "Unexpected docker compose command: $($Arguments -join ' ')"
+        }
+        'version' {
+            if ($fixture.EngineDown -or $fixture.ComposeFails) { $global:LASTEXITCODE = 1; return $engineDownText }
+            return '28.5.1'
         }
         'ps' {
             if ($fixture.PsFails) { throw 'error during connect: Docker Desktop is not running' }
@@ -229,11 +242,17 @@ function robocopy {
     $global:LASTEXITCODE=1
 }
 function Start-Sleep { param([int]$Seconds) }
-function Get-ScheduledTask { param($TaskName, $ErrorAction) if ($fixture -and $fixture.Tasks -and $TaskName) { return $fixture.Tasks[$TaskName] }; return $null }
+function Get-ScheduledTask { param($TaskName, $ErrorAction) if ($fixture -and $fixture.Tasks -and $TaskName) { $fixture.Calls.Add(@('get-task', "$TaskName")); return $fixture.Tasks[$TaskName] }; return $null }
 # Host tasks: what listens on Atlas's port is its process; stopping it ends the task, Start-ScheduledTask runs it again.
 function Get-NetTCPConnection { param($LocalPort, $State, $ErrorAction) foreach ($t in $fixture.Tasks.Values) { if ($t.State -eq 'Running') { [pscustomobject]@{ OwningProcess = 4242 } } } }
 function Stop-Process { param($Id, [switch]$Force, $ErrorAction) foreach ($t in $fixture.Tasks.Values) { $t.State = 'Ready' }; $fixture.Calls.Add(@('stop-process', "$Id")) }
-function Start-ScheduledTask { param($TaskName) $fixture.Tasks[$TaskName].State = 'Running'; $fixture.Calls.Add(@('start-task', $TaskName, (Read-LocalAI-HostPartCommit (Join-Path $fixture.Root 'atlas')))) }
+function Start-ScheduledTask {
+    param($TaskName, $ErrorAction)
+    if ($fixture.TaskStartFails) { $fixture.Calls.Add(@('start-task', $TaskName, '')); throw 'The task is disabled' }
+    # Starting Docker Desktop's task brings the engine back, unless the fixture keeps it down.
+    if ($TaskName -eq 'LocalAI-DockerDesktop' -and -not $fixture.EngineStaysDown) { $fixture.EngineDown = $false }
+    $fixture.Tasks[$TaskName].State = 'Running'; $fixture.Calls.Add(@('start-task', $TaskName, (Read-LocalAI-HostPartCommit (Join-Path $fixture.Root 'atlas'))))
+}
 function Invoke-RestMethod {
     param($Uri, $TimeoutSec, $Method, $ContentType, $Body, $ErrorAction)
     if ("$Uri" -like '*/api/busy') { $fixture.BusyAsked++; if ($fixture.BusyFails) { throw 'Unable to connect to the remote server' }; return $fixture.Busy }
@@ -242,6 +261,8 @@ function Invoke-RestMethod {
         if ($fixture.AtlasDown -or ($fixture.AtlasDownOn -and $runs -eq $fixture.AtlasDownOn)) { throw 'Unable to connect to the remote server' }
         return [pscustomobject]@{ ok = $true }
     }
+    # With the Docker engine down the appliance's container is not running: nothing answers on its port.
+    if ($fixture.EngineDown -and "$Uri" -notlike '*:8765/health') { throw 'Unable to connect to the remote server' }
     if ("$Uri" -like '*/api/notifications/system') { $fixture.Notices.Add(([System.Text.Encoding]::UTF8.GetString($Body) | ConvertFrom-Json)); return }
     $commit = Read-LocalAI-ReleaseCommit $fixture.Live
     $status = if ($fixture.RejectAllHealth -or ($fixture.RejectNewRelease -and $commit -eq $newSha)) { 'error' } else { 'ok' }
@@ -759,6 +780,114 @@ try {
         $f = New-Fixture; New-FixtureStack @{ 'local-ai-n8n' = 'exited 143' }; $f.RejectAllHealth = $true
         $result = Invoke-FixtureRepair
         Assert-True ($result.Healthy -eq $false -and $result.Log -contains 'appliance /healthz not OK after 60 s') "Unexpected: $($result.Log -join '; ')"
+    }
+    Test-Case 'stack repair starts Docker Desktop when the Docker engine does not answer, then repairs and tells the Inbox once' {
+        $f = New-Fixture; New-FixtureStack @{ 'local-ai-n8n' = 'exited 143'; 'local-ai-https' = 'exited 137' }
+        $f.EngineDown = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+        $result = Invoke-FixtureRepair
+        Assert-True ((Get-FixtureDesktopStarts) -eq 1) "Docker Desktop's task was started $(Get-FixtureDesktopStarts) times"
+        Assert-True ((@($result.Started) | Sort-Object) -join ' ' -eq 'local-ai-https local-ai-n8n') "Unexpected starts: $($result.Started)"
+        Assert-True (@($result.Log)[0] -match "^Docker Desktop had quit; started scheduled task 'LocalAI-DockerDesktop' and the Docker engine answered after \d+ s$") "Unexpected log: $($result.Log -join '; ')"
+        Assert-True ($result.Log -contains 'started local-ai-n8n (was Exited 143)' -and $result.Log -contains 'appliance /healthz OK' -and $result.Healthy -eq $true) "Unexpected log: $($result.Log -join '; ')"
+        Assert-True (-not ("$($result.Log)" -match 'stack check skipped')) "The check was skipped: $($result.Log -join '; ')"
+        Assert-True ($result.Engine.Notify -eq $true -and $result.Engine.StartedNow -eq $true -and $result.Engine.Attempts -eq 1) "Unexpected engine result: $($result.Engine | ConvertTo-Json -Compress)"
+        Assert-True (-not (Test-Path -LiteralPath (Get-FixtureEngineState))) 'The start record was left behind after the engine answered'
+        # The containers usually come back by themselves once the engine runs: the appliance is still checked.
+        $f = New-Fixture; New-FixtureStack; $f.EngineDown = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+        $result = Invoke-FixtureRepair
+        Assert-True (@($result.Started).Count -eq 0 -and $result.Healthy -eq $true -and $result.Engine.Notify -eq $true -and $result.Log -contains 'appliance /healthz OK') "Unexpected: $($result.Log -join '; ')"
+        # Through the auto-deploy: one Inbox line for the whole run, the log says what happened, the deploy still runs.
+        $f = New-Fixture; New-FixtureStack @{ 'local-ai-n8n' = 'exited 143'; 'local-ai-https' = 'exited 137' }
+        $f.EngineDown = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }; $f.NoChange = $true
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($LASTEXITCODE -eq 0 -and (Get-AutoDeployCount) -eq 1) 'Starting Docker Desktop stopped the deploy'
+        Assert-True ($f.Notices.Count -eq 1 -and $f.Notices[0].meta.action -eq 'start-docker-desktop' -and $f.Notices[0].title -eq 'Docker Desktop had quit and is running again' -and $f.Notices[0].detail -eq 'Local AI started it again. Started: local-ai-https, local-ai-n8n. The appliance answers /healthz.') "Unexpected notices: $($f.Notices | ConvertTo-Json -Compress -Depth 4)"
+        $log = Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Encoding UTF8
+        Assert-True (@($log | Where-Object { $_ -match '^\d{4}-\d\d-\d\dT\S+ repair: Docker Desktop had quit; started scheduled task' }).Count -eq 1) "Start not in the log: $($log -join "`n")"
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($f.Notices.Count -eq 1 -and (Get-FixtureDesktopStarts) -eq 1) 'The next run started Docker Desktop or told the Inbox again'
+    }
+    Test-Case 'stack repair says why Docker Desktop was not started: no task, or a task that cannot be started' {
+        $f = New-Fixture; New-FixtureStack @{ 'local-ai-n8n' = 'exited 143' }; $f.EngineDown = $true
+        $result = Invoke-FixtureRepair
+        Assert-True ((Get-FixtureDesktopStarts) -eq 0 -and @($result.Started).Count -eq 0 -and $null -eq $result.Engine) 'Started something without the task'
+        Assert-True (@($result.Log).Count -eq 2 -and $result.Log[0] -eq "Docker engine is not reachable; scheduled task 'LocalAI-DockerDesktop' does not exist, so Docker Desktop was not started" -and $result.Log[1] -eq "stack check skipped: docker compose ps -a --format json failed (1): $engineDownText") "Unexpected log: $($result.Log -join '; ')"
+        Assert-True (-not (Test-Path -LiteralPath (Get-FixtureEngineState))) 'A start was recorded though none was made'
+        $f.NoChange = $true
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($LASTEXITCODE -eq 0 -and (Get-AutoDeployCount) -eq 1 -and $f.Notices.Count -eq 0) 'A missing task changed the deploy or sent a notice'
+        Assert-True ((Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Raw) -match "repair: Docker engine is not reachable; scheduled task 'LocalAI-DockerDesktop' does not exist") 'The missing task was not logged'
+        # A task that cannot be started counts as a try: the next run inside the gap leaves it alone.
+        $f = New-Fixture; New-FixtureStack; $f.EngineDown = $true; $f.TaskStartFails = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Disabled' }
+        $result = Invoke-FixtureRepair
+        Assert-True ($result.Log[0] -eq "Docker engine is not reachable; could not start scheduled task 'LocalAI-DockerDesktop' (The task is disabled)" -and $result.Log[1] -like 'stack check skipped: docker compose ps -a*' -and $null -eq $result.Engine) "Unexpected log: $($result.Log -join '; ')"
+        Invoke-FixtureRepair | Out-Null
+        Assert-True ((Get-FixtureDesktopStarts) -eq 1) 'A task that could not be started was tried again inside the gap'
+    }
+    Test-Case 'stack repair does not start Docker Desktop again inside 15 minutes, and tells the Inbox once when the engine is back' {
+        $f = New-Fixture; New-FixtureStack; $f.EngineDown = $true; $f.EngineStaysDown = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+        $result = Invoke-FixtureRepair
+        Assert-True ((Get-FixtureDesktopStarts) -eq 1 -and $null -eq $result.Engine) 'Expected one start and no notice yet'
+        Assert-True ($result.Log[0] -eq "Docker engine is not reachable; started scheduled task 'LocalAI-DockerDesktop' but the engine did not answer within 120 s" -and $result.Log[1] -like 'stack check skipped: docker compose ps -a*') "Unexpected log: $($result.Log -join '; ')"
+        Assert-True (Test-Path -LiteralPath (Get-FixtureEngineState)) 'The start was not recorded'
+        # Five minutes later: still down, not started again.
+        $result = Invoke-FixtureRepair
+        Assert-True ((Get-FixtureDesktopStarts) -eq 1) 'Docker Desktop was started again inside the gap'
+        Assert-True ($result.Log[0] -match '^Docker engine is not reachable; Docker Desktop was started \d+ min ago and is not started again until 15 min have passed$' -and $result.Log[1] -like 'stack check skipped:*') "Unexpected log: $($result.Log -join '; ')"
+        # After the gap it is started again; through the auto-deploy nothing reaches the Inbox while the engine is down.
+        $record = Get-Content -LiteralPath (Get-FixtureEngineState) -Raw | ConvertFrom-Json
+        Set-Content -LiteralPath (Get-FixtureEngineState) -Value (ConvertTo-Json @{ lastAttempt = (Get-Date).ToUniversalTime().AddMinutes(-16).ToString('o'); attempts = [int]$record.attempts })
+        $f.NoChange = $true
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ((Get-FixtureDesktopStarts) -eq 2 -and $LASTEXITCODE -eq 0 -and (Get-AutoDeployCount) -eq 1 -and $f.Notices.Count -eq 0) "Expected a second start and no notice: $(Get-FixtureDesktopStarts) starts, $($f.Notices.Count) notices"
+        # Someone opens Docker Desktop: the next run says so once, and the run after that is silent again.
+        $f.EngineDown = $false
+        $result = Invoke-FixtureRepair
+        Assert-True ($result.Log -contains 'Docker engine answers again' -and $result.Engine.Notify -eq $true -and $result.Engine.StartedNow -eq $false -and $result.Engine.Attempts -eq 2) "Unexpected: $($result.Log -join '; ') $($result.Engine | ConvertTo-Json -Compress)"
+        Assert-True (-not (Test-Path -LiteralPath (Get-FixtureEngineState)) -and (Get-FixtureDesktopStarts) -eq 2) 'The record was kept or Docker Desktop was started while the engine answered'
+        $result = Invoke-FixtureRepair
+        Assert-True (@($result.Log).Count -eq 0 -and $null -eq $result.Engine) "Not silent after the outage: $($result.Log -join '; ')"
+        # The same through the auto-deploy: one Inbox line, naming the tries.
+        $f = New-Fixture; New-FixtureStack; $f.NoChange = $true
+        Set-Content -LiteralPath (Get-FixtureEngineState) -Value (ConvertTo-Json @{ lastAttempt = (Get-Date).ToUniversalTime().AddMinutes(-3).ToString('o'); attempts = 2 })
+        Invoke-FixtureAutoDeploy | Out-Null; Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($f.Notices.Count -eq 1 -and $f.Notices[0].meta.action -eq 'start-docker-desktop' -and $f.Notices[0].detail -eq 'Local AI tried to start it 2 times before it answered. The appliance answers /healthz.') "Unexpected notices: $($f.Notices | ConvertTo-Json -Compress -Depth 4)"
+        # A record that cannot be read is not "never tried": it is logged, nothing is started, and the gap starts now.
+        $f = New-Fixture; New-FixtureStack; $f.EngineDown = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+        Set-Content -LiteralPath (Get-FixtureEngineState) -Value 'garbage'
+        $result = Invoke-FixtureRepair
+        Assert-True ((Get-FixtureDesktopStarts) -eq 0 -and $result.Log[0] -like 'Docker engine is not reachable; could not read *docker-desktop-start.json (*), so Docker Desktop is not started now; the next try is in 15 min') "Unexpected: $($result.Log -join '; ')"
+        $result = Invoke-FixtureRepair
+        Assert-True ((Get-FixtureDesktopStarts) -eq 0 -and $result.Log[0] -match 'is not started again until 15 min have passed$') "Unexpected: $($result.Log -join '; ')"
+    }
+    Test-Case 'stack repair holds the Docker Desktop notice one run for an appliance that does not answer yet' {
+        $f = New-Fixture; New-FixtureStack; $f.EngineDown = $true; $f.RejectAllHealth = $true; $f.NoChange = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+        Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($f.Notices.Count -eq 0 -and (Get-FixtureDesktopStarts) -eq 1 -and (Test-Path -LiteralPath (Get-FixtureEngineState))) 'Expected the notice to wait for the appliance'
+        Assert-True ((Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Raw) -match 'repair: the appliance does not answer yet; the Inbox is told at the next check') 'The wait was not logged'
+        $f.RejectAllHealth = $false
+        Invoke-FixtureAutoDeploy | Out-Null; Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($f.Notices.Count -eq 1 -and $f.Notices[0].detail -eq 'Local AI started it again. The appliance answers /healthz.' -and (Get-FixtureDesktopStarts) -eq 1) "Unexpected notices: $($f.Notices | ConvertTo-Json -Compress -Depth 4)"
+        # An appliance that stays down is reported at the second check, not held for ever.
+        $f = New-Fixture; New-FixtureStack; $f.EngineDown = $true; $f.RejectAllHealth = $true; $f.NoChange = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+        Invoke-FixtureAutoDeploy | Out-Null; Invoke-FixtureAutoDeploy | Out-Null; Invoke-FixtureAutoDeploy | Out-Null
+        Assert-True ($f.Notices.Count -eq 1 -and $f.Notices[0].detail -eq 'Local AI started it again. The appliance did not answer /healthz within a minute; see Health.' -and -not (Test-Path -LiteralPath (Get-FixtureEngineState))) "Unexpected notices: $($f.Notices | ConvertTo-Json -Compress -Depth 4)"
+    }
+    Test-Case 'stack repair leaves Docker Desktop alone for other compose failures and while the engine answers' {
+        # "port is already allocated" is not an engine that is down: no task lookup, and the log line is as before.
+        $f = New-Fixture; New-FixtureStack @{ 'local-ai-https' = 'exited 137' }; $f.ComposeUpFails = $true; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }
+        $result = Invoke-FixtureRepair
+        Assert-True (@($result.Log).Count -eq 1 -and $result.Log[0] -eq 'stack check skipped: docker compose up -d --no-recreate failed (1): Error response from daemon: Bind for 0.0.0.0:443 failed: port is already allocated') "Unexpected log: $($result.Log -join '; ')"
+        Assert-True (-not @($f.Calls | Where-Object { $_[0] -in @('get-task', 'start-task', 'version') }).Count -and $null -eq $result.Engine -and -not (Test-Path -LiteralPath (Get-FixtureEngineState))) 'Looked for or started Docker Desktop after another compose failure'
+        # Engine up, with and without stopped services: no lookup, no start, no probe, no record.
+        foreach ($stopped in @(@{}, @{ 'local-ai-n8n' = 'exited 143' })) {
+            $f = New-Fixture; New-FixtureStack $stopped; $f.Tasks['LocalAI-DockerDesktop'] = [pscustomobject]@{ State = 'Ready' }; $f.NoChange = $true
+            $result = Invoke-FixtureRepair
+            Invoke-FixtureAutoDeploy | Out-Null
+            Assert-True (-not @($f.Calls | Where-Object { $_[0] -in @('get-task', 'start-task', 'version') }).Count -and $null -eq $result.Engine -and -not (Test-Path -LiteralPath (Get-FixtureEngineState))) 'Looked for or started Docker Desktop while the engine answered'
+            Assert-True (-not @($f.Notices | Where-Object { $_.meta.action -eq 'start-docker-desktop' }).Count) 'Told the Inbox about Docker Desktop while the engine answered'
+        }
+        Assert-True (-not ((Get-Content -LiteralPath (Join-Path $f.StateDir 'auto-deploy.log') -Raw) -match 'Docker')) 'Logged about Docker while the engine answered'
     }
     Test-Case 'nightly backups keep 7 daily and 4 older weekly copies' {
         $source = Get-Content (Join-Path $repository 'deploy/Backup-LocalAI-Data.ps1') -Raw
